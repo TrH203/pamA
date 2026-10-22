@@ -159,6 +159,9 @@ Each entry: **Decision**, **Rationale**, **Alternatives considered**. Items mark
   Email via **nodemailer 10.x** SMTP (operator-configured). Owner console sign-in: email magic
   link on server modes; local mode binds the console to `127.0.0.1` with a per-launch token
   (no sign-in). Visitor sessions: signed, httpOnly cookie scoped to `/a/<slug>`.
+- **Implementation note (2026-10-23)**: PINs and one-time codes are hashed with **scrypt from
+  `node:crypto`** (N=16384, r=8, p=1) instead of argon2id: argon2 is a native module, which the
+  Bun-compiled sidecar (R6) would have to ship per platform. scrypt is memory-hard and built in.
 - **Alternatives**: OAuth providers (out of MVP scope; SSO deferred).
 
 ## R12. Exposure of local-mode links

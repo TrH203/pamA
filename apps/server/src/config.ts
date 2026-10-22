@@ -1,6 +1,7 @@
 // Server configuration from environment variables (validated). Same image in every mode;
 // modes differ only by configuration and storage/queue adapters (Constitution IV).
 import { randomBytes } from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
@@ -33,6 +34,8 @@ const EnvSchema = z.object({
   DATABASE_URL: z.string().optional(),
   PAMA_BASE_URL: z.url().optional(),
   PAMA_LOCAL_TOKEN: z.string().min(16).optional(),
+  /** Signs visitor cookies and salts IP hashes. Local mode persists one in the data dir. */
+  PAMA_SECRET: z.string().min(32).optional(),
   PAMA_STRICT_OFFLINE: z
     .enum(["true", "false", "1", "0"])
     .default("false")
@@ -62,12 +65,28 @@ export interface Config {
   baseUrl: string;
   /** Per-launch owner token in local mode (Constitution I: console only on 127.0.0.1). */
   localToken: string;
+  secret: string;
   strictOffline: boolean;
   declaredHosts: string[];
   chat: ProviderConfig;
   small: ProviderConfig;
   embed: ProviderConfig;
   smtp: { url: string; from: string } | undefined;
+}
+
+/** Local mode: keep one secret in the data dir so visitor cookies survive restarts. */
+function persistentSecret(dataDir: string, mode: string): string {
+  if (mode !== "local")
+    throw new Error("PAMA_SECRET (32+ characters) is required outside local mode");
+  const file = join(dataDir, "secret");
+  try {
+    return readFileSync(file, "utf8").trim();
+  } catch {
+    const s = randomBytes(32).toString("base64url");
+    mkdirSync(dataDir, { recursive: true });
+    writeFileSync(file, s, { mode: 0o600 });
+    return s;
+  }
 }
 
 export function loadConfig(env: Record<string, string | undefined>): Config {
@@ -91,6 +110,9 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     databaseUrl: e.DATABASE_URL,
     baseUrl: e.PAMA_BASE_URL ?? `http://${bind === "0.0.0.0" ? "localhost" : bind}:${e.PAMA_PORT}`,
     localToken: e.PAMA_LOCAL_TOKEN ?? randomBytes(24).toString("base64url"),
+    secret:
+      e.PAMA_SECRET ??
+      persistentSecret(e.PAMA_DATA_DIR ?? join(homedir(), ".pama", "server"), e.PAMA_MODE),
     strictOffline: e.PAMA_STRICT_OFFLINE,
     declaredHosts: e.PAMA_DECLARED_HOSTS,
     chat,
@@ -111,6 +133,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     ...loadConfig({
       PAMA_MODE: "local",
       PAMA_LOCAL_TOKEN: "test-local-token-0123456789",
+      PAMA_SECRET: "test-secret-0123456789-0123456789-abcdef",
       PAMA_CHAT_PROVIDER: "fake",
       PAMA_CHAT_MODEL: "fake",
       PAMA_EMBED_PROVIDER: "fake",

@@ -22,6 +22,7 @@
     "ai": "^7.0.148",
     "drizzle-orm": "^0.45.4",
     "hono": "^4.13.13",
+    "nodemailer": "^10.2.1",
     "ollama-ai-provider-v2": "^4.1.0",
     "pg": "^8.23.1",
     "pg-boss": "^12.38.0",
@@ -32,6 +33,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
+    "@types/nodemailer": "^8.0.2",
     "@types/pg": "^8.23.1",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",

@@ -5,6 +5,7 @@ import { type Config, testConfig } from "../../src/config.ts";
 import type { Db } from "../../src/db/client.ts";
 import type { FakeModels, FakePrompt } from "../../src/llm/fake.ts";
 import { createModels } from "../../src/llm/providers.ts";
+import type { Mailer } from "../../src/mail/index.ts";
 import { EgressGuard } from "../../src/net/egress.ts";
 import { loadRuleSet } from "../../src/safety/rules.ts";
 import { bootstrapLocal } from "../../src/services/bootstrap-local.ts";
@@ -14,6 +15,8 @@ export const RULES = loadRuleSet(join(import.meta.dirname, "../../../../rules"))
 
 export interface TestCtx {
   deps: Deps;
+  /** Emails "sent" by the server. */
+  mails: { to: string; subject: string; text: string }[];
   db: Db;
   fake: FakeModels;
   app: ReturnType<typeof createApp>;
@@ -28,11 +31,19 @@ export async function makeCtx(f: DbFactory, overrides: Partial<Config> = {}): Pr
   const guard = new EgressGuard(db, { strict: false, declaredHosts: [] });
   const models = createModels(config, guard);
   const workspaceId = await bootstrapLocal(db, models.local);
-  const deps: Deps = { config, db, models, rules: RULES, guard, workspaceId };
+  const mails: TestCtx["mails"] = [];
+  const mailer: Mailer = {
+    available: true,
+    send: async (m) => {
+      mails.push(m);
+    },
+  };
+  const deps: Deps = { config, db, models, rules: RULES, guard, workspaceId, mailer };
   const app = createApp(deps);
   const fake = models.fake as FakeModels;
   return {
     deps,
+    mails,
     db,
     fake,
     app,

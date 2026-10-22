@@ -20,6 +20,8 @@ export const workspaces = pgTable(
     id: text("id").primaryKey(),
     /** Null in pure local mode. */
     ownerEmail: text("owner_email"),
+    /** Shown to askers ("You are asking <name>'s agent"). */
+    displayName: text("display_name").notNull().default("the owner"),
     /** Subset of business_sensitive, infra, customer. */
     defaultDenyLabels: text("default_deny_labels").array().notNull().default(sql`'{}'::text[]`),
     autoApprove: boolean("auto_approve").notNull().default(false),

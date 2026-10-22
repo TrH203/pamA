@@ -7,8 +7,12 @@ import type { Config } from "./config.ts";
 import type { Db } from "./db/client.ts";
 import { errorBody, onError } from "./http.ts";
 import type { Models } from "./llm/providers.ts";
+import type { Mailer } from "./mail/index.ts";
 import type { EgressGuard } from "./net/egress.ts";
 import { deviceRoutes, transcriptsGuard } from "./routes/device.ts";
+import { inboxRoutes } from "./routes/inbox.ts";
+import { linkRoutes } from "./routes/links.ts";
+import { publicRoutes } from "./routes/public.ts";
 import { reviewRoutes } from "./routes/review.ts";
 import type { RuleSet } from "./safety/rules.ts";
 
@@ -20,6 +24,7 @@ export interface Deps {
   guard: EgressGuard;
   /** The workspace served by this process (single owner per workspace in this release). */
   workspaceId: string;
+  mailer: Mailer;
 }
 
 export type Env = { Variables: { deps: Deps; requestId: string } };
@@ -50,7 +55,10 @@ export function createApp(deps: Deps) {
   if (deps.config.mode === "local") v1.use(localToken(deps.config.localToken));
   v1.route("/", deviceRoutes);
   v1.route("/", reviewRoutes);
+  v1.route("/", linkRoutes);
+  v1.route("/", inboxRoutes);
   app.route("/v1", v1);
+  app.route("/a", publicRoutes);
 
   return app;
 }

@@ -77,5 +77,102 @@ export function heuristicClassify(user: string) {
 export function heuristicHandler(p: FakePrompt): string {
   if (p.system.includes("# pamA digest")) return JSON.stringify(heuristicDigest(p.user));
   if (p.system.includes("# pamA classify")) return JSON.stringify(heuristicClassify(p.user));
+  if (p.system.includes("# pamA answer")) return JSON.stringify(heuristicAnswer(p.user));
+  if (p.system.includes("# pamA judge")) return JSON.stringify(heuristicJudge(p.user));
+  if (p.system.includes("# pamA suggest-questions"))
+    return JSON.stringify(heuristicSuggest(p.user));
   return "{}";
+}
+
+// --- Ask Link heuristics -------------------------------------------------------------------
+
+const STOP = new Set(
+  "the a an and or but for nor of to in on at by with from as is are was were be been being do does did done have has had will would should can could may might must shall this that these those it its we you they he she them our your their what which who whom whose when where why how not no yes about into over than then there here also just only any all some each other such same very more most much many few own please tell me us".split(
+    " ",
+  ),
+);
+
+export function contentWords(text: string): Set<string> {
+  return new Set(
+    (text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [])
+      .filter((w) => w.length >= 3 && !STOP.has(w))
+      .map((w) => w.replace(/(ies|es|s)$/, (m) => (m === "ies" ? "y" : ""))),
+  );
+}
+
+export function detectLanguage(text: string): string {
+  if (/[ăâđêôơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]/i.test(text)) return "vi";
+  if (/[぀-ヿ]/.test(text)) return "ja";
+  if (/[一-鿿]/.test(text)) return "zh";
+  if (/[가-힯]/.test(text)) return "ko";
+  return "en";
+}
+
+function block(user: string, tag: string): string {
+  return new RegExp(`<${tag}>\\n?([\\s\\S]*?)\\n?</${tag}>`).exec(user)?.[1] ?? "";
+}
+
+function parseItems(user: string): { n: number; text: string }[] {
+  return [...block(user, "items").matchAll(/^\[(\d+)\] ([^\n]*(?:\n {4}[^\n]*)*)/gm)].map((m) => ({
+    n: Number(m[1]),
+    text: m[2] as string,
+  }));
+}
+
+export function heuristicAnswer(user: string) {
+  const question = block(user, "question");
+  const language = detectLanguage(question);
+  const q = contentWords(question);
+  const scored = parseItems(user)
+    .map((i) => ({ ...i, overlap: [...contentWords(i.text)].filter((w) => q.has(w)).length }))
+    .filter((i) => i.overlap >= 2)
+    .sort((a, b) => b.overlap - a.overlap)
+    .slice(0, 2);
+  if (!scored.length)
+    return { status: "refused", answer: "", citations: [], confidence: 0.1, language };
+  return {
+    status: "answered",
+    answer: scored
+      .map((i) => i.text.replace(/^\((\w+)\) /, "").replace(/\n {4}why: /, " Reason: "))
+      .join(" "),
+    citations: scored.map((i) => i.n),
+    confidence: Math.min(0.95, 0.6 + 0.1 * (scored[0]?.overlap ?? 0)),
+    language,
+  };
+}
+
+export function heuristicJudge(user: string) {
+  const answer = block(user, "answer");
+  return {
+    leak: /\[(SECRET|PII|DROPPED):/.test(answer),
+    off_scope: false,
+    unsupported_claims: false,
+  };
+}
+
+export function heuristicSuggest(user: string) {
+  const questions = parseItems(user)
+    .filter((i) => i.text.startsWith("(decision)"))
+    .slice(0, 4)
+    .map((i) => {
+      const what =
+        i.text
+          .replace(/^\(decision\) /, "")
+          .split("\n")[0]
+          ?.replace(/\.$/, "") ?? "";
+      return `Why was it decided that ${what.charAt(0).toLowerCase()}${what.slice(1)}?`.slice(
+        0,
+        200,
+      );
+    });
+  const goals = parseItems(user).filter((i) => i.text.startsWith("(goal)"));
+  if (goals[0])
+    questions.push(
+      `What was the goal of: ${goals[0].text.replace(/^\(goal\) /, "").slice(0, 120)}`,
+    );
+  while (questions.length < 3)
+    questions.push(
+      ["What was decided?", "What is still open?", "What changed?"][questions.length] as string,
+    );
+  return { questions: questions.slice(0, 5) };
 }

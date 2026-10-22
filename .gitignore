@@ -32,3 +32,4 @@ Thumbs.db
 .vitest/
 test-results/
 .playwright/
+crates/pama-desktop/src-tauri/gen/

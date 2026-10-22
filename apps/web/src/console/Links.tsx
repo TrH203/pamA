@@ -13,7 +13,9 @@ interface LinkRow {
 
 export function Links() {
   const [links, setLinks] = useState<LinkRow[]>([]);
-  const [creating, setCreating] = useState(false);
+  // Opened from the hotkey popup with a question: start creating a link right away.
+  const initialQuery = new URLSearchParams(location.search).get("q") ?? "";
+  const [creating, setCreating] = useState(initialQuery !== "");
   const load = useCallback(async () => {
     setLinks((await api<{ items: LinkRow[] }>("/v1/links")).items);
   }, []);
@@ -28,12 +30,7 @@ export function Links() {
           {creating ? "Close" : "New link"}
         </button>
       </div>
-      {creating && (
-        <LinkCreate
-          initialQuery={new URLSearchParams(location.search).get("q") ?? ""}
-          onCreated={load}
-        />
-      )}
+      {creating && <LinkCreate initialQuery={initialQuery} onCreated={load} />}
       <table className="w-full text-left text-sm">
         <thead className="text-stone-500">
           <tr>

@@ -9,7 +9,8 @@ export interface Migration {
   sql: string;
 }
 
-export const MIGRATIONS_DIR = join(import.meta.dirname, "../../migrations");
+export const MIGRATIONS_DIR =
+  process.env.PAMA_MIGRATIONS_DIR ?? join(import.meta.dirname, "../../migrations");
 
 export function loadMigrations(dir = MIGRATIONS_DIR): Migration[] {
   return readdirSync(dir)

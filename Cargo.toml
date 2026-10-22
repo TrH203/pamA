@@ -1,7 +1,6 @@
 [workspace]
 resolver = "2"
-# crates/pama-desktop/src-tauri joins the workspace in Phase 5 (US3).
-members = ["crates/pama-core", "crates/pama-cli"]
+members = ["crates/pama-core", "crates/pama-cli", "crates/pama-desktop/src-tauri"]
 
 [workspace.package]
 version = "0.1.0"

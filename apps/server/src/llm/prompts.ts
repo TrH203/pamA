@@ -6,7 +6,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-export const PROMPTS_DIR = join(import.meta.dirname, "../../../../prompts");
+export const PROMPTS_DIR =
+  process.env.PAMA_PROMPTS_DIR ?? join(import.meta.dirname, "../../../../prompts");
 
 export interface Prompt {
   name: string;

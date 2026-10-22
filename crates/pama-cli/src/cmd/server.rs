@@ -1,32 +1,17 @@
 //! `pama server start|stop|status`: run the local server when the desktop app is not running.
 //! The server binds to 127.0.0.1 unless `--lan` (research R12) and gets a per-launch token.
 
-use std::net::TcpListener;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use pama_core::client::{LocalApi, KEY_DECLARED_HOSTS, KEY_STRICT_OFFLINE};
+use pama_core::client::LocalApi;
 use pama_core::paths;
-use pama_core::sidecar::ServerInfo;
+use pama_core::sidecar::{free_port, new_token, server_env, ServerInfo, DEFAULT_PORT};
 use pama_core::store::Store;
 use serde_json::json;
 
 use super::Ctx;
 use crate::{Exit, ServerAction};
-
-const DEFAULT_PORT: u16 = 7465;
-
-/// Provider settings passed to the server as environment variables.
-const PROVIDER_ENV: [(&str, &str); 8] = [
-    ("provider.chat.provider", "PAMA_CHAT_PROVIDER"),
-    ("provider.chat.model", "PAMA_CHAT_MODEL"),
-    ("provider.chat.base_url", "PAMA_CHAT_BASE_URL"),
-    ("provider.small.model", "PAMA_SMALL_MODEL"),
-    ("provider.embed.provider", "PAMA_EMBED_PROVIDER"),
-    ("provider.embed.model", "PAMA_EMBED_MODEL"),
-    ("provider.embed.base_url", "PAMA_EMBED_BASE_URL"),
-    ("hotkey.answer_source", "PAMA_ANSWER_SOURCE"),
-];
 
 /// How to launch the server: `$PAMA_SERVER_CMD` (shell command, for development), or the
 /// `pama-server` binary installed next to `pama`.
@@ -54,20 +39,6 @@ fn server_command() -> Option<Command> {
     bin.exists().then(|| Command::new(bin))
 }
 
-fn free_port(preferred: u16) -> u16 {
-    if TcpListener::bind(("127.0.0.1", preferred)).is_ok() {
-        return preferred;
-    }
-    TcpListener::bind(("127.0.0.1", 0))
-        .and_then(|l| l.local_addr())
-        .map(|a| a.port())
-        .unwrap_or(preferred)
-}
-
-fn token() -> String {
-    format!("{}{}", ulid::Ulid::generate(), ulid::Ulid::generate()).to_lowercase()
-}
-
 pub fn running(store: &Store) -> Option<ServerInfo> {
     let info = ServerInfo::load()?;
     let api = LocalApi::connect(store, "cli").ok()?;
@@ -83,7 +54,7 @@ pub fn ensure_started(store: &Store, lan: bool) -> anyhow::Result<ServerInfo> {
         anyhow::anyhow!("pama-server not found next to pama (set PAMA_SERVER_CMD for development)")
     })?;
     let port = free_port(DEFAULT_PORT);
-    let token = token();
+    let token = new_token();
     let bind = if lan { "0.0.0.0" } else { "127.0.0.1" };
     std::fs::create_dir_all(paths::server_data_dir())?;
     let log = std::fs::OpenOptions::new()
@@ -98,27 +69,7 @@ pub fn ensure_started(store: &Store, lan: bool) -> anyhow::Result<ServerInfo> {
         .stdin(Stdio::null())
         .stdout(log.try_clone()?)
         .stderr(log);
-    for (key, var) in PROVIDER_ENV {
-        if let Some(v) = store.setting(key)? {
-            cmd.env(var, v);
-        }
-    }
-    for (provider, var) in [
-        ("chat", "PAMA_CHAT_API_KEY"),
-        ("embed", "PAMA_EMBED_API_KEY"),
-    ] {
-        if let Some(p) = store.setting(&format!("provider.{provider}.provider"))? {
-            if let Ok(Some(k)) = pama_core::secrets::get(&format!("provider.{p}.key")) {
-                cmd.env(var, k);
-            }
-        }
-    }
-    if store.setting(KEY_STRICT_OFFLINE)?.as_deref() == Some("true") {
-        cmd.env("PAMA_STRICT_OFFLINE", "true");
-    }
-    if let Some(h) = store.setting(KEY_DECLARED_HOSTS)? {
-        cmd.env("PAMA_DECLARED_HOSTS", h);
-    }
+    cmd.envs(server_env(store));
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;

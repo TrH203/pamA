@@ -1,0 +1,13 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "externalBin": ["binaries/pama-server"],
+    "resources": {
+      "../../../rules/gitleaks.toml": "rules/gitleaks.toml",
+      "../../../rules/pama.toml": "rules/pama.toml",
+      "../../../prompts/": "prompts/",
+      "../../../apps/server/migrations/": "migrations/",
+      "../../../apps/web/dist/": "web/"
+    }
+  }
+}

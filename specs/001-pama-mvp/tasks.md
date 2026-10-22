@@ -223,23 +223,23 @@ inserts without sending, the clipboard sentinel is restored, empty selection ope
 
 ### Tests for User Story 3 (write first, must fail) ⚠️
 
-- [ ] T104 [P] [US3] Write clipboard tests in `crates/pama-desktop/src-tauri/tests/clipboard.rs` (mock clipboard trait): snapshot and restore after capture, restore 500 ms after paste, clipboard untouched when the popup closes without Copy, no captured text persisted besides the question
-- [ ] T105 [P] [US3] Write the draft API test `apps/server/tests/integration/draft.test.ts`: `POST /v1/draft` returns `answered` with citations or `refused` with a reason, `shorter: true` shortens, `suggested_scope` returned, an `asks` row with `origin = hotkey` and status `drafted` is written
+- [X] T104 [P] [US3] Write clipboard tests in `crates/pama-desktop/src-tauri/tests/clipboard.rs` (mock clipboard trait): snapshot and restore after capture, restore 500 ms after paste, clipboard untouched when the popup closes without Copy, no captured text persisted besides the question
+- [X] T105 [P] [US3] Write the draft API test `apps/server/tests/integration/draft.test.ts`: `POST /v1/draft` returns `answered` with citations or `refused` with a reason, `shorter: true` shortens, `suggested_scope` returned, an `asks` row with `origin = hotkey` and status `drafted` is written
 
 ### Implementation for User Story 3
 
-- [ ] T106 [US3] Scaffold the Tauri 2.12 app in `crates/pama-desktop/src-tauri/` (`tauri.conf.json`, `capabilities/default.json` with least privilege, plugins global-shortcut, clipboard-manager, shell, positioner, autostart, notification; updater present but disabled by default)
-- [ ] T107 [US3] Add `scripts/build-sidecar.sh` (`bun build --compile` for `bun-darwin-arm64`, `bun-darwin-x64`, `bun-windows-x64` with embedded PGlite assets → `crates/pama-desktop/src-tauri/binaries/pama-server-<target-triple>`), or the Node SEA fallback if the R6 spike failed
-- [ ] T108 [US3] Implement sidecar management in `crates/pama-desktop/src-tauri/src/sidecar.rs` (spawn via `bundle.externalBin`, per-launch token, port discovery, health check, restart; `sidecar_status` command; `sidecar://state` event)
-- [ ] T109 [P] [US3] Implement tray, autostart and notifications (`inbox://new`, `review://new`) in `crates/pama-desktop/src-tauri/src/tray.rs`
-- [ ] T110 [P] [US3] Implement accessibility capture in `crates/pama-desktop/src-tauri/src/capture/macos.rs` (AX selected text) and `crates/pama-desktop/src-tauri/src/capture/windows.rs` (UI Automation)
-- [ ] T111 [US3] Implement the clipboard fallback in `crates/pama-desktop/src-tauri/src/capture/clipboard.rs` (arboard 3.7 snapshot of text/HTML/image/files, enigo 0.6 copy keystroke, poll `NSPasteboard.changeCount` / `GetClipboardSequenceNumber` every 10 ms up to 300 ms, restore) and the `capture_selection` command returning `{text, method, app}`
-- [ ] T112 [US3] Implement `paste_draft` and `copy_draft` in `crates/pama-desktop/src-tauri/src/commands/draft.rs` (paste into the previously focused app, never press Enter, restore clipboard after 500 ms); add no command that sends messages
-- [ ] T113 [US3] Implement the hotkey and permissions in `crates/pama-desktop/src-tauri/src/hotkey.rs` (`set_hotkey` with conflict detection, `get_permissions`, `open_permission_settings`, `hotkey://triggered` with cursor position, popup placed at the cursor)
-- [ ] T114 [US3] Implement `POST /v1/draft` in `apps/server/src/routes/draft.ts` reusing the retrieval, answer and guard pipeline over the owner's approved items
-- [ ] T115 [P] [US3] Implement typed IPC and API wrappers in `apps/web/src/desktop/{ipc.ts,api.ts}` per contracts/desktop-ipc.md, including `answer_source` ∈ `local | server | auto` (FR-029)
-- [ ] T116 [US3] Build the popup in `apps/web/src/desktop/Popup.tsx`: Copy, Paste, Shorter, Edit, Change scope, Create Ask Link (opens LinkCreate pre-filled with the question and suggested sources); empty question box when capture method is `none`
-- [ ] T117 [US3] Write the manual test matrix for quickstart Scenario 3 in `docs/testing/hotkey-matrix.md` (macOS + Windows × Zalo, Slack, Teams, Chrome, Outlook; Accessibility prompt; UIPI limits)
+- [X] T106 [US3] Scaffold the Tauri 2.12 app in `crates/pama-desktop/src-tauri/` (`tauri.conf.json`, `capabilities/default.json` with least privilege, plugins global-shortcut, clipboard-manager, shell, positioner, autostart, notification; updater present but disabled by default)
+- [X] T107 [US3] Add `scripts/build-sidecar.sh` (`bun build --compile` for `bun-darwin-arm64`, `bun-darwin-x64`, `bun-windows-x64` with embedded PGlite assets → `crates/pama-desktop/src-tauri/binaries/pama-server-<target-triple>`), or the Node SEA fallback if the R6 spike failed
+- [X] T108 [US3] Implement sidecar management in `crates/pama-desktop/src-tauri/src/sidecar.rs` (spawn via `bundle.externalBin`, per-launch token, port discovery, health check, restart; `sidecar_status` command; `sidecar://state` event)
+- [X] T109 [P] [US3] Implement tray, autostart and notifications (`inbox://new`, `review://new`) in `crates/pama-desktop/src-tauri/src/tray.rs`
+- [X] T110 [P] [US3] Implement accessibility capture in `crates/pama-desktop/src-tauri/src/capture/macos.rs` (AX selected text) and `crates/pama-desktop/src-tauri/src/capture/windows.rs` (UI Automation)
+- [X] T111 [US3] Implement the clipboard fallback in `crates/pama-desktop/src-tauri/src/capture/clipboard.rs` (arboard 3.7 snapshot of text/HTML/image/files, enigo 0.6 copy keystroke, poll `NSPasteboard.changeCount` / `GetClipboardSequenceNumber` every 10 ms up to 300 ms, restore) and the `capture_selection` command returning `{text, method, app}`
+- [X] T112 [US3] Implement `paste_draft` and `copy_draft` in `crates/pama-desktop/src-tauri/src/commands/draft.rs` (paste into the previously focused app, never press Enter, restore clipboard after 500 ms); add no command that sends messages
+- [X] T113 [US3] Implement the hotkey and permissions in `crates/pama-desktop/src-tauri/src/hotkey.rs` (`set_hotkey` with conflict detection, `get_permissions`, `open_permission_settings`, `hotkey://triggered` with cursor position, popup placed at the cursor)
+- [X] T114 [US3] Implement `POST /v1/draft` in `apps/server/src/routes/draft.ts` reusing the retrieval, answer and guard pipeline over the owner's approved items
+- [X] T115 [P] [US3] Implement typed IPC and API wrappers in `apps/web/src/desktop/{ipc.ts,api.ts}` per contracts/desktop-ipc.md, including `answer_source` ∈ `local | server | auto` (FR-029)
+- [X] T116 [US3] Build the popup in `apps/web/src/desktop/Popup.tsx`: Copy, Paste, Shorter, Edit, Change scope, Create Ask Link (opens LinkCreate pre-filled with the question and suggested sources); empty question box when capture method is `none`
+- [X] T117 [US3] Write the manual test matrix for quickstart Scenario 3 in `docs/testing/hotkey-matrix.md` (macOS + Windows × Zalo, Slack, Teams, Chrome, Outlook; Accessibility prompt; UIPI limits)
 
 **Checkpoint**: owner can answer in any chat app without the asker opening a link
 

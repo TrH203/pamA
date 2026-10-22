@@ -1,0 +1,22 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "pamA",
+  "version": "0.1.0",
+  "identifier": "dev.pama.desktop",
+  "build": {
+    "frontendDist": "ui"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self' http://127.0.0.1:*; connect-src 'self' http://127.0.0.1:* ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline' http://127.0.0.1:*; img-src 'self' data:",
+      "capabilities": ["popup"]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg", "nsis"],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.png"],
+    "macOS": { "minimumSystemVersion": "13.0" }
+  }
+}

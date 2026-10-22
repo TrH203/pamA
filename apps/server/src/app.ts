@@ -10,6 +10,7 @@ import type { Models } from "./llm/providers.ts";
 import type { Mailer } from "./mail/index.ts";
 import type { EgressGuard } from "./net/egress.ts";
 import { deviceRoutes, transcriptsGuard } from "./routes/device.ts";
+import { draftRoutes } from "./routes/draft.ts";
 import { inboxRoutes } from "./routes/inbox.ts";
 import { linkRoutes } from "./routes/links.ts";
 import { publicRoutes } from "./routes/public.ts";
@@ -58,6 +59,7 @@ export function createApp(deps: Deps) {
   v1.route("/", reviewRoutes);
   v1.route("/", linkRoutes);
   v1.route("/", inboxRoutes);
+  v1.route("/", draftRoutes);
   app.route("/v1", v1);
   app.route("/a", publicRoutes);
   app.route("/", staticRoutes(process.env.PAMA_WEB_DIR ?? DEFAULT_WEB_DIR));

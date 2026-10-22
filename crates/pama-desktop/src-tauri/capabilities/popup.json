@@ -1,0 +1,23 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "popup",
+  "description": "The draft popup, served by the local server. Only the commands in contracts/desktop-ipc.md; there is no command that sends messages.",
+  "windows": ["popup"],
+  "remote": { "urls": ["http://127.0.0.1:*"] },
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "allow-capture-selection",
+    "allow-paste-draft",
+    "allow-copy-draft",
+    "allow-hide-popup",
+    "allow-get-permissions",
+    "allow-open-permission-settings",
+    "allow-set-hotkey",
+    "allow-sidecar-status",
+    "allow-open-console",
+    "allow-set-sync",
+    "allow-set-strict-offline",
+    "allow-get-network-log"
+  ]
+}

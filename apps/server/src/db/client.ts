@@ -32,9 +32,40 @@ export interface Db extends Queryable {
   close(): Promise<void>;
 }
 
+/** PGlite assets embedded in the compiled sidecar (research R6); unset when running from npm. */
+export interface PgliteAssets {
+  pgliteWasmModule: WebAssembly.Module;
+  initdbWasmModule: WebAssembly.Module;
+  fsBundle: Blob;
+  /** pgvector bundle on disk (PGlite cannot open files inside the compiled binary). */
+  vectorBundle: URL;
+}
+
+let embedded: PgliteAssets | undefined;
+
+export function usePgliteAssets(a: PgliteAssets) {
+  embedded = a;
+}
+
 export async function openPglite(dataDir?: string): Promise<Db> {
   if (dataDir) mkdirSync(dataDir, { recursive: true });
-  const client = await PGlite.create({ dataDir, extensions: { vector } });
+  const client = embedded
+    ? await PGlite.create({
+        dataDir,
+        pgliteWasmModule: embedded.pgliteWasmModule,
+        initdbWasmModule: embedded.initdbWasmModule,
+        fsBundle: embedded.fsBundle,
+        extensions: {
+          vector: {
+            name: "vector",
+            setup: async (_pg, emscriptenOpts) => ({
+              emscriptenOpts,
+              bundlePath: (embedded as PgliteAssets).vectorBundle,
+            }),
+          },
+        },
+      })
+    : await PGlite.create({ dataDir, extensions: { vector } });
   return {
     kind: "pglite",
     orm: drizzlePglite({ client, schema }) as unknown as Orm,

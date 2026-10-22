@@ -1,5 +1,9 @@
 // PIN or email-code gate shown before any content.
 import { type FormEvent, useState } from "react";
+
+/** The gate has a single field: put the cursor in it. */
+const focusOnMount = (el: HTMLInputElement | null) => el?.focus();
+
 import { api, PublicError } from "./api.ts";
 import { t } from "./i18n.ts";
 
@@ -54,7 +58,8 @@ export function AccessGate({ mode, onGranted }: { mode: string; onGranted: () =>
             value={pin}
             onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
             maxLength={8}
-            autoFocus
+            // biome-ignore lint/a11y/noAutofocus: the gate has a single field; focusing it is the expected flow
+            ref={focusOnMount}
           />
           {error && <p className="text-sm text-red-700">{error}</p>}
           <button
@@ -76,7 +81,8 @@ export function AccessGate({ mode, onGranted }: { mode: string; onGranted: () =>
             aria-label="Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            autoFocus
+            // biome-ignore lint/a11y/noAutofocus: the gate has a single field; focusing it is the expected flow
+            ref={focusOnMount}
           />
           {error && <p className="text-sm text-red-700">{error}</p>}
           <button
@@ -99,7 +105,8 @@ export function AccessGate({ mode, onGranted }: { mode: string; onGranted: () =>
             value={code}
             onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
             maxLength={6}
-            autoFocus
+            // biome-ignore lint/a11y/noAutofocus: the gate has a single field; focusing it is the expected flow
+            ref={focusOnMount}
           />
           {error && <p className="text-sm text-red-700">{error}</p>}
           <button

@@ -50,9 +50,11 @@ export function AskPage() {
     return () => clearInterval(id);
   }, [asks]);
 
+  // Scroll to the newest message whenever one is added.
+  const count = asks.length;
   useEffect(() => {
-    bottom.current?.scrollIntoView?.({ behavior: "smooth", block: "end" });
-  }, [asks.length]);
+    if (count) bottom.current?.scrollIntoView?.({ behavior: "smooth", block: "end" });
+  }, [count]);
 
   async function ask(q: string) {
     const text = q.trim();

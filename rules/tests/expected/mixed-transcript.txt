@@ -1,0 +1,2 @@
+User: why does refund fail for [PII:email] ([PII:vn-phone])?
+Assistant: The worker uses key [SECRET:aws-access-token] from env; I rotated it and kept shipping fee non-refundable.

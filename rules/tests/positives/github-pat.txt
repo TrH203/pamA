@@ -1,0 +1,2 @@
+# secret: ghp_{{}}LyCmFVgt8eDMDqNlhb619yZMiEG3xeOO1EsR
+git remote set-url origin https://ghp_{{}}LyCmFVgt8eDMDqNlhb619yZMiEG3xeOO1EsR@github.com/acme/shop.git

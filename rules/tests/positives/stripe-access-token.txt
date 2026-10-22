@@ -1,0 +1,2 @@
+# secret: sk_live_{{}}DekenoIgQbJZphjyeq8sHffq
+Stripe.api_key = 'sk_live_{{}}DekenoIgQbJZphjyeq8sHffq'

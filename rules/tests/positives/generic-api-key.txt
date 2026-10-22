@@ -1,0 +1,2 @@
+# secret: x9ceWfLNJALVs3eusps7
+payment_gateway_secret = "x9ceWfLNJALVs3eusps7"

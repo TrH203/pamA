@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "source": {
+    "agent": "codex",
+    "agent_session_id": "r-1",
+    "project_key": "p:9f86d081",
+    "ended_at": "2026-10-21T10:00:00Z"
+  },
+  "goal": "Fix flaky test.",
+  "decisions": [],
+  "outcome": "",
+  "open_items": [],
+  "modules": [],
+  "redactions": {
+    "secret": 0,
+    "pii": 0
+  }
+}

@@ -1,0 +1,3 @@
+# secret: 0912345678
+# secret: +84987654321
+Gọi chị Lan 0912345678 hoặc anh Minh +84987654321 để xác nhận.

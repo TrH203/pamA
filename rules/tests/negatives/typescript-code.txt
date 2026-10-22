@@ -1,0 +1,3 @@
+interface Login { email: string; password: string }
+const tokenTtl = 3600;
+export function refund(orderId: string) { return api.post(`/orders/${orderId}/refund`); }

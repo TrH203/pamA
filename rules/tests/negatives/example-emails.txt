@@ -1,0 +1,1 @@
+Docs use admin@example.com and noreply@acme.vn in samples.

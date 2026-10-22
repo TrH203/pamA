@@ -1,0 +1,4 @@
+# secret: AKIA{{}}FC7NBQPBPWGIHGWQ
+$ aws configure list
+export AWS_ACCESS_KEY_ID=AKIA{{}}FC7NBQPBPWGIHGWQ
+region = ap-southeast-1

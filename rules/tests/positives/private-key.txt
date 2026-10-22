@@ -1,0 +1,9 @@
+# secret: psBNq+SWzFASeUTXf3rxaAP/2GL4t7idFi1SLqylQf3dF4CARMoO2HAPBtGMQ+wt
+Tool result (Read ~/.ssh/deploy_key):
+-----BEGIN {{}}OPENSSH PRIVATE KEY-----
++niUhxNb5YTOAJySxn+pXtp3/IsR6iIAYhqWtHASOsXpSO20zltDdTl5/8xN46ng
+psBNq+SWzFASeUTXf3rxaAP/2GL4t7idFi1SLqylQf3dF4CARMoO2HAPBtGMQ+wt
+bkouHbv9zalkAi+xjsuLbDmimtAK3Sl+n8Lmx7E1vcad7ch6zE26u8zmdZDpve+b
+ivdV0xJTC0XcvizdE9DZBM4LqgQvKjBv0WWQxY2xVRs7GQ/ceBNPshJhnHG7WtY1
+-----END OPENSSH PRIVATE KEY-----
+Done.

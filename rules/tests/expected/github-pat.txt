@@ -1,0 +1,1 @@
+git remote set-url origin https://[SECRET:github-pat]@github.com/acme/shop.git

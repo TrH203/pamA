@@ -1,0 +1,1 @@
+payment_gateway_secret = "[SECRET:generic-api-key]"

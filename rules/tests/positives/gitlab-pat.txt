@@ -1,0 +1,2 @@
+# secret: glpat-{{}}BXvOud80olV3cOYifRYf
+Using token glpat-{{}}BXvOud80olV3cOYifRYf for the CI job

@@ -58,22 +58,22 @@ The R3/R4/R6 spikes run here because they decide adapter details used by every s
 
 ### Shared digest contract
 
-- [ ] T013 Copy `specs/001-pama-mvp/contracts/session-digest.schema.json` to `packages/types/schema/session-digest.schema.json` (single source of truth; CI step in `.github/workflows/ci.yml` fails if the two copies differ) and add valid/invalid fixtures in `packages/types/fixtures/digest-*.json` (unknown field, `goal` over 1000 chars, `decisions` over 30 items, commit not matching `^[0-9a-f]{7,40}$`, missing `redactions`)
-- [ ] T014 [P] Write contract test (must fail first) `crates/pama-core/tests/contract_digest_schema.rs`: serde `SessionDigest` round-trips every valid fixture, rejects every invalid one, and its output validates against the JSON Schema (jsonschema crate)
-- [ ] T015 [P] Write contract test (must fail first) `apps/server/tests/contract/digest-schema.test.ts`: the Zod schema and Ajv (JSON Schema 2020-12) give the same accept/reject result for every fixture
-- [ ] T016 Define `SessionDigest`, `Decision`, `Redactions`, `SourceRef` in `crates/pama-core/src/digest.rs` with `#[typeshare]` and `#[serde(deny_unknown_fields)]`, enforcing the schema limits ("`additionalProperties: false`", `schema_version` const 1, `agent` ∈ `claude_code | codex`, labels ∈ `business_sensitive | infra | customer`)
-- [ ] T017 Add `scripts/gen-types.sh` (typeshare-cli 1.13 → `packages/types/src/generated.ts`) and a CI step in `.github/workflows/ci.yml` that fails when the generated file differs
-- [ ] T018 Implement the Zod schema mirroring the JSON Schema in `apps/server/src/schema/digest.ts` (strict objects, same max lengths)
+- [X] T013 Copy `specs/001-pama-mvp/contracts/session-digest.schema.json` to `packages/types/schema/session-digest.schema.json` (single source of truth; CI step in `.github/workflows/ci.yml` fails if the two copies differ) and add valid/invalid fixtures in `packages/types/fixtures/digest-*.json` (unknown field, `goal` over 1000 chars, `decisions` over 30 items, commit not matching `^[0-9a-f]{7,40}$`, missing `redactions`)
+- [X] T014 [P] Write contract test (must fail first) `crates/pama-core/tests/contract_digest_schema.rs`: serde `SessionDigest` round-trips every valid fixture, rejects every invalid one, and its output validates against the JSON Schema (jsonschema crate)
+- [X] T015 [P] Write contract test (must fail first) `apps/server/tests/contract/digest-schema.test.ts`: the Zod schema and Ajv (JSON Schema 2020-12) give the same accept/reject result for every fixture
+- [X] T016 Define `SessionDigest`, `Decision`, `Redactions`, `SourceRef` in `crates/pama-core/src/digest.rs` with `#[typeshare]` and `#[serde(deny_unknown_fields)]`, enforcing the schema limits ("`additionalProperties: false`", `schema_version` const 1, `agent` ∈ `claude_code | codex`, labels ∈ `business_sensitive | infra | customer`)
+- [X] T017 Add `scripts/gen-types.sh` (typeshare-cli 1.13 → `packages/types/src/generated.ts`) and a CI step in `.github/workflows/ci.yml` that fails when the generated file differs
+- [X] T018 Implement the Zod schema mirroring the JSON Schema in `apps/server/src/schema/digest.ts` (strict objects, same max lengths)
 
 ### Shared redaction rules (Layer 1 + rule part of Layer 3) — VERIFY R3
 
-- [ ] T019 Vendor gitleaks' default config into `rules/gitleaks.toml` with `rules/LICENSE-gitleaks` and `scripts/update-gitleaks-rules.sh` (pinned upstream tag, no local edits)
-- [ ] T020 [P] Write `rules/pama.toml` per contracts/redaction-rules.md: structural rules `dotenv-file-read` (`**/.env`, `**/.env.*`, `**/*.pem`, `**/id_rsa*`, `**/id_ed25519*` → `drop_content`) and `env-dump` (`^\s*(env|printenv|set)\s*$`), connection strings, JWTs, and `category = "pii"` rules for email, phone, Vietnamese CCCD and bank accounts
-- [ ] T021 [P] Build the rule corpus `rules/tests/positives/*.txt` and `rules/tests/negatives/*.txt` (at least one positive per `pama.toml` rule plus gitleaks' own test vectors for parity, including `AKIAIOSFODNN7EXAMPLE` as an allowlisted negative)
-- [ ] T022 Write the Rust rule test (must fail first) `crates/pama-core/tests/redaction_rules.rs`: every rule compiles with ASCII semantics, every positive is replaced with `[SECRET:<id>]` or `[PII:<id>]`, every negative is untouched, and `by_rule` counts are correct
-- [ ] T023 [P] Write the TS rule test (must fail first) `apps/server/tests/unit/rules.test.ts`: same corpus, same output as Rust, and a JS compile report with zero untranslated rules from `pama.toml`
-- [ ] T024 Implement the Rust rule loader and redactor in `crates/pama-core/src/redact/{rules.rs,engine.rs,entropy.rs}`: `RegexBuilder::unicode(false)`, raised `size_limit`, `keywords` prefilter, Shannon `entropy` floor, `secretGroup`, `allowlists`, per-rule counts
-- [ ] T025 Implement the TS rule loader in `apps/server/src/safety/rules.ts`: RE2 → JS translation (`(?i)` → `i` flag, `\z` → `$` without `m`), a compile report listing untranslated rules, and the same placeholder format
+- [X] T019 Vendor gitleaks' default config into `rules/gitleaks.toml` with `rules/LICENSE-gitleaks` and `scripts/update-gitleaks-rules.sh` (pinned upstream tag, no local edits)
+- [X] T020 [P] Write `rules/pama.toml` per contracts/redaction-rules.md: structural rules `dotenv-file-read` (`**/.env`, `**/.env.*`, `**/*.pem`, `**/id_rsa*`, `**/id_ed25519*` → `drop_content`) and `env-dump` (`^\s*(env|printenv|set)\s*$`), connection strings, JWTs, and `category = "pii"` rules for email, phone, Vietnamese CCCD and bank accounts
+- [X] T021 [P] Build the rule corpus `rules/tests/positives/*.txt` and `rules/tests/negatives/*.txt` (at least one positive per `pama.toml` rule plus gitleaks' own test vectors for parity, including `AKIAIOSFODNN7EXAMPLE` as an allowlisted negative)
+- [X] T022 Write the Rust rule test (must fail first) `crates/pama-core/tests/redaction_rules.rs`: every rule compiles with ASCII semantics, every positive is replaced with `[SECRET:<id>]` or `[PII:<id>]`, every negative is untouched, and `by_rule` counts are correct
+- [X] T023 [P] Write the TS rule test (must fail first) `apps/server/tests/unit/rules.test.ts`: same corpus, same output as Rust, and a JS compile report with zero untranslated rules from `pama.toml`
+- [X] T024 Implement the Rust rule loader and redactor in `crates/pama-core/src/redact/{rules.rs,engine.rs,entropy.rs}`: `RegexBuilder::unicode(false)`, raised `size_limit`, `keywords` prefilter, Shannon `entropy` floor, `secretGroup`, `allowlists`, per-rule counts
+- [X] T025 Implement the TS rule loader in `apps/server/src/safety/rules.ts`: RE2 → JS translation (`(?i)` → `i` flag, `\z` → `$` without `m`), a compile report listing untranslated rules, and the same placeholder format
 
 ### Spikes (decide adapter details)
 

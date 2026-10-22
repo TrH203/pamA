@@ -9,6 +9,11 @@
     "./schema/*": "./schema/*",
     "./fixtures/*": "./fixtures/*"
   },
-  "scripts": { "typecheck": "tsc --noEmit", "test": "echo no tests" },
-  "devDependencies": { "typescript": "^5.9.3" }
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "echo no tests"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
 }

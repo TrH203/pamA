@@ -1,0 +1,1 @@
+Using token [SECRET:gitlab-pat] for the CI job

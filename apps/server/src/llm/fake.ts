@@ -3,6 +3,7 @@
 // so texts that share words are similar.
 import type { EmbeddingModel, LanguageModel } from "ai";
 import { MockEmbeddingModelV4, MockLanguageModelV4 } from "ai/test";
+import { heuristicHandler } from "./heuristic.ts";
 
 export const FAKE_DIM = 1024;
 
@@ -43,7 +44,8 @@ function textOf(m: Msg): string {
 }
 
 export class FakeModels {
-  handler: FakeHandler = () => "{}";
+  /** Defaults to the extractive heuristics; tests replace it to script exact replies. */
+  handler: FakeHandler = heuristicHandler;
   readonly calls: FakePrompt[] = [];
 
   readonly language: LanguageModel = new MockLanguageModelV4({

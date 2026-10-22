@@ -71,3 +71,31 @@ fn codex_cat_of_env_file_is_dropped() {
     assert!(all.contains("[DROPPED:cat-secret-file]"));
     assert_eq!(counts.by_rule.get("cat-secret-file"), Some(&1));
 }
+
+#[test]
+fn codex_code_mode_cells_touching_env_files_are_dropped() {
+    let mut s = codex::parse(&root().join(
+        "tests/fixtures/codex/0.149/rollout-2026-10-22T09-00-00-019aa000-1111-7222-8333-444455556666.jsonl",
+    ))
+    .unwrap();
+    assert_eq!(s.meta.agent_version.as_deref(), Some("0.149.1"));
+    let ls = s
+        .events
+        .iter()
+        .find(|e| {
+            e.command
+                .as_deref()
+                .is_some_and(|c| c.contains("ls src/invoices"))
+        })
+        .unwrap();
+    assert_eq!(ls.tool.as_deref(), Some("exec"));
+    let counts = redact_session(&rules(), &mut s);
+    let all = text(&s);
+    assert!(!all.contains("pdfsvc_live_8c7b6a5d4e3f2a1b"), "{all}");
+    assert!(all.contains("[DROPPED:code-cell-secret-access]"));
+    assert!(
+        all.contains("render.ts\ntemplate.html"),
+        "list output parts are joined"
+    );
+    assert_eq!(counts.by_rule.get("code-cell-secret-access"), Some(&1));
+}

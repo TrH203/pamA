@@ -1,23 +1,94 @@
-//! Command implementations. Commands that are not built yet report so and exit with code 1.
+//! Command implementations (contracts/cli.md).
+
+mod capture;
+mod config;
+mod hook;
+mod init;
+mod review;
+mod scan;
+mod server;
+
+use pama_core::client::ApiError;
+use pama_core::store::Store;
 
 use crate::{Cli, Command, Exit};
 
+pub struct Ctx {
+    pub json: bool,
+    pub store: Store,
+}
+
+impl Ctx {
+    pub fn print(&self, value: &serde_json::Value, human: impl FnOnce() -> String) {
+        if self.json {
+            println!("{}", serde_json::to_string_pretty(value).expect("json"));
+        } else {
+            let text = human();
+            if !text.is_empty() {
+                println!("{text}");
+            }
+        }
+    }
+}
+
+/// Map API failures to the exit codes of contracts/cli.md.
+pub fn api_exit(e: &ApiError) -> Exit {
+    eprintln!("error: {e}");
+    match e {
+        ApiError::NotRunning | ApiError::Net(_) => Exit::Network,
+        ApiError::Status {
+            status: 401 | 403, ..
+        } => Exit::Config,
+        ApiError::Status { status, .. } if *status >= 500 => Exit::Network,
+        ApiError::Status { .. } => Exit::User,
+    }
+}
+
 pub fn run(cli: Cli) -> anyhow::Result<Exit> {
-    let name = match &cli.command {
-        Command::Init { .. } => "init",
-        Command::Hook { .. } => "hook",
-        Command::Scan { .. } => "scan",
-        Command::Review { .. } => "review",
-        Command::Link { .. } => "link",
-        Command::Inbox => "inbox",
-        Command::Reply { .. } => "reply",
-        Command::Log { .. } => "log",
-        Command::Sync { .. } => "sync",
-        Command::Pair { .. } => "pair",
-        Command::Server { .. } => "server",
-        Command::Doctor => "doctor",
-        Command::Config { .. } => "config",
+    let store = Store::open(&pama_core::paths::device_db())?;
+    let ctx = Ctx {
+        json: cli.global.json,
+        store,
     };
-    eprintln!("pama {name}: not implemented yet");
-    Ok(Exit::User)
+    match cli.command {
+        Command::Hook { agent } => hook::run(&ctx, agent),
+        Command::Capture { action } => capture::run(&ctx, action),
+        Command::Init {
+            project,
+            agent,
+            global,
+            project_scope,
+        } => init::run(&ctx, project, agent, global, project_scope),
+        Command::Scan { since } => scan::run(&ctx, since),
+        Command::Review {
+            approve,
+            discard,
+            edit,
+        } => review::run(&ctx, approve, discard, edit),
+        Command::Server { action } => server::run(&ctx, action),
+        Command::Config { action } => config::run(&ctx, action),
+        other => {
+            let name = format!("{other:?}");
+            let name = name
+                .split([' ', '{', '('])
+                .next()
+                .unwrap_or("command")
+                .to_lowercase();
+            eprintln!("pama {name}: not implemented yet");
+            Ok(Exit::User)
+        }
+    }
+}
+
+/// `30m`, `2h`, `7d` → seconds.
+pub fn parse_duration(s: &str) -> Option<u64> {
+    let (n, unit) = s.split_at(s.find(|c: char| !c.is_ascii_digit())?);
+    let n: u64 = n.parse().ok()?;
+    Some(match unit {
+        "s" => n,
+        "m" => n * 60,
+        "h" => n * 3_600,
+        "d" => n * 86_400,
+        _ => return None,
+    })
 }

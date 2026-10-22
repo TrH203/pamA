@@ -82,6 +82,7 @@ impl CaptureStatus {
                 | (ReadyForReview, Submitted)
                 | (Failed, Detected)
                 | (Detected, Skipped)
+                | (Redacting, Skipped)
         ) || (to == Failed && !matches!(self, Submitted | Skipped | Failed))
     }
 }
@@ -212,7 +213,10 @@ impl Store {
 
     /// Record an ended session. Re-enqueueing a known session is a no-op unless it failed, in
     /// which case it is reset to `detected` for another try. Returns the capture id.
-    pub fn enqueue_capture(&self, c: &NewCapture) -> Result<String> {
+    /// `delay_ms` postpones processing (debounce: e.g. Codex notifies after every turn, so each
+    /// new notification pushes the capture back until the session has been idle).
+    pub fn enqueue_capture(&self, c: &NewCapture, delay_ms: i64) -> Result<String> {
+        let due = now_ms() + delay_ms;
         let existing: Option<(String, String)> = self
             .conn
             .query_row(
@@ -223,19 +227,23 @@ impl Store {
             .optional()?;
         if let Some((id, status)) = existing {
             // A session can be resumed after it ended; capture it again when it ends again.
-            if matches!(status.as_str(), "failed" | "ready_for_review" | "submitted") {
+            if matches!(
+                status.as_str(),
+                "detected" | "failed" | "ready_for_review" | "submitted" | "skipped"
+            ) {
                 self.conn.execute(
                     "UPDATE captured_session SET status = 'detected', error = NULL, attempts = 0,
-                     next_attempt_at = 0, ended_at = ?2, reason = ?3 WHERE id = ?1",
-                    params![id, now_ms(), c.reason],
+                     next_attempt_at = ?4, ended_at = ?2, reason = ?3,
+                     cwd = COALESCE(?5, cwd) WHERE id = ?1",
+                    params![id, now_ms(), c.reason, due, c.cwd],
                 )?;
             }
             return Ok(id);
         }
         let id = ulid::Ulid::generate().to_string();
         self.conn.execute(
-            "INSERT INTO captured_session (id, agent, agent_session_id, transcript_path, cwd, reason, status, ended_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'detected', ?7)",
+            "INSERT INTO captured_session (id, agent, agent_session_id, transcript_path, cwd, reason, status, ended_at, next_attempt_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'detected', ?7, ?8)",
             params![
                 id,
                 c.agent.as_str(),
@@ -243,7 +251,8 @@ impl Store {
                 c.transcript_path,
                 c.cwd,
                 c.reason,
-                now_ms()
+                now_ms(),
+                due
             ],
         )?;
         Ok(id)
@@ -286,6 +295,16 @@ impl Store {
         )?;
         let rows = st.query_map(params![now_ms(), limit as i64], Self::row_to_capture)?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Milliseconds until the next `detected` capture is due (None if there is none).
+    pub fn next_due_in(&self) -> Result<Option<i64>> {
+        let at: Option<i64> = self.conn.query_row(
+            "SELECT min(next_attempt_at) FROM captured_session WHERE status = 'detected'",
+            [],
+            |r| r.get(0),
+        )?;
+        Ok(at.map(|t| (t - now_ms()).max(0)))
     }
 
     pub fn captures(&self, limit: usize) -> Result<Vec<CapturedSession>> {
@@ -488,9 +507,9 @@ mod tests {
     #[test]
     fn capture_state_machine() {
         let s = Store::open_in_memory().unwrap();
-        let id = s.enqueue_capture(&cap("s1")).unwrap();
+        let id = s.enqueue_capture(&cap("s1"), 0).unwrap();
         assert_eq!(
-            s.enqueue_capture(&cap("s1")).unwrap(),
+            s.enqueue_capture(&cap("s1"), 0).unwrap(),
             id,
             "idempotent enqueue"
         );
@@ -507,7 +526,7 @@ mod tests {
     #[test]
     fn failures_back_off_then_stop() {
         let s = Store::open_in_memory().unwrap();
-        let id = s.enqueue_capture(&cap("s2")).unwrap();
+        let id = s.enqueue_capture(&cap("s2"), 0).unwrap();
         for _ in 0..MAX_RETRIES {
             s.set_capture_status(&id, CaptureStatus::Redacting).unwrap();
             assert_eq!(

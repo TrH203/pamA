@@ -53,8 +53,16 @@ fn command_of(args: &Value) -> Option<String> {
     }
 }
 
-/// Function outputs are often a JSON envelope `{"output": "...", "metadata": {...}}`.
+/// Function outputs are a string, a JSON envelope `{"output": "...", "metadata": {...}}`, or
+/// (code mode, 0.14x) a list of `{type: "text", text}` parts.
 fn output_text(raw: &Value) -> String {
+    if let Value::Array(parts) = raw {
+        return parts
+            .iter()
+            .filter_map(|p| str_of(p, "text"))
+            .collect::<Vec<_>>()
+            .join("\n");
+    }
     let s = match raw {
         Value::String(s) => s.clone(),
         other => other.to_string(),
@@ -127,10 +135,11 @@ pub fn parse(path: &Path) -> Result<NormalizedSession, ReadError> {
                             None => p.get("action").cloned().unwrap_or(Value::Null),
                         };
                         let tool = normalize_tool(name);
-                        let command = if tool == "bash" {
-                            command_of(&args)
-                        } else {
-                            None
+                        let command = match tool.as_str() {
+                            "bash" => command_of(&args),
+                            // Code-mode cells: the code is what runs, so structural rules see it.
+                            "exec" => str_of(p, "input").map(|i| truncate(i, MAX_EDIT_CHARS)),
+                            _ => None,
                         };
                         let path = str_of(&args, "path").map(String::from);
                         let text = match (&command, str_of(p, "input")) {

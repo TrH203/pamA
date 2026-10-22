@@ -137,15 +137,15 @@ decision with `why`; a second session on the same branch joins the same bundle.
 - [X] T054 [P] [US1] Implement the Claude Code adapter in `crates/pama-core/src/session/claude.rs` (path `~/.claude/projects/<cwd with "/"→"-">/<sessionId>.jsonl`, subagents, tolerant parsing)
 - [X] T055 [P] [US1] Implement the Codex adapter in `crates/pama-core/src/session/codex.rs` (`$CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl`, envelope `{timestamp, type, payload}`)
 - [X] T056 [US1] Implement structural rules over events in `crates/pama-core/src/redact/structural.rs` (`drop_content`, `redact_all`) and apply the regex engine to every text field
-- [ ] T057 [US1] Implement a streaming transcript reader in `crates/pama-core/src/session/reader.rs` (bounded memory for files of hundreds of MB, malformed lines skipped, oversize → `failed` with reason) and a benchmark in `crates/pama-core/benches/redact.rs` (target ≥ 20 MB/s parse + Layer 1)
-- [ ] T058 [US1] Implement project key normalization in `crates/pama-core/src/project.rs` (normalized remote URL, else path hash; never an absolute local path) and bundle key from git branch
-- [ ] T059 [US1] Implement the capture worker in `crates/pama-core/src/capture/worker.rs`: drives the `captured_session` state machine, retries with backoff (max 5), sends Layer-1-redacted events to the local sidecar `POST /v1/transcripts/digest`
-- [ ] T060 [US1] Implement `pama config set|get` in `crates/pama-cli/src/cmd/config.rs` for `provider.*` (API keys go to the OS keychain) and `hotkey.answer_source`, and pass provider settings to the local server (FR-031)
-- [ ] T061 [US1] Implement `pama hook claude` and `pama hook codex` in `crates/pama-cli/src/cmd/hook.rs`: read stdin JSON (or argv JSON for Codex `notify`), enqueue `{session_id, transcript_path, cwd, reason}`, exit in < 200 ms (asserted in `crates/pama-cli/tests/hook_latency.rs`), never parse the transcript inline
-- [ ] T062 [US1] Implement `pama init` in `crates/pama-cli/src/cmd/init.rs`: write `SessionEnd` + `Stop` hooks into `.claude/settings.local.json` (or user scope with `--global`), register Codex hooks in `~/.codex/hooks.json` or `notify`, idempotent, print what changed, never edit committed settings without `--project-scope`
-- [ ] T063 [US1] Implement the watcher fallback in `crates/pama-core/src/capture/watcher.rs` (notify 8.2 + debouncer-full 0.7, idle ≥ 2 min) and `pama scan [--since]` in `crates/pama-cli/src/cmd/scan.rs`
-- [ ] T064 [US1] VERIFY R2: test Codex hooks and `notify` on the currently released Codex CLI versions and record the support matrix in `docs/agents.md` (watcher fallback stays mandatory)
-- [ ] T065 [US1] Implement `pama server start|stop|status` in `crates/pama-cli/src/cmd/server.rs` (spawns the local server bound to `127.0.0.1`, `--lan` opt-in) so US1 works without the desktop app
+- [X] T057 [US1] Implement a streaming transcript reader in `crates/pama-core/src/session/reader.rs` (bounded memory for files of hundreds of MB, malformed lines skipped, oversize → `failed` with reason) and a benchmark in `crates/pama-core/benches/redact.rs` (target ≥ 20 MB/s parse + Layer 1)
+- [X] T058 [US1] Implement project key normalization in `crates/pama-core/src/project.rs` (normalized remote URL, else path hash; never an absolute local path) and bundle key from git branch
+- [X] T059 [US1] Implement the capture worker in `crates/pama-core/src/capture/worker.rs`: drives the `captured_session` state machine, retries with backoff (max 5), sends Layer-1-redacted events to the local sidecar `POST /v1/transcripts/digest`
+- [X] T060 [US1] Implement `pama config set|get` in `crates/pama-cli/src/cmd/config.rs` for `provider.*` (API keys go to the OS keychain) and `hotkey.answer_source`, and pass provider settings to the local server (FR-031)
+- [X] T061 [US1] Implement `pama hook claude` and `pama hook codex` in `crates/pama-cli/src/cmd/hook.rs`: read stdin JSON (or argv JSON for Codex `notify`), enqueue `{session_id, transcript_path, cwd, reason}`, exit in < 200 ms (asserted in `crates/pama-cli/tests/hook_latency.rs`), never parse the transcript inline
+- [X] T062 [US1] Implement `pama init` in `crates/pama-cli/src/cmd/init.rs`: write `SessionEnd` + `Stop` hooks into `.claude/settings.local.json` (or user scope with `--global`), register Codex hooks in `~/.codex/hooks.json` or `notify`, idempotent, print what changed, never edit committed settings without `--project-scope`
+- [X] T063 [US1] Implement the watcher fallback in `crates/pama-core/src/capture/watcher.rs` (notify 8.2 + debouncer-full 0.7, idle ≥ 2 min) and `pama scan [--since]` in `crates/pama-cli/src/cmd/scan.rs`
+- [X] T064 [US1] VERIFY R2: test Codex hooks and `notify` on the currently released Codex CLI versions and record the support matrix in `docs/agents.md` (watcher fallback stays mandatory)
+- [X] T065 [US1] Implement `pama server start|stop|status` in `crates/pama-cli/src/cmd/server.rs` (spawns the local server bound to `127.0.0.1`, `--lan` opt-in) so US1 works without the desktop app
 
 ### Implementation for User Story 1 — server (TypeScript)
 
@@ -157,9 +157,9 @@ decision with `why`; a second session on the same branch joins the same bundle.
 - [X] T071 [US1] Implement digest lifecycle in `apps/server/src/services/digests.ts` (approve/edit → new version, only the latest approved version has `active` items, discard, withdraw, auto-approve resolution project → workspace; withdrawing or deleting a source whose sync is on queues a tombstone for every replica (Constitution I, FR-025); a guard rule hit on an approved item withdraws the digest and raises a `review://new` alert)
 - [X] T072 [US1] Implement `POST /v1/transcripts/digest` in `apps/server/src/routes/device.ts` (local mode only, else 403; 422 on invalid input)
 - [X] T073 [US1] Implement owner routes in `apps/server/src/routes/review.ts`: `GET /v1/review`, `POST /v1/digests/{id}/approve|discard|withdraw`, `GET/PATCH /v1/projects/{id}` (`auto_approve`), `GET/PATCH /v1/bundles/{id}`, `POST /v1/bundles/{id}/split`, `POST /v1/bundles/merge`
-- [ ] T074 [US1] Implement `pama review` in `crates/pama-cli/src/cmd/review.rs` (list drafts, `--approve`, `--discard`, `--edit` via `$EDITOR` on the digest JSON, `--json`)
-- [ ] T075 [US1] Build the review page in `apps/web/src/console/Review.tsx` (draft list, edit, approve/discard, auto-approve toggle, bundle rename/split/merge)
-- [ ] T076 [US1] Add the end-to-end test for quickstart Scenario 1 in `apps/server/tests/e2e/us1-capture.test.ts` (fixture transcript → hook → draft in review queue, no `AKIA`, bundle grouping)
+- [X] T074 [US1] Implement `pama review` in `crates/pama-cli/src/cmd/review.rs` (list drafts, `--approve`, `--discard`, `--edit` via `$EDITOR` on the digest JSON, `--json`)
+- [X] T075 [US1] Build the review page in `apps/web/src/console/Review.tsx` (draft list, edit, approve/discard, auto-approve toggle, bundle rename/split/merge)
+- [X] T076 [US1] Add the end-to-end test for quickstart Scenario 1 in `apps/server/tests/e2e/us1-capture.test.ts` (fixture transcript → hook → draft in review queue, no `AKIA`, bundle grouping)
 
 **Checkpoint**: US1 works alone as a private "what did I decide and why" log
 

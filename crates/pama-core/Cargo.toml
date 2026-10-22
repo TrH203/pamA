@@ -29,3 +29,7 @@ windows-native-keyring-store = "1.1"
 [dev-dependencies]
 jsonschema = "0.60"
 tempfile = "3"
+
+[[bench]]
+name = "redact"
+harness = false

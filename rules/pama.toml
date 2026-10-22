@@ -79,3 +79,10 @@ action = "drop_content"
 id = "cat-secret-file"
 match = { tool = "bash", command_regex = '''(?:^|[;&|]\s*)(?:cat|less|more|head|tail|bat)\s+[^;&|]*(?:\.env\b|\.pem\b|id_rsa|id_ed25519|\.npmrc|\.netrc|credentials)''' }
 action = "drop_content"
+
+# Codex code mode (0.14x): tool `exec` runs a code cell. Drop its output when the code touches
+# secret files or the process environment.
+[[structural]]
+id = "code-cell-secret-access"
+match = { tool = "exec", command_regex = '''(?:\.env\b|\.pem\b|id_rsa|id_ed25519|\.npmrc|\.netrc|\.pypirc|credentials|printenv|process\.env|os\.environ|\benv\b\s*["'`)])''' }
+action = "drop_content"

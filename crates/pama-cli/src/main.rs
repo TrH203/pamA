@@ -124,6 +124,22 @@ pub enum Command {
         #[command(subcommand)]
         action: ConfigAction,
     },
+    /// Internal: process captured sessions (spawned by `pama hook`).
+    #[command(hide = true)]
+    Capture {
+        #[command(subcommand)]
+        action: CaptureAction,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum CaptureAction {
+    /// Process due captures, waiting for debounced ones, then exit.
+    Drain {
+        /// Process what is due once and exit without waiting.
+        #[arg(long)]
+        once: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]

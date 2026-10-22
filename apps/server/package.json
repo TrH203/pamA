@@ -1,0 +1,43 @@
+{
+  "name": "@pama/server",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.85",
+    "@ai-sdk/openai-compatible": "^3.0.75",
+    "@electric-sql/pglite": "^0.5.11",
+    "@electric-sql/pglite-pgvector": "^0.0.12",
+    "@hono/node-server": "^2.1.5",
+    "@pama/types": "workspace:*",
+    "ai": "^7.0.148",
+    "drizzle-orm": "^0.45.4",
+    "hono": "^4.13.13",
+    "ollama-ai-provider-v2": "^4.1.0",
+    "pg": "^8.23.1",
+    "pg-boss": "^12.38.0",
+    "smol-toml": "^1.9.1",
+    "ulid": "^3.0.2",
+    "undici": "^8.12.3",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "@types/pg": "^8.23.1",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "drizzle-kit": "^0.31.11",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.5"
+  }
+}

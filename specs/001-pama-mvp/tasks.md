@@ -34,18 +34,18 @@ Monorepo per plan.md: Rust in `crates/`, TypeScript in `apps/` and `packages/`, 
 
 **Purpose**: Monorepo initialization, tooling, CI and licensing gates
 
-- [ ] T001 Create the top-level layout from plan.md (`crates/`, `apps/`, `packages/`, `rules/`, `prompts/`, `evals/`, `deploy/`, `docs/`) with `README.md`, `LICENSE` (Apache-2.0) and `NOTICE` at the repo root
-- [ ] T002 Create the Cargo workspace in `Cargo.toml` (members `crates/pama-core`, `crates/pama-cli`, `crates/pama-desktop/src-tauri`; edition 2021) and `rust-toolchain.toml` (stable, MSRV 1.85)
-- [ ] T003 Create the pnpm workspace: `pnpm-workspace.yaml`, root `package.json` (scripts `test`, `typecheck`, `lint`, `evals`), `.nvmrc` (24), `tsconfig.base.json` (strict)
-- [ ] T004 [P] Scaffold `crates/pama-core` library (`crates/pama-core/Cargo.toml` with serde, serde_json, regex, rusqlite, reqwest, typeshare 1.0, thiserror; `crates/pama-core/src/lib.rs`)
-- [ ] T005 [P] Scaffold `crates/pama-cli` binary with a clap command tree matching contracts/cli.md (`init`, `hook`, `scan`, `review`, `link`, `inbox`, `reply`, `log`, `sync`, `pair`, `server`, `doctor`, `config`), global flags `--json`, `--server`, `-v` and exit codes 0–4, in `crates/pama-cli/src/main.rs`
-- [ ] T006 [P] Scaffold `apps/server` (hono, @hono/node-server, drizzle-orm, zod 4, ai v7, vitest) with `apps/server/package.json`, `apps/server/tsconfig.json`, `apps/server/src/index.ts`
-- [ ] T007 [P] Scaffold `apps/web` (React 19, Vite, Tailwind, vitest, Playwright) with entries for the Ask Link page, owner console and desktop popup in `apps/web/src/{ask,console,desktop}/main.tsx`
-- [ ] T008 [P] Scaffold `packages/types` (generated types + schema) and `packages/ui` (shared React components) with their `package.json` files
-- [ ] T009 [P] Configure formatting and linting: `rustfmt.toml`, `clippy.toml`, `biome.json`
-- [ ] T010 [P] Configure CI in `.github/workflows/ci.yml`: `cargo test --workspace`, `cargo fmt --check`, `cargo clippy --workspace -- -D warnings` on macOS + Windows + Linux; `pnpm -r lint` (biome), `pnpm -r typecheck`, `pnpm -r test` with a `pgvector/pgvector:pg16` service container
-- [ ] T011 [P] Add license gates: `deny.toml` (cargo-deny, deny GPL/AGPL/LGPL) and `scripts/check-licenses.mjs` (npm deps), both run in `.github/workflows/ci.yml`
-- [ ] T012 [P] Add `CONTRIBUTING.md`, `SECURITY.md` and `.github/PULL_REQUEST_TEMPLATE.md` with the constitution check list (principles I–VI)
+- [X] T001 Create the top-level layout from plan.md (`crates/`, `apps/`, `packages/`, `rules/`, `prompts/`, `evals/`, `deploy/`, `docs/`) with `README.md`, `LICENSE` (Apache-2.0) and `NOTICE` at the repo root
+- [X] T002 Create the Cargo workspace in `Cargo.toml` (members `crates/pama-core`, `crates/pama-cli`, `crates/pama-desktop/src-tauri`; edition 2021) and `rust-toolchain.toml` (stable, MSRV 1.85)
+- [X] T003 Create the pnpm workspace: `pnpm-workspace.yaml`, root `package.json` (scripts `test`, `typecheck`, `lint`, `evals`), `.nvmrc` (24), `tsconfig.base.json` (strict)
+- [X] T004 [P] Scaffold `crates/pama-core` library (`crates/pama-core/Cargo.toml` with serde, serde_json, regex, rusqlite, reqwest, typeshare 1.0, thiserror; `crates/pama-core/src/lib.rs`)
+- [X] T005 [P] Scaffold `crates/pama-cli` binary with a clap command tree matching contracts/cli.md (`init`, `hook`, `scan`, `review`, `link`, `inbox`, `reply`, `log`, `sync`, `pair`, `server`, `doctor`, `config`), global flags `--json`, `--server`, `-v` and exit codes 0–4, in `crates/pama-cli/src/main.rs`
+- [X] T006 [P] Scaffold `apps/server` (hono, @hono/node-server, drizzle-orm, zod 4, ai v7, vitest) with `apps/server/package.json`, `apps/server/tsconfig.json`, `apps/server/src/index.ts`
+- [X] T007 [P] Scaffold `apps/web` (React 19, Vite, Tailwind, vitest, Playwright) with entries for the Ask Link page, owner console and desktop popup in `apps/web/src/{ask,console,desktop}/main.tsx`
+- [X] T008 [P] Scaffold `packages/types` (generated types + schema) and `packages/ui` (shared React components) with their `package.json` files
+- [X] T009 [P] Configure formatting and linting: `rustfmt.toml`, `clippy.toml`, `biome.json`
+- [X] T010 [P] Configure CI in `.github/workflows/ci.yml`: `cargo test --workspace`, `cargo fmt --check`, `cargo clippy --workspace -- -D warnings` on macOS + Windows + Linux; `pnpm -r lint` (biome), `pnpm -r typecheck`, `pnpm -r test` with a `pgvector/pgvector:pg16` service container
+- [X] T011 [P] Add license gates: `deny.toml` (cargo-deny, deny GPL/AGPL/LGPL) and `scripts/check-licenses.mjs` (npm deps), both run in `.github/workflows/ci.yml`
+- [X] T012 [P] Add `CONTRIBUTING.md`, `SECURITY.md` and `.github/PULL_REQUEST_TEMPLATE.md` with the constitution check list (principles I–VI)
 
 ---
 

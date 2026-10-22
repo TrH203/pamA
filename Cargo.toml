@@ -1,0 +1,20 @@
+[workspace]
+resolver = "2"
+# crates/pama-desktop/src-tauri joins the workspace in Phase 5 (US3).
+members = ["crates/pama-core", "crates/pama-cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "Apache-2.0"
+repository = "https://github.com/TrH203/pama"
+
+[workspace.dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+regex = "1"
+toml = "1"

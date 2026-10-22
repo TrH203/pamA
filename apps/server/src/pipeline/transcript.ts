@@ -49,18 +49,13 @@ export const MAX_TRANSCRIPT_CHARS = 48_000;
 const HEAD = 12_000;
 
 export function formatTranscript(events: TranscriptInput["events"]): string {
-  const lines = events.map((e) => {
-    switch (e.kind) {
-      case "user":
-        return `[user] ${e.text}`;
-      case "assistant":
-        return `[assistant] ${e.text}`;
-      case "tool_call":
-        return `[tool ${e.tool ?? "?"}] ${e.text}`;
-      case "tool_result":
-        return `[result ${e.tool ?? "?"}] ${e.text}`;
-    }
-  });
+  const tag = {
+    user: () => "[user]",
+    assistant: () => "[assistant]",
+    tool_call: (t?: string) => `[tool ${t ?? "?"}]`,
+    tool_result: (t?: string) => `[result ${t ?? "?"}]`,
+  } as const;
+  const lines = events.map((e) => `${tag[e.kind](e.tool)} ${e.text}`);
   const full = lines.join("\n");
   if (full.length <= MAX_TRANSCRIPT_CHARS) return full;
   const tail = MAX_TRANSCRIPT_CHARS - HEAD;

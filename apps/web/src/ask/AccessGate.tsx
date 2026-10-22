@@ -58,7 +58,6 @@ export function AccessGate({ mode, onGranted }: { mode: string; onGranted: () =>
             value={pin}
             onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
             maxLength={8}
-            // biome-ignore lint/a11y/noAutofocus: the gate has a single field; focusing it is the expected flow
             ref={focusOnMount}
           />
           {error && <p className="text-sm text-red-700">{error}</p>}
@@ -81,7 +80,6 @@ export function AccessGate({ mode, onGranted }: { mode: string; onGranted: () =>
             aria-label="Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            // biome-ignore lint/a11y/noAutofocus: the gate has a single field; focusing it is the expected flow
             ref={focusOnMount}
           />
           {error && <p className="text-sm text-red-700">{error}</p>}
@@ -105,7 +103,6 @@ export function AccessGate({ mode, onGranted }: { mode: string; onGranted: () =>
             value={code}
             onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
             maxLength={6}
-            // biome-ignore lint/a11y/noAutofocus: the gate has a single field; focusing it is the expected flow
             ref={focusOnMount}
           />
           {error && <p className="text-sm text-red-700">{error}</p>}

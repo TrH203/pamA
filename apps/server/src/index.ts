@@ -9,7 +9,7 @@ import { createModels } from "./llm/providers.ts";
 import { createMailer } from "./mail/index.ts";
 import { EgressGuard } from "./net/egress.ts";
 import { loadRuleSet } from "./safety/rules.ts";
-import { bootstrapLocal } from "./services/bootstrap-local.ts";
+import { bootstrap } from "./services/bootstrap.ts";
 
 const config = loadConfig(process.env);
 const db = await openDb(config);
@@ -22,8 +22,8 @@ const models = createModels(config, guard);
 const rules = loadRuleSet(
   process.env.PAMA_RULES_DIR ?? join(import.meta.dirname, "../../../rules"),
 );
-// Server modes resolve the workspace from the owner session (US5); local mode has exactly one.
-const workspaceId = await bootstrapLocal(db, models.local);
+// The default workspace; requests on servers act in the device's or signed-in owner's workspace.
+const workspaceId = await bootstrap(db, config, models.local);
 const mailer = await createMailer(config, guard);
 // Daily audit retention.
 const retention = () => applyRetention(db).catch((e) => console.error("retention:", e));

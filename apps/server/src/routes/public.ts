@@ -13,6 +13,16 @@ import { forwardAsk, recordAsk } from "../services/asks.ts";
 import { body } from "./util.ts";
 
 export const publicRoutes = new Hono<Env>()
+  .use("/:slug/*", async (c, next) => {
+    // Public requests act in the workspace that owns the link (one server, many workspaces).
+    const deps = c.get("deps");
+    const [l] = await deps.db.query<{ workspace_id: string }>(
+      "SELECT workspace_id FROM ask_links WHERE slug = $1",
+      [c.req.param("slug")],
+    );
+    if (l) c.set("deps", { ...deps, workspaceId: l.workspace_id });
+    await next();
+  })
   .use(async (c, next) => {
     c.header("X-Pama-Automated", "true");
     c.header("Cache-Control", "no-store");

@@ -38,6 +38,8 @@ const EnvSchema = z.object({
   PAMA_SECRET: z.string().min(32).optional(),
   /** Bearer token for the owner API on self-host/cloud servers (admin and CLI access). */
   PAMA_OWNER_TOKEN: z.string().min(24).optional(),
+  /** Self-host: the only email allowed to sign in to the console. */
+  PAMA_OWNER_EMAIL: z.email().optional(),
   PAMA_STRICT_OFFLINE: z
     .enum(["true", "false", "1", "0"])
     .default("false")
@@ -69,6 +71,7 @@ export interface Config {
   localToken: string;
   secret: string;
   ownerToken: string | undefined;
+  ownerEmail: string | undefined;
   strictOffline: boolean;
   declaredHosts: string[];
   chat: ProviderConfig;
@@ -114,6 +117,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     baseUrl: e.PAMA_BASE_URL ?? `http://${bind === "0.0.0.0" ? "localhost" : bind}:${e.PAMA_PORT}`,
     localToken: e.PAMA_LOCAL_TOKEN ?? randomBytes(24).toString("base64url"),
     ownerToken: e.PAMA_OWNER_TOKEN,
+    ownerEmail: e.PAMA_OWNER_EMAIL,
     secret:
       e.PAMA_SECRET ??
       persistentSecret(e.PAMA_DATA_DIR ?? join(homedir(), ".pama", "server"), e.PAMA_MODE),

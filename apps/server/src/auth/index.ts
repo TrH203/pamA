@@ -11,7 +11,7 @@ import { deviceForToken } from "./device.ts";
 import { localToken } from "./local-token.ts";
 import { ownerFromSession } from "./session.ts";
 
-const PUBLIC = new Set(["/v1/health", "/v1/devices/pair"]);
+const PUBLIC = new Set(["/v1/health", "/v1/devices/pair", "/v1/auth/login", "/v1/auth/callback"]);
 const DEVICE = new Set(["/v1/sync/digests", "/v1/sync/tombstones"]);
 /** Only the owner's own machine may receive transcripts or hand out sync work (Constitution I). */
 const LOCAL_ONLY = new Set(["/v1/transcripts/digest", "/v1/sync/pending", "/v1/sync/ack"]);
@@ -41,14 +41,23 @@ export function authenticate(): MiddlewareHandler<Env> {
     }
 
     const token = bearer(c.req.header("authorization"));
+    const deps = c.get("deps");
+    // Requests act in one workspace: the device's, the signed-in owner's, or (owner token) the
+    // server's default workspace.
+    const as = (workspaceId: string) => c.set("deps", { ...deps, workspaceId });
     if (DEVICE.has(path)) {
       const device = token ? await deviceForToken(db, token) : null;
       if (!device) throw new HttpError(401, "unauthorized", "unknown or revoked device");
       c.set("device", device);
+      as(device.workspace_id);
       return next();
     }
     if (config.ownerToken && token && same(token, config.ownerToken)) return next();
-    if (await ownerFromSession(c)) return next();
+    const session = await ownerFromSession(c);
+    if (session) {
+      as(session.workspaceId);
+      return next();
+    }
     throw new HttpError(401, "unauthorized", "sign in required");
   };
 }

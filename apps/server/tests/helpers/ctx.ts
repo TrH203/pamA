@@ -8,7 +8,7 @@ import { createModels } from "../../src/llm/providers.ts";
 import type { Mailer } from "../../src/mail/index.ts";
 import { EgressGuard } from "../../src/net/egress.ts";
 import { loadRuleSet } from "../../src/safety/rules.ts";
-import { bootstrapLocal } from "../../src/services/bootstrap-local.ts";
+import { bootstrap } from "../../src/services/bootstrap.ts";
 import type { DbFactory } from "./db.ts";
 
 export const RULES = loadRuleSet(join(import.meta.dirname, "../../../../rules"));
@@ -30,7 +30,7 @@ export async function makeCtx(f: DbFactory, overrides: Partial<Config> = {}): Pr
   const config = testConfig(overrides);
   const guard = new EgressGuard(db, { strict: false, declaredHosts: [] });
   const models = createModels(config, guard);
-  const workspaceId = await bootstrapLocal(db, models.local);
+  const workspaceId = await bootstrap(db, config, models.local);
   const mails: TestCtx["mails"] = [];
   const mailer: Mailer = {
     available: true,

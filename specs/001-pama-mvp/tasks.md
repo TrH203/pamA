@@ -286,13 +286,13 @@ the same image.
 **Independent Test**: quickstart.md Scenario 5: clean host → ready in < 15 minutes; pair a device,
 sync one bundle, turn the owner's machine off, answer through a link served by this server.
 
-- [ ] T131 [P] [US5] Write `deploy/Dockerfile` (multi-stage, Node 24, non-root user, includes the web build, `PAMA_MODE` default `selfhost`)
-- [ ] T132 [P] [US5] Write `deploy/docker-compose.yml` (server + `pgvector/pgvector:pg16`, healthchecks, volumes) and `deploy/.env.example` (base URL, SMTP, model provider, secrets)
-- [ ] T133 [US5] Configure the compose database user for the non-superuser application role from `apps/server/src/db/roles.sql` in `deploy/initdb/01-roles.sql`
-- [ ] T134 [US5] Implement owner email magic-link sign-in in `apps/server/src/auth/magic-link.ts` and `apps/web/src/console/Login.tsx` (server modes only)
-- [ ] T135 [US5] Implement first-run workspace bootstrap in `apps/server/src/services/bootstrap.ts` (first owner email, one owner per workspace; `cloud` mode allows many workspaces with the same code)
-- [ ] T136 [US5] Write the self-host guide `docs/self-host.md` (≤ 15 minutes, SMTP, TLS via reverse proxy example, backups, upgrades)
-- [ ] T137 [US5] Add `.github/workflows/docker.yml`: build the image, `docker compose up`, assert `GET /v1/health` returns `mode: selfhost, db: pg`, run the US2 contract tests against it
+- [X] T131 [P] [US5] Write `deploy/Dockerfile` (multi-stage, Node 24, non-root user, includes the web build, `PAMA_MODE` default `selfhost`)
+- [X] T132 [P] [US5] Write `deploy/docker-compose.yml` (server + `pgvector/pgvector:pg16`, healthchecks, volumes) and `deploy/.env.example` (base URL, SMTP, model provider, secrets)
+- [X] T133 [US5] Configure the compose database user for the non-superuser application role from `apps/server/src/db/roles.sql` in `deploy/initdb/01-roles.sql`
+- [X] T134 [US5] Implement owner email magic-link sign-in in `apps/server/src/auth/magic-link.ts` and `apps/web/src/console/Login.tsx` (server modes only)
+- [X] T135 [US5] Implement first-run workspace bootstrap in `apps/server/src/services/bootstrap.ts` (first owner email, one owner per workspace; `cloud` mode allows many workspaces with the same code)
+- [X] T136 [US5] Write the self-host guide `docs/self-host.md` (≤ 15 minutes, SMTP, TLS via reverse proxy example, backups, upgrades)
+- [X] T137 [US5] Add `.github/workflows/docker.yml`: build the image, `docker compose up`, assert `GET /v1/health` returns `mode: selfhost, db: pg`, run the US2 contract tests against it
 
 **Checkpoint**: always-on links without the owner's laptop
 

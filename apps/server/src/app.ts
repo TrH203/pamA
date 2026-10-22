@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { requestId } from "hono/request-id";
 import type { Device } from "./auth/device.ts";
 import { authenticate } from "./auth/index.ts";
+import { authRoutes } from "./auth/magic-link.ts";
 import type { Config } from "./config.ts";
 import type { Db } from "./db/client.ts";
 import { errorBody, onError } from "./http.ts";
@@ -58,6 +59,7 @@ export function createApp(deps: Deps) {
   // Owner and device API: who may call what is decided in one place (auth/index.ts).
   app.use("/v1/*", authenticate());
   for (const r of [
+    authRoutes,
     deviceRoutes,
     reviewRoutes,
     linkRoutes,

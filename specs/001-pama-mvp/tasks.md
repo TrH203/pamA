@@ -122,11 +122,11 @@ decision with `why`; a second session on the same branch joins the same bundle.
 
 ### Tests for User Story 1 (write first, must fail) ⚠️
 
-- [ ] T045 [P] [US1] Add anonymized Claude Code transcript fixtures per version in `crates/pama-core/tests/fixtures/claude/*.jsonl` (main + `subagents/agent-<id>.jsonl`, unknown record types, a `.env` read with a fake AKIA key, `env` command output)
-- [ ] T046 [P] [US1] Add Codex rollout fixtures in `crates/pama-core/tests/fixtures/codex/*.jsonl` (`session_meta` with `cwd`/`git.branch`, encrypted `reasoning`, `function_call(_output)`, `event_msg task_complete`)
-- [ ] T047 [P] [US1] Write the Claude adapter test `crates/pama-core/tests/adapter_claude.rs`: normalized events, unknown record types ignored, `cwd`/`gitBranch`/`sessionId` extracted, subagent transcripts merged
-- [ ] T048 [P] [US1] Write the Codex adapter test `crates/pama-core/tests/adapter_codex.rs`: normalized events, encrypted reasoning skipped, project and branch taken from `session_meta`
-- [ ] T049 [P] [US1] Write the event redaction test `crates/pama-core/tests/redact_events.rs`: `.env`/`*.pem` read content dropped, `env`/`printenv` output dropped, no `AKIA` string remains in any event, counts reported by type
+- [X] T045 [P] [US1] Add anonymized Claude Code transcript fixtures per version in `crates/pama-core/tests/fixtures/claude/*.jsonl` (main + `subagents/agent-<id>.jsonl`, unknown record types, a `.env` read with a fake AKIA key, `env` command output)
+- [X] T046 [P] [US1] Add Codex rollout fixtures in `crates/pama-core/tests/fixtures/codex/*.jsonl` (`session_meta` with `cwd`/`git.branch`, encrypted `reasoning`, `function_call(_output)`, `event_msg task_complete`)
+- [X] T047 [P] [US1] Write the Claude adapter test `crates/pama-core/tests/adapter_claude.rs`: normalized events, unknown record types ignored, `cwd`/`gitBranch`/`sessionId` extracted, subagent transcripts merged
+- [X] T048 [P] [US1] Write the Codex adapter test `crates/pama-core/tests/adapter_codex.rs`: normalized events, encrypted reasoning skipped, project and branch taken from `session_meta`
+- [X] T049 [P] [US1] Write the event redaction test `crates/pama-core/tests/redact_events.rs`: `.env`/`*.pem` read content dropped, `env`/`printenv` output dropped, no `AKIA` string remains in any event, counts reported by type
 - [ ] T050 [P] [US1] Write the digest pipeline test `apps/server/tests/integration/digest-pipeline.test.ts` (fake LLM): output validates against the schema, Layer-2 PII rules applied, labels assigned, sessions grouped by branch into one bundle, status `draft`, re-submitting the same content is idempotent on `digest_hash`
 - [ ] T051 [P] [US1] Write the review test `apps/server/tests/integration/review.test.ts`: approve; approve with edited content creates version+1 and supersedes the old version; discard; withdraw deactivates items; project `auto_approve` overrides workspace; unapproved items are never retrievable; bundle rename/split/merge (FR-005)
 - [ ] T052 [P] [US1] Write the local-only test `apps/server/tests/integration/transcripts-local-only.test.ts`: `POST /v1/transcripts/digest` returns 403 when `PAMA_MODE` is `selfhost` or `cloud`

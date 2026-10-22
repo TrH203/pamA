@@ -65,7 +65,7 @@ const POSIX: Record<string, string> = {
   lower: "a-z",
   print: " -~",
   punct: "!-\\/:-@\\[-`{-~",
-  space: RE2_SPACE + "\\v",
+  space: `${RE2_SPACE}\\v`,
   upper: "A-Z",
   word: "a-zA-Z0-9_",
   xdigit: "0-9A-Fa-f",

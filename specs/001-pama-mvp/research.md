@@ -68,6 +68,11 @@ Each entry: **Decision**, **Rationale**, **Alternatives considered**. Items mark
   with `SET ROLE` per transaction on PGlite. **Mitigation** regardless of outcome: all reads go
   through a scoped repository that always applies `source_id = ANY($allowed)`; RLS is an
   additional layer where it works. Both are covered by the same contract tests.
+- **Spike result (2026-10-22, PGlite 0.5.11, pglite-pgvector 0.0.12)**: **PASS**. `USING hnsw
+  (embedding vector_cosine_ops)` is created and chosen by the planner; RLS filters rows for a
+  `NOLOGIN` role switched with `SET LOCAL ROLE` inside a transaction, with the scope passed via
+  `set_config('pama.allowed_session_ids', …, true)`. RLS is therefore enabled in local mode too.
+  Test: `apps/server/spikes/pglite-hnsw-rls.test.ts`.
 - **Alternatives**: SQLite + sqlite-vec for local (two SQL dialects, duplicated queries); full
   Postgres bundled in desktop (heavy, ~100 MB+, service management).
 
@@ -90,6 +95,12 @@ Each entry: **Decision**, **Rationale**, **Alternatives considered**. Items mark
 - **VERIFY** (spike, week 3): PGlite initdb under Bun's Wasm runtime (WebKit bug 285466;
   workaround `BUN_JSC_useWasmIPInt=false`). The full server test suite also runs against the
   compiled binary in CI. **Fallback**: Node SEA (v24+) or bundled Node runtime.
+- **Spike result (2026-10-22, Bun 1.4.4, darwin-arm64)**: **PASS** without the WebKit
+  workaround. Hono + PGlite + pgvector compile to one 102 MB binary; first start (initdb) 0.9 s,
+  reopen 0.12 s. PGlite cannot open extension tarballs inside `$bunfs`, so the sidecar copies
+  `vector.tar.gz` to the app data dir on start and passes it as `bundlePath`. Size is close to
+  the 120 MB budget: the full server build must be measured (Polish task). Node SEA stays the
+  fallback. Script: `scripts/spike-bun-compile.sh`.
 - **Alternatives**: `pkg` (unmaintained upstream); shipping Node + `node_modules` (large, slow).
 
 ## R7. LLM and embeddings

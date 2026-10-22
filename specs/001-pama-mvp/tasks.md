@@ -77,34 +77,34 @@ The R3/R4/R6 spikes run here because they decide adapter details used by every s
 
 ### Spikes (decide adapter details)
 
-- [ ] T026 Spike R4 in `apps/server/spikes/pglite-hnsw-rls.test.ts`: `CREATE INDEX ... USING hnsw` with pglite-pgvector on PGlite 0.5, and RLS under a non-superuser role with `SET ROLE` per transaction; record the outcome in `specs/001-pama-mvp/research.md` § R4
-- [ ] T027 Spike R6 in `scripts/spike-bun-compile.sh`: `bun build --compile` a minimal Hono + PGlite server for `bun-darwin-arm64` with embedded `.wasm`/`.data` assets, check initdb (try `BUN_JSC_useWasmIPInt=false`); record the outcome and fallback decision (Node SEA) in `specs/001-pama-mvp/research.md` § R6
+- [X] T026 Spike R4 in `apps/server/spikes/pglite-hnsw-rls.test.ts`: `CREATE INDEX ... USING hnsw` with pglite-pgvector on PGlite 0.5, and RLS under a non-superuser role with `SET ROLE` per transaction; record the outcome in `specs/001-pama-mvp/research.md` § R4
+- [X] T027 Spike R6 in `scripts/spike-bun-compile.sh`: `bun build --compile` a minimal Hono + PGlite server for `bun-darwin-arm64` with embedded `.wasm`/`.data` assets, check initdb (try `BUN_JSC_useWasmIPInt=false`); record the outcome and fallback decision (Node SEA) in `specs/001-pama-mvp/research.md` § R6
 
 ### Server core
 
-- [ ] T028 Implement config in `apps/server/src/config.ts` (zod-validated env: `PAMA_MODE` ∈ `local | selfhost | cloud`, database URL or PGlite data dir, bind address default `127.0.0.1`, provider settings, SMTP, base URL)
-- [ ] T029 Implement the `Db` adapter in `apps/server/src/db/client.ts` (node-postgres + pgvector, or PGlite + pglite-pgvector persisted to the data dir), selected by mode
-- [ ] T030 Set up migrations: `apps/server/drizzle.config.ts` and a runner in `apps/server/src/db/migrate.ts` that applies the same SQL on pg and PGlite
-- [ ] T031 Define the foundational tables in `apps/server/src/db/schema/core.ts`: `workspaces` (`default_deny_labels` ⊆ `business_sensitive, infra, customer`; `auto_approve` default false; `embed_model` default `bge-m3`, `embed_dim` default 1024; `answer_threshold` default 0.7 cloud / 0.8 local), `network_log` (`component` ∈ `server | desktop | cli`, `host`, `purpose`, `allowed`), `jobs` (`status` ∈ `queued | running | done | failed`); ULID text ids, `timestamptz` UTC; on first start in `local` mode create the single default workspace (`owner_email` null) in `apps/server/src/services/bootstrap-local.ts`
-- [ ] T032 [P] Write the queue test (must fail first) `apps/server/tests/integration/queue.test.ts`: send/work/schedule and retry behave the same on both adapters
-- [ ] T033 Implement `JobQueue` in `apps/server/src/queue/{index.ts,pgboss.ts,inprocess.ts}` (pg-boss 12 for server modes; in-process worker polling `jobs` on PGlite)
-- [ ] T034 [P] Write the egress test (must fail first) `apps/server/tests/unit/egress.test.ts`: every outbound request is logged in `network_log` with host and purpose; undeclared hosts are blocked when strict mode is on
-- [ ] T035 Implement the egress guard in `apps/server/src/net/egress.ts` (undici global dispatcher, declared-host allowlist, `network_log` writes, strict flag)
-- [ ] T036 Implement the model provider registry in `apps/server/src/llm/providers.ts` (AI SDK v7: `@ai-sdk/anthropic`, `@ai-sdk/openai-compatible`, `ollama-ai-provider-v2`; per-workspace chat and embedding models; all traffic through the egress guard) and a deterministic fake provider in `apps/server/src/llm/fake.ts` for tests
-- [ ] T037 Implement versioned prompt loading in `apps/server/src/llm/prompts.ts` (reads `prompts/*.md` with a `version` front-matter field; the version is stored as provenance) and document the format in `prompts/README.md`
-- [ ] T038 Implement the Hono app in `apps/server/src/app.ts`: error body `{ "error": { "code", "message" } }`, request ids, `GET /v1/health` → `{status, mode, db, version}`, route mounting
-- [ ] T039 Implement local-mode owner auth in `apps/server/src/auth/local-token.ts` (per-launch token, only on `127.0.0.1`)
+- [X] T028 Implement config in `apps/server/src/config.ts` (zod-validated env: `PAMA_MODE` ∈ `local | selfhost | cloud`, database URL or PGlite data dir, bind address default `127.0.0.1`, provider settings, SMTP, base URL)
+- [X] T029 Implement the `Db` adapter in `apps/server/src/db/client.ts` (node-postgres + pgvector, or PGlite + pglite-pgvector persisted to the data dir), selected by mode
+- [X] T030 Set up migrations: `apps/server/drizzle.config.ts` and a runner in `apps/server/src/db/migrate.ts` that applies the same SQL on pg and PGlite
+- [X] T031 Define the foundational tables in `apps/server/src/db/schema/core.ts`: `workspaces` (`default_deny_labels` ⊆ `business_sensitive, infra, customer`; `auto_approve` default false; `embed_model` default `bge-m3`, `embed_dim` default 1024; `answer_threshold` default 0.7 cloud / 0.8 local), `network_log` (`component` ∈ `server | desktop | cli`, `host`, `purpose`, `allowed`), `jobs` (`status` ∈ `queued | running | done | failed`); ULID text ids, `timestamptz` UTC; on first start in `local` mode create the single default workspace (`owner_email` null) in `apps/server/src/services/bootstrap-local.ts`
+- [X] T032 [P] Write the queue test (must fail first) `apps/server/tests/integration/queue.test.ts`: send/work/schedule and retry behave the same on both adapters
+- [X] T033 Implement `JobQueue` in `apps/server/src/queue/{index.ts,pgboss.ts,inprocess.ts}` (pg-boss 12 for server modes; in-process worker polling `jobs` on PGlite)
+- [X] T034 [P] Write the egress test (must fail first) `apps/server/tests/unit/egress.test.ts`: every outbound request is logged in `network_log` with host and purpose; undeclared hosts are blocked when strict mode is on
+- [X] T035 Implement the egress guard in `apps/server/src/net/egress.ts` (undici global dispatcher, declared-host allowlist, `network_log` writes, strict flag)
+- [X] T036 Implement the model provider registry in `apps/server/src/llm/providers.ts` (AI SDK v7: `@ai-sdk/anthropic`, `@ai-sdk/openai-compatible`, `ollama-ai-provider-v2`; per-workspace chat and embedding models; all traffic through the egress guard) and a deterministic fake provider in `apps/server/src/llm/fake.ts` for tests
+- [X] T037 Implement versioned prompt loading in `apps/server/src/llm/prompts.ts` (reads `prompts/*.md` with a `version` front-matter field; the version is stored as provenance) and document the format in `prompts/README.md`
+- [X] T038 Implement the Hono app in `apps/server/src/app.ts`: error body `{ "error": { "code", "message" } }`, request ids, `GET /v1/health` → `{status, mode, db, version}`, route mounting
+- [X] T039 Implement local-mode owner auth in `apps/server/src/auth/local-token.ts` (per-launch token, only on `127.0.0.1`)
 - [ ] T040 [P] Add test helpers `apps/server/tests/helpers/db.ts` (in-memory PGlite + Postgres container, run every integration test on both) and `apps/server/tests/fixtures/seed.ts` (approved digests in two projects, A and B, with labelled items) so US2 can be tested without US1
 
 ### Device core (Rust)
 
-- [ ] T041 Implement the device store in `crates/pama-core/src/store/{mod.rs,schema.sql}` (SQLite): `captured_session` (`agent` ∈ `claude_code | codex`, `agent_session_id` unique per agent, `transcript_path` never sent, `transcript_sha256`, status machine `detected → redacting → digesting → ready_for_review → submitted`, `failed`, `skipped`), `outbox_item` (`kind` ∈ `digest_upsert | source_tombstone | bundle_change`, `status` ∈ `pending | sent | dead`, ULID idempotency key), `settings` key/value
-- [ ] T042 [P] Implement the Rust egress guard and HTTP client in `crates/pama-core/src/net.rs` (reqwest wrapper, declared hosts, strict flag, appends to a local network log)
-- [ ] T043 [P] Implement OS keychain storage in `crates/pama-core/src/secrets.rs` (keyring-core 1.0 with apple/windows native stores) for device tokens and provider API keys
+- [X] T041 Implement the device store in `crates/pama-core/src/store/{mod.rs,schema.sql}` (SQLite): `captured_session` (`agent` ∈ `claude_code | codex`, `agent_session_id` unique per agent, `transcript_path` never sent, `transcript_sha256`, status machine `detected → redacting → digesting → ready_for_review → submitted`, `failed`, `skipped`), `outbox_item` (`kind` ∈ `digest_upsert | source_tombstone | bundle_change`, `status` ∈ `pending | sent | dead`, ULID idempotency key), `settings` key/value
+- [X] T042 [P] Implement the Rust egress guard and HTTP client in `crates/pama-core/src/net.rs` (reqwest wrapper, declared hosts, strict flag, appends to a local network log)
+- [X] T043 [P] Implement OS keychain storage in `crates/pama-core/src/secrets.rs` (keyring-core 1.0 with apple/windows native stores) for device tokens and provider API keys
 
 ### Eval harness
 
-- [ ] T044 Implement the eval runner in `evals/runner.ts` with the case format documented in `evals/README.md` (YAML: link settings, question, expected outcome, forbidden strings), fixture digests in `evals/fixtures/`, root script `pnpm evals` that exits non-zero on any leak
+- [X] T044 Implement the eval runner in `evals/runner.ts` with the case format documented in `evals/README.md` (YAML: link settings, question, expected outcome, forbidden strings), fixture digests in `evals/fixtures/`, root script `pnpm evals` that exits non-zero on any leak
 
 **Checkpoint**: shared contracts, rules, server and device cores ready; user stories can start
 

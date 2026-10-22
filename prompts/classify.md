@@ -1,7 +1,6 @@
 ---
-
-## version: 1
-
+version: 1
+---
 # pamA classify
 
 You label digest items with sensitivity categories so owners can keep them out of links.

@@ -1,7 +1,6 @@
 ---
-
-## version: 1
-
+version: 1
+---
 # pamA digest
 
 You write a Session Digest: a short, English summary of one AI coding-agent session, so that

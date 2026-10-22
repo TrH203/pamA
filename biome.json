@@ -12,7 +12,9 @@
       "!specs",
       "!packages/types/schema",
       "!rules",
-      "!**/fixtures"
+      "!**/fixtures",
+      "!prompts",
+      "!**/*.md"
     ]
   },
   "formatter": {

@@ -51,6 +51,9 @@ pub fn run() {
             commands::set_sync,
             commands::set_strict_offline,
             commands::get_network_log,
+            commands::get_settings,
+            commands::set_setting,
+            commands::open_settings,
         ])
         .setup(|app| {
             #[cfg(target_os = "macos")]

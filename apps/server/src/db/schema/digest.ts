@@ -34,6 +34,8 @@ export const projects = pgTable(
     /** Overrides the workspace setting when not null. */
     autoApprove: boolean("auto_approve"),
     syncEnabled: boolean("sync_enabled").notNull().default(false),
+    /** When sync was last turned on (servers reject digests older than a later tombstone). */
+    syncEnabledAt: ts("sync_enabled_at"),
     syncTarget: text("sync_target"),
     createdAt: ts("created_at").notNull().defaultNow(),
   },
@@ -53,6 +55,7 @@ export const bundles = pgTable(
     key: text("key"),
     /** Inherits the project setting when null. */
     syncEnabled: boolean("sync_enabled"),
+    syncEnabledAt: ts("sync_enabled_at"),
     createdAt: ts("created_at").notNull().defaultNow(),
   },
   (t) => [

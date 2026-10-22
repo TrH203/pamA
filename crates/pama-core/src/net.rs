@@ -115,6 +115,25 @@ impl<'s> GuardedClient<'s> {
         Ok(req.send()?)
     }
 
+    /// The underlying HTTP client, for requests already allowed by [`Self::check`].
+    pub fn raw(&self) -> &reqwest::blocking::Client {
+        &self.http
+    }
+
+    /// POST after [`Self::check`] already allowed and logged this URL.
+    pub fn post_json_prechecked(
+        &self,
+        url: &str,
+        bearer: Option<&str>,
+        body: &serde_json::Value,
+    ) -> Result<reqwest::blocking::Response, NetError> {
+        let mut req = self.http.post(url).json(body);
+        if let Some(t) = bearer {
+            req = req.bearer_auth(t);
+        }
+        Ok(req.send()?)
+    }
+
     pub fn get(
         &self,
         url: &str,

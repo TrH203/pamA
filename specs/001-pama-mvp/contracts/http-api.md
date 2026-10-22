@@ -25,6 +25,26 @@ Schemas referenced: [session-digest.schema.json](./session-digest.schema.json), 
 
 `status` ∈ `answered | refused`; `refused` includes `reason` ∈ `out_of_scope | low_confidence | denied_topic | guard_failed`.
 
+### Sync (added in implementation, US4)
+
+Tombstones use **portable source keys**, because ids differ between the owner's machine and the
+server: `project` → `<project_key>`, `bundle` → `<project_key>#<bundle_key>`, `session` →
+`<agent>:<agent_session_id>`. A digest whose `sync_enabled_at` is older than a later tombstone
+for its project, bundle or session is refused with 409 (stale delivery).
+
+| Method & path | Where | Purpose |
+|---|---|---|
+| `POST /v1/devices/pairing-code` | server, owner | One-time pairing code (10 min) → `{code, expires_at}` |
+| `GET /v1/devices` · `POST /v1/devices/{id}/revoke` | server, owner | List / revoke devices |
+| `POST /v1/sync/digests` | server, device token | `{outbox_id, digest, approved_at, sync_enabled_at, project_name?, bundle_name?}` → `{digest_id, version}`; Layer 2 runs again at ingest |
+| `POST /v1/sync/tombstones` | server, device token | `{outbox_id, source_type, source_key}` → `{deleted_items, degraded_links}` |
+| `GET /v1/sync/status` | owner | Projects and bundles with sync flags, pending counts |
+| `GET /v1/sync/pending` | **local only** | Approved digests of sync-enabled sources not yet handed to the device outbox, plus queued tombstones |
+| `POST /v1/sync/ack` | **local only** | `{digests: [{digest_id, target}], tombstones: [id]}` — handed to the outbox |
+| `PATCH /v1/projects/{id}` | owner | adds `sync_enabled`, `sync_target`; turning sync off queues a tombstone |
+| `PATCH /v1/bundles/{id}` | owner | adds `sync_enabled` (`true`, `false`, `null` = inherit), `sync_target` |
+| `POST /v1/draft` | owner | Hotkey draft; response adds `ask_id`, `language` |
+
 ## Owner endpoints
 
 | Method & path | Purpose |

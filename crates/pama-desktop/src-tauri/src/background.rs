@@ -43,6 +43,7 @@ pub fn start<R: Runtime>(app: AppHandle<R>) {
                     Duration::from_secs(86_400),
                     IDLE,
                 );
+                let _ = pama_core::sync::sync_once(&store);
                 if let Ok(api) = LocalApi::connect(&store, "desktop") {
                     let worker = Worker {
                         store: &store,

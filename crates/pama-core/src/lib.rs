@@ -13,3 +13,4 @@ pub mod secrets;
 pub mod session;
 pub mod sidecar;
 pub mod store;
+pub mod sync;

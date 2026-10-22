@@ -5,6 +5,7 @@ import type { Env } from "../app.ts";
 import { HttpError } from "../http.ts";
 import { listBundles, mergeBundles, renameBundle, splitBundle } from "../services/bundles.ts";
 import { approveDigest, discardDigest, withdrawDigest } from "../services/digests.ts";
+import { setBundleSync, setProjectSync } from "../services/sync.ts";
 import { body } from "./util.ts";
 
 export const reviewRoutes = new Hono<Env>()
@@ -60,40 +61,65 @@ export const reviewRoutes = new Hono<Env>()
     return c.json(p);
   })
   .patch("/projects/:id", async (c) => {
-    const { db, workspaceId } = c.get("deps");
+    const deps = c.get("deps");
     const patch = await body(
       c,
       z.strictObject({
         name: z.string().min(1).max(200).optional(),
         auto_approve: z.boolean().nullable().optional(),
+        sync_enabled: z.boolean().optional(),
+        sync_target: z.url().nullable().optional(),
       }),
     );
-    const [p] = await db.query(
+    const id = c.req.param("id");
+    const [p] = await deps.db.query(
       `UPDATE projects SET
          name = COALESCE($3, name),
          auto_approve = CASE WHEN $4::boolean THEN $5::boolean ELSE auto_approve END
        WHERE id = $1 AND workspace_id = $2
-       RETURNING id, name, repo_key, auto_approve, sync_enabled, sync_target`,
+       RETURNING id`,
       [
-        c.req.param("id"),
-        workspaceId,
+        id,
+        deps.workspaceId,
         patch.name ?? null,
         "auto_approve" in patch,
         patch.auto_approve ?? null,
       ],
     );
     if (!p) throw new HttpError(404, "not_found", "project not found");
-    return c.json(p);
+    if (patch.sync_enabled !== undefined)
+      await setProjectSync(deps, id, patch.sync_enabled, patch.sync_target);
+    else if (patch.sync_target !== undefined) {
+      await deps.db.query("UPDATE projects SET sync_target = $2 WHERE id = $1", [
+        id,
+        patch.sync_target,
+      ]);
+    }
+    const [out] = await deps.db.query(
+      "SELECT id, name, repo_key, auto_approve, sync_enabled, sync_target FROM projects WHERE id = $1",
+      [id],
+    );
+    return c.json(out);
   })
   .get("/bundles", async (c) => {
     const { db, workspaceId } = c.get("deps");
     return c.json({ items: await listBundles(db, workspaceId) });
   })
   .patch("/bundles/:id", async (c) => {
-    const { db, workspaceId } = c.get("deps");
-    const { name } = await body(c, z.strictObject({ name: z.string().min(1).max(200) }));
-    await renameBundle(db, workspaceId, c.req.param("id"), name);
-    return c.json({ id: c.req.param("id"), name });
+    const deps = c.get("deps");
+    const patch = await body(
+      c,
+      z.strictObject({
+        name: z.string().min(1).max(200).optional(),
+        sync_enabled: z.boolean().nullable().optional(),
+        sync_target: z.url().optional(),
+      }),
+    );
+    const id = c.req.param("id");
+    if (patch.name) await renameBundle(deps.db, deps.workspaceId, id, patch.name);
+    if (patch.sync_enabled !== undefined)
+      await setBundleSync(deps, id, patch.sync_enabled, patch.sync_target);
+    return c.json({ id, ...patch });
   })
   .post("/bundles/merge", async (c) => {
     const { db, workspaceId } = c.get("deps");

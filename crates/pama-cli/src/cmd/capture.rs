@@ -80,5 +80,10 @@ pub fn run(ctx: &Ctx, action: CaptureAction) -> anyhow::Result<Exit> {
             break;
         }
     }
+    // Approved digests of synced sources go out with the same run (no-op when sync is off).
+    pama_core::secrets::init_platform_store();
+    if let Err(e) = pama_core::sync::sync_once(&ctx.store) {
+        log(&format!("sync: {e}"));
+    }
     Ok(Exit::Ok)
 }

@@ -46,4 +46,26 @@ export const draftApi = {
   draft: (question: string, opts: { scope_hint?: SourceRef[]; shorter?: boolean } = {}) =>
     call<Draft>("/v1/draft", { question, ...opts }),
   bundles: () => call<{ items: { id: string; name: string; project: string }[] }>("/v1/bundles"),
+  syncStatus: () =>
+    call<{
+      projects: {
+        id: string;
+        name: string;
+        repo_key: string;
+        sync_enabled: boolean;
+        sync_target: string | null;
+        bundles: { id: string; name: string; sync_enabled: boolean | null }[];
+      }[];
+    }>("/v1/sync/status"),
+  networkLog: () =>
+    call<{
+      items: {
+        id: string;
+        at: number;
+        component: string;
+        host: string;
+        purpose: string;
+        allowed: boolean;
+      }[];
+    }>("/v1/network-log"),
 };

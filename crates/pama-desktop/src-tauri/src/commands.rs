@@ -147,6 +147,75 @@ pub fn open_console<R: Runtime>(app: AppHandle<R>, path: Option<String>) -> CmdR
     Ok(())
 }
 
+// --- Settings (US4) ----------------------------------------------------------------------------
+
+/// Settings the UI may change. Keys ending in `.key` are secrets and go to the OS keychain.
+const SETTINGS: [&str; 9] = [
+    "provider.chat.provider",
+    "provider.chat.model",
+    "provider.chat.base_url",
+    "provider.small.model",
+    "provider.embed.provider",
+    "provider.embed.model",
+    "provider.embed.base_url",
+    "hotkey.answer_source",
+    "sync.default_target",
+];
+
+#[tauri::command]
+pub fn get_settings(state: State<'_, AppState>) -> serde_json::Map<String, serde_json::Value> {
+    let store = state.store.lock().unwrap();
+    let mut out = serde_json::Map::new();
+    for k in SETTINGS.iter().chain(&[
+        pama_core::client::KEY_STRICT_OFFLINE,
+        pama_core::client::KEY_DECLARED_HOSTS,
+    ]) {
+        out.insert(
+            (*k).into(),
+            store
+                .setting(k)
+                .ok()
+                .flatten()
+                .map_or(serde_json::Value::Null, Into::into),
+        );
+    }
+    for p in ["anthropic", "openai-compatible"] {
+        let set = pama_core::secrets::get(&format!("provider.{p}.key"))
+            .ok()
+            .flatten()
+            .is_some();
+        out.insert(format!("provider.{p}.key"), serde_json::Value::Bool(set));
+    }
+    out.insert(
+        "hotkey.accelerator".into(),
+        state.hotkey.lock().unwrap().clone().into(),
+    );
+    out
+}
+
+#[tauri::command]
+pub fn set_setting(state: State<'_, AppState>, key: String, value: String) -> CmdResult<Ok> {
+    if key.starts_with("provider.") && key.ends_with(".key") {
+        pama_core::secrets::set(&key, &value).map_err(|e| e.to_string())?;
+        return Ok(Ok { ok: true });
+    }
+    if !SETTINGS.contains(&key.as_str()) {
+        return Err(format!("unknown setting {key}"));
+    }
+    state
+        .store
+        .lock()
+        .unwrap()
+        .set_setting(&key, &value)
+        .map_err(|e| e.to_string())?;
+    Ok(Ok { ok: true })
+}
+
+#[tauri::command]
+pub fn open_settings<R: Runtime>(app: AppHandle<R>) -> CmdResult<()> {
+    crate::popup::open_settings(&app).map_err(|e| e.to_string())
+}
+
 // --- Sync and strict offline (US4) -------------------------------------------------------------
 
 #[tauri::command]
@@ -157,8 +226,23 @@ pub fn set_sync<R: Runtime>(
     enabled: bool,
     target: Option<String>,
 ) -> CmdResult<Ok> {
-    let _ = (app, scope, id, enabled, target);
-    Err("sync is not available yet".into())
+    let state = app.state::<AppState>();
+    let store = state.store.lock().unwrap();
+    let path = match scope.as_str() {
+        "project" => format!("/v1/projects/{id}"),
+        "bundle" => format!("/v1/bundles/{id}"),
+        _ => return Err("scope must be project or bundle".into()),
+    };
+    let target = target.or(store.setting("sync.default_target").ok().flatten());
+    let mut body = serde_json::json!({ "sync_enabled": enabled });
+    if enabled {
+        body["sync_target"] = serde_json::json!(target);
+    }
+    let api = pama_core::client::LocalApi::connect(&store, "desktop").map_err(|e| e.to_string())?;
+    api.patch(&path, "sync.toggle", &body)
+        .map_err(|e| e.to_string())?;
+    pama_core::sync::sync_once(&store).map_err(|e| e.to_string())?;
+    Ok(Ok { ok: true })
 }
 
 #[tauri::command]

@@ -38,6 +38,26 @@ pub fn show_at_cursor<R: Runtime>(w: &WebviewWindow<R>, cursor: PhysicalPosition
     let _ = w.set_focus();
 }
 
+/// The settings window, served by the local server like the popup.
+pub fn open_settings<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
+    if let Some(w) = app.get_webview_window("settings") {
+        w.show()?;
+        return w.set_focus();
+    }
+    let status = crate::sidecar::status(app);
+    let Some(base) = status.url else {
+        return Ok(());
+    };
+    let url: tauri::Url = format!("{base}/desktop?view=settings")
+        .parse()
+        .expect("server url");
+    WebviewWindowBuilder::new(app, "settings", WebviewUrl::External(url))
+        .title("pamA settings")
+        .inner_size(720.0, 640.0)
+        .build()?;
+    Ok(())
+}
+
 /// Hide the popup and give focus back to the app the owner was in.
 pub fn hide_and_return_focus<R: Runtime>(app: &AppHandle<R>) {
     if let Some(w) = app.get_webview_window(LABEL) {

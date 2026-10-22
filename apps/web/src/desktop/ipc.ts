@@ -33,6 +33,12 @@ export const ipc = {
   openConsole: (path?: string) => invoke<void>("open_console", { path }),
   setStrictOffline: (enabled: boolean, declaredHosts: string[]) =>
     invoke<{ ok: boolean }>("set_strict_offline", { enabled, declaredHosts }),
+  setSync: (scope: "project" | "bundle", id: string, enabled: boolean | null, target?: string) =>
+    invoke<{ ok: boolean }>("set_sync", { scope, id, enabled, target }),
+  getSettings: () => invoke<Record<string, string | boolean | null>>("get_settings"),
+  setSetting: (key: string, value: string) =>
+    invoke<{ ok: boolean }>("set_setting", { key, value }),
+  openSettings: () => invoke<void>("open_settings"),
   getNetworkLog: (limit = 200) =>
     invoke<
       {

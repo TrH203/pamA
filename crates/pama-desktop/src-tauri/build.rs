@@ -14,6 +14,9 @@ fn main() {
             "set_sync",
             "set_strict_offline",
             "get_network_log",
+            "get_settings",
+            "set_setting",
+            "open_settings",
         ]),
     ))
     .expect("tauri build");

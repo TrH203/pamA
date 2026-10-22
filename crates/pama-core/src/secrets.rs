@@ -35,13 +35,40 @@ pub fn use_mock_store() {
 #[error("keychain: {0}")]
 pub struct SecretError(#[from] Error);
 
+/// Tests and CI only: keep secrets in a plain JSON file instead of the OS keychain.
+/// Never set this on a real machine — the file is not encrypted.
+const TEST_FILE_ENV: &str = "PAMA_SECRETS_FILE";
+
+fn test_file() -> Option<std::path::PathBuf> {
+    std::env::var_os(TEST_FILE_ENV).map(Into::into)
+}
+
+fn file_map(p: &std::path::Path) -> serde_json::Map<String, serde_json::Value> {
+    std::fs::read_to_string(p)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
 /// Store a secret under `key` (e.g. `device-token:<server>` or `provider.anthropic.key`).
 pub fn set(key: &str, value: &str) -> Result<(), SecretError> {
+    if let Some(p) = test_file() {
+        let mut m = file_map(&p);
+        m.insert(key.into(), value.into());
+        let _ = std::fs::write(&p, serde_json::to_string(&m).unwrap_or_default());
+        return Ok(());
+    }
     Entry::new(SERVICE, key)?.set_password(value)?;
     Ok(())
 }
 
 pub fn get(key: &str) -> Result<Option<String>, SecretError> {
+    if let Some(p) = test_file() {
+        return Ok(file_map(&p)
+            .get(key)
+            .and_then(|v| v.as_str())
+            .map(String::from));
+    }
     match Entry::new(SERVICE, key)?.get_password() {
         Ok(v) => Ok(Some(v)),
         Err(Error::NoEntry) => Ok(None),
@@ -50,6 +77,12 @@ pub fn get(key: &str) -> Result<Option<String>, SecretError> {
 }
 
 pub fn delete(key: &str) -> Result<(), SecretError> {
+    if let Some(p) = test_file() {
+        let mut m = file_map(&p);
+        m.remove(key);
+        let _ = std::fs::write(&p, serde_json::to_string(&m).unwrap_or_default());
+        return Ok(());
+    }
     match Entry::new(SERVICE, key)?.delete_credential() {
         Ok(()) | Err(Error::NoEntry) => Ok(()),
         Err(e) => Err(e.into()),

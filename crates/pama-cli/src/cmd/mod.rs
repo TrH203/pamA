@@ -9,6 +9,7 @@ mod link;
 mod review;
 mod scan;
 mod server;
+mod sync;
 
 use pama_core::client::ApiError;
 use pama_core::store::Store;
@@ -73,6 +74,8 @@ pub fn run(cli: Cli) -> anyhow::Result<Exit> {
         Command::Inbox => inbox::inbox(&ctx),
         Command::Reply { ask_id, text } => inbox::reply(&ctx, &ask_id, &text),
         Command::Log { link, status } => inbox::log(&ctx, link, status),
+        Command::Pair { code, server } => sync::pair(&ctx, &code, &server),
+        Command::Sync { action } => sync::run(&ctx, action),
         other => {
             let name = format!("{other:?}");
             let name = name

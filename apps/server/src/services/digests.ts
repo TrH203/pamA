@@ -11,6 +11,7 @@ import { embedTexts, toVector } from "../pipeline/embed.ts";
 import { itemSearchText, itemsOf, type LabelMap } from "../pipeline/items.ts";
 import { mergeRedactions } from "../pipeline/transcript.ts";
 import { type SessionDigest, SessionDigestSchema } from "../schema/digest.ts";
+import { queueTombstone, sessionKey } from "./sync.ts";
 
 export type PipelineDeps = Pick<Deps, "db" | "models" | "rules" | "workspaceId">;
 
@@ -57,6 +58,8 @@ interface StoreArgs {
   digest: SessionDigest;
   labels: LabelMap;
   status: "draft" | "approved";
+  /** Override the content hash (sync stores the sender's hash for idempotency). */
+  hash?: string;
 }
 
 /** Insert a new digest version with its items (inactive). Returns id and version. */
@@ -78,7 +81,7 @@ export async function storeVersion(deps: PipelineDeps, a: StoreArgs) {
         deps.workspaceId,
         a.sessionId,
         version,
-        digestHash(a.digest),
+        a.hash ?? digestHash(a.digest),
         JSON.stringify(a.digest),
         a.status,
         a.digest.provenance?.prompt_version ?? null,
@@ -195,5 +198,20 @@ export async function withdrawDigest(deps: PipelineDeps, id: string) {
   await deps.db.tx(async (q) => {
     await q.query("UPDATE digests SET status = 'withdrawn' WHERE id = $1", [id]);
     await q.query("UPDATE digest_items SET active = false WHERE digest_id = $1", [id]);
+    // Synced copies must go too (Constitution I).
+    const [src] = await q.query<{
+      target: string | null;
+      on: boolean;
+      agent: string;
+      agent_session_id: string;
+    }>(
+      `SELECT p.sync_target AS target, COALESCE(b.sync_enabled, p.sync_enabled) AS on, s.agent, s.agent_session_id
+       FROM sessions s JOIN projects p ON p.id = s.project_id JOIN bundles b ON b.id = s.bundle_id WHERE s.id = $1`,
+      [row.session_id],
+    );
+    if (src?.on && src.target) {
+      await queueTombstone(q, src.target, "session", sessionKey(src.agent, src.agent_session_id));
+      await q.query("DELETE FROM sync_deliveries WHERE digest_id = $1", [id]);
+    }
   });
 }

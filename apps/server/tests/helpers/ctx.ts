@@ -52,7 +52,7 @@ export async function makeCtx(f: DbFactory, overrides: Partial<Config> = {}): Pr
         app.request(path, {
           method: init.method ?? (init.json === undefined ? "GET" : "POST"),
           headers: {
-            authorization: `Bearer ${config.localToken}`,
+            authorization: `Bearer ${config.mode === "local" ? config.localToken : config.ownerToken}`,
             ...(init.json === undefined ? {} : { "content-type": "application/json" }),
           },
           body: init.json === undefined ? undefined : JSON.stringify(init.json),

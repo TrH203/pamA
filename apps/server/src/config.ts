@@ -36,6 +36,8 @@ const EnvSchema = z.object({
   PAMA_LOCAL_TOKEN: z.string().min(16).optional(),
   /** Signs visitor cookies and salts IP hashes. Local mode persists one in the data dir. */
   PAMA_SECRET: z.string().min(32).optional(),
+  /** Bearer token for the owner API on self-host/cloud servers (admin and CLI access). */
+  PAMA_OWNER_TOKEN: z.string().min(24).optional(),
   PAMA_STRICT_OFFLINE: z
     .enum(["true", "false", "1", "0"])
     .default("false")
@@ -66,6 +68,7 @@ export interface Config {
   /** Per-launch owner token in local mode (Constitution I: console only on 127.0.0.1). */
   localToken: string;
   secret: string;
+  ownerToken: string | undefined;
   strictOffline: boolean;
   declaredHosts: string[];
   chat: ProviderConfig;
@@ -110,6 +113,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     databaseUrl: e.DATABASE_URL,
     baseUrl: e.PAMA_BASE_URL ?? `http://${bind === "0.0.0.0" ? "localhost" : bind}:${e.PAMA_PORT}`,
     localToken: e.PAMA_LOCAL_TOKEN ?? randomBytes(24).toString("base64url"),
+    ownerToken: e.PAMA_OWNER_TOKEN,
     secret:
       e.PAMA_SECRET ??
       persistentSecret(e.PAMA_DATA_DIR ?? join(homedir(), ".pama", "server"), e.PAMA_MODE),
@@ -134,6 +138,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
       PAMA_MODE: "local",
       PAMA_LOCAL_TOKEN: "test-local-token-0123456789",
       PAMA_SECRET: "test-secret-0123456789-0123456789-abcdef",
+      PAMA_OWNER_TOKEN: "test-owner-token-0123456789-abcdef",
       PAMA_CHAT_PROVIDER: "fake",
       PAMA_CHAT_MODEL: "fake",
       PAMA_EMBED_PROVIDER: "fake",

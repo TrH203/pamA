@@ -172,6 +172,13 @@ pub struct OutboxItem {
     pub status: String,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct OutboxCounts {
+    pub pending: i64,
+    pub sent: i64,
+    pub dead: i64,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct NetworkLogEntry {
     pub id: String,
@@ -401,6 +408,41 @@ impl Store {
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Rejected by the receiver (e.g. 409, 422): retrying will not help.
+    pub fn outbox_dead(&self, id: &str, error: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE outbox_item SET status = 'dead', last_error = ?2, attempts = attempts + 1 WHERE id = ?1",
+            params![id, error],
+        )?;
+        Ok(())
+    }
+
+    /// Make every pending item due now ("sync now", or after the owner fixed the network).
+    pub fn outbox_retry_now(&self) -> Result<()> {
+        self.conn.execute(
+            "UPDATE outbox_item SET next_attempt_at = 0 WHERE status = 'pending'",
+            [],
+        )?;
+        Ok(())
+    }
+
+    pub fn outbox_counts(&self) -> Result<OutboxCounts> {
+        let mut c = OutboxCounts::default();
+        let mut st = self
+            .conn
+            .prepare("SELECT status, count(*) FROM outbox_item GROUP BY status")?;
+        let rows = st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
+        for row in rows {
+            let (status, n) = row?;
+            match status.as_str() {
+                "pending" => c.pending = n,
+                "sent" => c.sent = n,
+                _ => c.dead = n,
+            }
+        }
+        Ok(c)
     }
 
     pub fn outbox_sent(&self, id: &str) -> Result<()> {

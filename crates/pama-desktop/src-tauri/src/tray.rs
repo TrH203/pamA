@@ -12,6 +12,7 @@ pub fn create<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let autostart = app.autolaunch().is_enabled().unwrap_or(false);
     let console = MenuItem::with_id(app, "console", "Open console", true, None::<&str>)?;
     let ask = MenuItem::with_id(app, "ask", "Draft an answer…", true, None::<&str>)?;
+    let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
     let login = CheckMenuItem::with_id(
         app,
         "autostart",
@@ -26,6 +27,7 @@ pub fn create<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         &[
             &console,
             &ask,
+            &settings,
             &PredefinedMenuItem::separator(app)?,
             &login,
             &quit,
@@ -42,6 +44,9 @@ pub fn create<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
                 let _ = open_console(app.clone(), None);
             }
             "ask" => hotkey::on_hotkey(app),
+            "settings" => {
+                let _ = crate::popup::open_settings(app);
+            }
             "autostart" => {
                 let al = app.autolaunch();
                 let _ = if al.is_enabled().unwrap_or(false) {

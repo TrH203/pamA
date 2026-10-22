@@ -257,22 +257,22 @@ disable → server items deleted and the link stops serving them.
 
 ### Tests for User Story 4 (write first, must fail) ⚠️
 
-- [ ] T118 [P] [US4] Write the sync API test `apps/server/tests/integration/sync.test.ts`: only approved digests accepted, 409 when sync is disabled for the source, idempotent on `outbox_id` and `digest_hash`, tombstone deletes digests and items and marks links `degraded`, revoked device → 401
-- [ ] T119 [P] [US4] Write the outbox test `crates/pama-core/tests/outbox.rs`: exactly-once delivery across simulated offline periods, exponential backoff, `dead` after max attempts
-- [ ] T120 [P] [US4] Write strict offline tests `crates/pama-core/tests/net_guard.rs` and `apps/server/tests/unit/egress-strict.test.ts`: undeclared host blocked and logged with `allowed = false`, declared hosts allowed
+- [X] T118 [P] [US4] Write the sync API test `apps/server/tests/integration/sync.test.ts`: only approved digests accepted, 409 when sync is disabled for the source, idempotent on `outbox_id` and `digest_hash`, tombstone deletes digests and items and marks links `degraded`, revoked device → 401
+- [X] T119 [P] [US4] Write the outbox test `crates/pama-core/tests/outbox.rs`: exactly-once delivery across simulated offline periods, exponential backoff, `dead` after max attempts
+- [X] T120 [P] [US4] Write strict offline tests `crates/pama-core/tests/net_guard.rs` and `apps/server/tests/unit/egress-strict.test.ts`: undeclared host blocked and logged with `allowed = false`, declared hosts allowed
 
 ### Implementation for User Story 4
 
-- [ ] T121 [US4] Add `GET /v1/sync/pending` (local sidecar only: approved digests of sync-enabled sources not yet delivered, plus pending tombstones) to `specs/001-pama-mvp/contracts/http-api.md` and implement it in `apps/server/src/routes/sync-local.ts`
-- [ ] T122 [US4] Define tables in `apps/server/src/db/schema/sync.ts` + migration: `devices` (`token_hash` argon2id, `last_seen_at`, `revoked_at`), `sync_tombstones` (`source_type`, `source_id`, `received_at`)
-- [ ] T123 [US4] Implement pairing in `apps/server/src/routes/devices.ts` (`POST /v1/devices/pair`, one-time code shown in console, 410 when expired, device revoke) and device bearer auth in `apps/server/src/auth/device.ts`
-- [ ] T124 [US4] Implement `POST /v1/sync/digests` and `POST /v1/sync/tombstones` in `apps/server/src/routes/sync.ts` (tombstone → delete items, `active = false`, affected links `degraded`)
-- [ ] T125 [US4] Implement the device sync worker in `crates/pama-core/src/sync/{mod.rs,outbox.rs}`: poll `GET /v1/sync/pending` on the sidecar, write `outbox_item` rows, deliver to the target with idempotency keys and backoff
-- [ ] T126 [US4] Implement `pama pair` in `crates/pama-cli/src/cmd/pair.rs` (token stored in the OS keychain) and `pama sync status|enable|disable` in `crates/pama-cli/src/cmd/sync.rs` (default off; disable issues tombstones)
-- [ ] T127 [US4] Implement strict offline wiring: `strict_offline` and `declared_hosts` keys in `crates/pama-cli/src/cmd/config.rs`, desktop commands `set_sync`, `set_strict_offline`, `get_network_log` in `crates/pama-desktop/src-tauri/src/commands/settings.rs`, and `GET /v1/network-log` in `apps/server/src/routes/network-log.ts`
-- [ ] T128 [US4] Build the settings view in `apps/web/src/desktop/Settings.tsx` (per-source sync toggles, strict offline, declared hosts, network log, model providers, hotkey, answer source)
-- [ ] T129 [P] [US4] Document local-mode link exposure in `docs/local-links.md` (LAN binding, Tailscale Funnel, Cloudflare Tunnel with the TLS warning; Ollama is outside the egress guard)
-- [ ] T130 [US4] Add the end-to-end test for quickstart Scenario 4 in `apps/server/tests/e2e/us4-sync.test.ts` (local PGlite sidecar + remote Postgres server, enable/disable sync, network log assertions)
+- [X] T121 [US4] Add `GET /v1/sync/pending` (local sidecar only: approved digests of sync-enabled sources not yet delivered, plus pending tombstones) to `specs/001-pama-mvp/contracts/http-api.md` and implement it in `apps/server/src/routes/sync-local.ts`
+- [X] T122 [US4] Define tables in `apps/server/src/db/schema/sync.ts` + migration: `devices` (`token_hash` argon2id, `last_seen_at`, `revoked_at`), `sync_tombstones` (`source_type`, `source_id`, `received_at`)
+- [X] T123 [US4] Implement pairing in `apps/server/src/routes/devices.ts` (`POST /v1/devices/pair`, one-time code shown in console, 410 when expired, device revoke) and device bearer auth in `apps/server/src/auth/device.ts`
+- [X] T124 [US4] Implement `POST /v1/sync/digests` and `POST /v1/sync/tombstones` in `apps/server/src/routes/sync.ts` (tombstone → delete items, `active = false`, affected links `degraded`)
+- [X] T125 [US4] Implement the device sync worker in `crates/pama-core/src/sync/{mod.rs,outbox.rs}`: poll `GET /v1/sync/pending` on the sidecar, write `outbox_item` rows, deliver to the target with idempotency keys and backoff
+- [X] T126 [US4] Implement `pama pair` in `crates/pama-cli/src/cmd/pair.rs` (token stored in the OS keychain) and `pama sync status|enable|disable` in `crates/pama-cli/src/cmd/sync.rs` (default off; disable issues tombstones)
+- [X] T127 [US4] Implement strict offline wiring: `strict_offline` and `declared_hosts` keys in `crates/pama-cli/src/cmd/config.rs`, desktop commands `set_sync`, `set_strict_offline`, `get_network_log` in `crates/pama-desktop/src-tauri/src/commands/settings.rs`, and `GET /v1/network-log` in `apps/server/src/routes/network-log.ts`
+- [X] T128 [US4] Build the settings view in `apps/web/src/desktop/Settings.tsx` (per-source sync toggles, strict offline, declared hosts, network log, model providers, hotkey, answer source)
+- [X] T129 [P] [US4] Document local-mode link exposure in `docs/local-links.md` (LAN binding, Tailscale Funnel, Cloudflare Tunnel with the TLS warning; Ollama is outside the egress guard)
+- [X] T130 [US4] Add the end-to-end test for quickstart Scenario 4 in `apps/server/tests/e2e/us4-sync.test.ts` (local PGlite sidecar + remote Postgres server, enable/disable sync, network log assertions)
 
 **Checkpoint**: privacy story complete; data leaves the machine only by explicit per-source choice
 

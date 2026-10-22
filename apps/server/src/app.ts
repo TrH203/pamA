@@ -2,20 +2,25 @@
 // and adapters, not in separate apps (Constitution IV).
 import { Hono } from "hono";
 import { requestId } from "hono/request-id";
-import { localToken } from "./auth/local-token.ts";
+import type { Device } from "./auth/device.ts";
+import { authenticate } from "./auth/index.ts";
 import type { Config } from "./config.ts";
 import type { Db } from "./db/client.ts";
 import { errorBody, onError } from "./http.ts";
 import type { Models } from "./llm/providers.ts";
 import type { Mailer } from "./mail/index.ts";
 import type { EgressGuard } from "./net/egress.ts";
-import { deviceRoutes, transcriptsGuard } from "./routes/device.ts";
+import { deviceRoutes } from "./routes/device.ts";
+import { devicesRoutes } from "./routes/devices.ts";
 import { draftRoutes } from "./routes/draft.ts";
 import { inboxRoutes } from "./routes/inbox.ts";
 import { linkRoutes } from "./routes/links.ts";
+import { networkLogRoutes } from "./routes/network-log.ts";
 import { publicRoutes } from "./routes/public.ts";
 import { reviewRoutes } from "./routes/review.ts";
 import { DEFAULT_WEB_DIR, staticRoutes } from "./routes/static.ts";
+import { syncRoutes } from "./routes/sync.ts";
+import { syncLocalRoutes } from "./routes/sync-local.ts";
 import type { RuleSet } from "./safety/rules.ts";
 
 export interface Deps {
@@ -29,7 +34,7 @@ export interface Deps {
   mailer: Mailer;
 }
 
-export type Env = { Variables: { deps: Deps; requestId: string } };
+export type Env = { Variables: { deps: Deps; requestId: string; device: Device } };
 
 export function createApp(deps: Deps) {
   const app = new Hono<Env>();
@@ -50,17 +55,21 @@ export function createApp(deps: Deps) {
     }),
   );
 
-  // Owner and device API. In local mode one per-launch token covers both; server modes add
-  // owner sessions and device tokens (US4, US5).
-  app.route("/v1", transcriptsGuard);
-  const v1 = new Hono<Env>();
-  if (deps.config.mode === "local") v1.use(localToken(deps.config.localToken));
-  v1.route("/", deviceRoutes);
-  v1.route("/", reviewRoutes);
-  v1.route("/", linkRoutes);
-  v1.route("/", inboxRoutes);
-  v1.route("/", draftRoutes);
-  app.route("/v1", v1);
+  // Owner and device API: who may call what is decided in one place (auth/index.ts).
+  app.use("/v1/*", authenticate());
+  for (const r of [
+    deviceRoutes,
+    reviewRoutes,
+    linkRoutes,
+    inboxRoutes,
+    draftRoutes,
+    devicesRoutes,
+    syncRoutes,
+    syncLocalRoutes,
+    networkLogRoutes,
+  ]) {
+    app.route("/v1", r);
+  }
   app.route("/a", publicRoutes);
   app.route("/", staticRoutes(process.env.PAMA_WEB_DIR ?? DEFAULT_WEB_DIR));
 

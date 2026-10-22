@@ -183,7 +183,7 @@ credential are refused and can be forwarded; 5 wrong PINs → 423; a revoked lin
 - [X] T079 [P] [US2] Write the access test `apps/server/tests/integration/access.test.ts`: argon2id PIN; 5 failed attempts → 423 for 15 minutes (per visitor + IP); OTP 6 digits, 10-minute TTL, 5 attempts; allowlist emails and `*@domain`; cookie scoped to `/a/<slug>`; rate limit `rate_limit_per_hour` (1–500, default 30) → 429
 - [X] T080 [P] [US2] Write the guard test `apps/server/tests/unit/guard.test.ts`: a rule hit, `leak`, `off_scope` or `unsupported_claims` from the judge ⇒ `refused`; an `answered` ask without ≥ 1 citation is rejected; refusal reasons ∈ `out_of_scope | low_confidence | denied_topic | guard_failed`
 - [X] T081 [P] [US2] Write the public API contract test `apps/server/tests/contract/public-api.test.ts`: response shapes per contracts/http-api.md, `X-Pama-Automated: true`, 410 bodies contain only the error code, no project or bundle names outside the link appear in any response
-- [ ] T082 [P] [US2] Write ≥ 50 red-team cases in `evals/cases/*.yaml` with fixture digests in `evals/fixtures/`: secret extraction, cross-scope probing, prompt injection in the question and inside digest text, hallucinated decisions, language switching (Vietnamese/English)
+- [X] T082 [P] [US2] Write ≥ 50 red-team cases in `evals/cases/*.yaml` with fixture digests in `evals/fixtures/`: secret extraction, cross-scope probing, prompt injection in the question and inside digest text, hallucinated decisions, language switching (Vietnamese/English)
 
 ### Implementation for User Story 2
 
@@ -201,12 +201,12 @@ credential are refused and can be forwarded; 5 wrong PINs → 423; a revoked lin
 - [X] T094 [P] [US2] Implement rate limiting in `apps/server/src/policy/rate-limit.ts` (per link per hour, per visitor)
 - [X] T095 [US2] Implement public routes in `apps/server/src/routes/public.ts`: `GET /a/{slug}/api/meta`, `POST /a/{slug}/api/ask`, `POST /a/{slug}/api/asks/{ask_id}/forward` (409 if already forwarded), `GET /a/{slug}/api/asks`; every call writes an `asks`/`visitors` audit row and sets `X-Pama-Automated: true`
 - [X] T096 [US2] Implement inbox and audit routes in `apps/server/src/routes/inbox.ts`: `GET /v1/inbox`, `POST /v1/asks/{id}/reply` (shown on the link page, emailed if the visitor verified), `POST /v1/asks/{id}/dismiss`, `GET /v1/audit` with filters and `?format=csv`
-- [ ] T097 [P] [US2] Implement audit retention in `apps/server/src/jobs/retention.ts` (default 180 days, configurable; owner export/delete)
+- [X] T097 [P] [US2] Implement audit retention in `apps/server/src/jobs/retention.ts` (default 180 days, configurable; owner export/delete)
 - [ ] T098 [US2] Serve the web builds from the server in `apps/server/src/routes/static.ts` (`GET /a/{slug}` SPA, 410 page without content for expired/revoked, owner console)
 - [ ] T099 [US2] Build the Ask Link page in `apps/web/src/ask/{AskPage.tsx,AccessGate.tsx,Thread.tsx}`: owner name, coverage, suggested questions, "automated answer on behalf of <owner>" label, citations, forward button, owner replies, "link no longer active" and "owner's agent is offline" states (shown when an already-open page loses the server), and a post-answer useful/not useful rating stored on the ask (SC-006)
 - [ ] T100 [US2] Build the console in `apps/web/src/console/{LinkCreate.tsx,Links.tsx,Inbox.tsx,Audit.tsx}`: query → ranked suggestions with flagged sources unchecked, defaults (7 days, summary, PIN, 30/hour), edit suggested questions, revoke, inbox reply, audit filters and CSV export
 - [ ] T101 [US2] Implement `pama link create|list|revoke`, `pama inbox`, `pama reply`, `pama log` in `crates/pama-cli/src/cmd/{link.rs,inbox.rs,log.rs}` per contracts/cli.md
-- [ ] T102 [US2] Wire `evals/runner.ts` to the real answer pipeline and add `.github/workflows/evals.yml` that runs `pnpm evals` on every PR touching `prompts/`, `rules/`, `apps/server/src/pipeline/` or `apps/server/src/policy/` (zero-leak gate)
+- [X] T102 [US2] Wire `evals/runner.ts` to the real answer pipeline and add `.github/workflows/evals.yml` that runs `pnpm evals` on every PR touching `prompts/`, `rules/`, `apps/server/src/pipeline/` or `apps/server/src/policy/` (zero-leak gate)
 - [ ] T103 [US2] Add the Playwright test for quickstart Scenario 2 in `apps/web/tests/e2e/ask-link.spec.ts`
 
 **Checkpoint**: US1 + US2 = the core product, demoable in local mode over LAN

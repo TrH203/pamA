@@ -4,6 +4,7 @@ import { createApp } from "./app.ts";
 import { loadConfig } from "./config.ts";
 import { openDb } from "./db/client.ts";
 import { migrate } from "./db/migrate.ts";
+import { applyRetention } from "./jobs/retention.ts";
 import { createModels } from "./llm/providers.ts";
 import { createMailer } from "./mail/index.ts";
 import { EgressGuard } from "./net/egress.ts";
@@ -24,6 +25,10 @@ const rules = loadRuleSet(
 // Server modes resolve the workspace from the owner session (US5); local mode has exactly one.
 const workspaceId = await bootstrapLocal(db, models.local);
 const mailer = await createMailer(config, guard);
+// Daily audit retention.
+const retention = () => applyRetention(db).catch((e) => console.error("retention:", e));
+void retention();
+setInterval(retention, 24 * 3_600_000).unref();
 const app = createApp({ config, db, models, rules, guard, workspaceId, mailer });
 
 serve({ fetch: app.fetch, hostname: config.bind, port: config.port }, (info) => {

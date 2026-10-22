@@ -300,12 +300,12 @@ sync one bundle, turn the owner's machine off, answer through a link served by t
 
 ## Phase 8: Polish & Cross-Cutting Concerns
 
-- [ ] T138 [P] Write `docs/security-model.md` and `docs/threat-model.md` (three redaction layers, scope enforcement, prompt injection, known limits)
-- [ ] T139 [P] Add `.github/workflows/release.yml`: Tauri bundles for macOS (signed, notarized) and Windows, sidecar per target, `pama` CLI binaries, docker image
-- [ ] T140 [P] Add performance checks in `scripts/perf/`: hotkey draft p90 ≤ 3 s, digest ready p95 ≤ 2 min, Ask Link answer p90, sidecar binary ≤ 120 MB, desktop idle memory ≤ 200 MB
-- [ ] T141 [P] Add a config test `crates/pama-desktop/src-tauri/tests/no_telemetry.rs` asserting the updater is off by default and no telemetry endpoint is configured (FR-028)
-- [ ] T142 Write `pama doctor` in `crates/pama-cli/src/cmd/doctor.rs` (hooks installed, models reachable, permissions, strict offline config)
-- [ ] T143 Update `README.md` with install, 10-minute first link walkthrough (SC-005) and architecture overview
+- [X] T138 [P] Write `docs/security-model.md` and `docs/threat-model.md` (three redaction layers, scope enforcement, prompt injection, known limits)
+- [X] T139 [P] Add `.github/workflows/release.yml`: Tauri bundles for macOS (signed, notarized) and Windows, sidecar per target, `pama` CLI binaries, docker image
+- [X] T140 [P] Add performance checks in `scripts/perf/`: hotkey draft p90 ≤ 3 s, digest ready p95 ≤ 2 min, Ask Link answer p90, sidecar binary ≤ 120 MB, desktop idle memory ≤ 200 MB
+- [X] T141 [P] Add a config test `crates/pama-desktop/src-tauri/tests/no_telemetry.rs` asserting the updater is off by default and no telemetry endpoint is configured (FR-028)
+- [X] T142 Write `pama doctor` in `crates/pama-cli/src/cmd/doctor.rs` (hooks installed, models reachable, permissions, strict offline config)
+- [X] T143 Update `README.md` with install, 10-minute first link walkthrough (SC-005) and architecture overview
 - [ ] T144 Run all quickstart.md scenarios on macOS and Windows and record results in `specs/001-pama-mvp/checklists/release.md`
 
 ---

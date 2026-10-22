@@ -2,6 +2,7 @@
 
 mod capture;
 mod config;
+mod doctor;
 mod hook;
 mod inbox;
 mod init;
@@ -76,16 +77,7 @@ pub fn run(cli: Cli) -> anyhow::Result<Exit> {
         Command::Log { link, status } => inbox::log(&ctx, link, status),
         Command::Pair { code, server } => sync::pair(&ctx, &code, &server),
         Command::Sync { action } => sync::run(&ctx, action),
-        other => {
-            let name = format!("{other:?}");
-            let name = name
-                .split([' ', '{', '('])
-                .next()
-                .unwrap_or("command")
-                .to_lowercase();
-            eprintln!("pama {name}: not implemented yet");
-            Ok(Exit::User)
-        }
+        Command::Doctor => doctor::run(&ctx),
     }
 }
 

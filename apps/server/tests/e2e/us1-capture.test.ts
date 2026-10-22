@@ -35,6 +35,7 @@ describe.skipIf(!existsSync(PAMA))("US1 capture → review (quickstart scenario 
     PAMA_EMBED_PROVIDER: "fake",
     PAMA_EMBED_MODEL: "fake",
     PAMA_RULES_DIR: join(ROOT, "rules"),
+    PAMA_PORT: String(7500 + Math.floor(Math.random() * 200)),
   };
   const pama = (args: string[], input?: string) => {
     const r = spawnSync(PAMA, args, {

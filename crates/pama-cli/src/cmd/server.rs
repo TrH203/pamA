@@ -53,7 +53,12 @@ pub fn ensure_started(store: &Store, lan: bool) -> anyhow::Result<ServerInfo> {
     let mut cmd = server_command().ok_or_else(|| {
         anyhow::anyhow!("pama-server not found next to pama (set PAMA_SERVER_CMD for development)")
     })?;
-    let port = free_port(DEFAULT_PORT);
+    // PAMA_PORT picks the preferred port (e.g. several isolated setups on one machine).
+    let preferred = std::env::var("PAMA_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(DEFAULT_PORT);
+    let port = free_port(preferred);
     let token = new_token();
     let bind = if lan { "0.0.0.0" } else { "127.0.0.1" };
     std::fs::create_dir_all(paths::server_data_dir())?;

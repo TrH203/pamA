@@ -30,6 +30,7 @@ describe.skipIf(!existsSync(PAMA) || !PG)("US4 local mode and sync (quickstart s
     PAMA_EMBED_PROVIDER: "fake",
     PAMA_EMBED_MODEL: "fake",
     PAMA_RULES_DIR: join(ROOT, "rules"),
+    PAMA_PORT: String(7900 + Math.floor(Math.random() * 90)),
   };
   const pama = (args: string[]) => {
     const r = spawnSync(PAMA, [...args, "--json"], {

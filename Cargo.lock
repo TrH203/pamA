@@ -3322,6 +3322,7 @@ dependencies = [
  "anyhow",
  "clap",
  "pama-core",
+ "reqwest",
  "serde",
  "serde_json",
  "ulid",

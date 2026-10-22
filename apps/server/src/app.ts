@@ -6,10 +6,20 @@ import { localToken } from "./auth/local-token.ts";
 import type { Config } from "./config.ts";
 import type { Db } from "./db/client.ts";
 import { errorBody, onError } from "./http.ts";
+import type { Models } from "./llm/providers.ts";
+import type { EgressGuard } from "./net/egress.ts";
+import { deviceRoutes, transcriptsGuard } from "./routes/device.ts";
+import { reviewRoutes } from "./routes/review.ts";
+import type { RuleSet } from "./safety/rules.ts";
 
 export interface Deps {
   config: Config;
   db: Db;
+  models: Models;
+  rules: RuleSet;
+  guard: EgressGuard;
+  /** The workspace served by this process (single owner per workspace in this release). */
+  workspaceId: string;
 }
 
 export type Env = { Variables: { deps: Deps; requestId: string } };
@@ -35,8 +45,11 @@ export function createApp(deps: Deps) {
 
   // Owner and device API. In local mode one per-launch token covers both; server modes add
   // owner sessions and device tokens (US4, US5).
+  app.route("/v1", transcriptsGuard);
   const v1 = new Hono<Env>();
   if (deps.config.mode === "local") v1.use(localToken(deps.config.localToken));
+  v1.route("/", deviceRoutes);
+  v1.route("/", reviewRoutes);
   app.route("/v1", v1);
 
   return app;

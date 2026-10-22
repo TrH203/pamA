@@ -15,6 +15,13 @@
       "when": 1792687207672,
       "tag": "0001_core",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792687998149,
+      "tag": "0002_digest",
+      "breakpoints": true
     }
   ]
 }

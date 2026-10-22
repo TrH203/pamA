@@ -12,7 +12,13 @@ import * as schema from "./schema/index.ts";
 export type Schema = typeof schema;
 export type Orm = PgDatabase<PgQueryResultHKT, Schema>;
 
-export interface Db {
+/** What a statement runner needs; implemented by Db and by a transaction handle. */
+export interface Queryable {
+  exec(sql: string): Promise<void>;
+  query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
+}
+
+export interface Db extends Queryable {
   kind: "pg" | "pglite";
   /** Connection string (pg only), for components that open their own pool (pg-boss). */
   url?: string;
@@ -21,6 +27,8 @@ export interface Db {
   exec(sql: string): Promise<void>;
   /** Run one parameterized statement and return its rows. */
   query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
+  /** Run `fn` in one transaction; rolled back if it throws. */
+  tx<T>(fn: (q: Queryable) => Promise<T>): Promise<T>;
   close(): Promise<void>;
 }
 
@@ -35,6 +43,16 @@ export async function openPglite(dataDir?: string): Promise<Db> {
     },
     query: async <T>(sql: string, params: unknown[] = []) =>
       (await client.query<T>(sql, params)).rows,
+    tx: (fn) =>
+      client.transaction((t) =>
+        fn({
+          exec: async (sql) => {
+            await t.exec(sql);
+          },
+          query: async <T>(sql: string, params: unknown[] = []) =>
+            (await t.query<T>(sql, params)).rows,
+        }),
+      ),
     close: () => client.close(),
   };
 }
@@ -50,6 +68,26 @@ export async function openPg(url: string): Promise<Db> {
     },
     query: async <T>(sql: string, params: unknown[] = []) =>
       (await pool.query(sql, params)).rows as T[],
+    tx: async (fn) => {
+      const c = await pool.connect();
+      try {
+        await c.query("BEGIN");
+        const out = await fn({
+          exec: async (sql) => {
+            await c.query(sql);
+          },
+          query: async <T>(sql: string, params: unknown[] = []) =>
+            (await c.query(sql, params)).rows as T[],
+        });
+        await c.query("COMMIT");
+        return out;
+      } catch (e) {
+        await c.query("ROLLBACK");
+        throw e;
+      } finally {
+        c.release();
+      }
+    },
     close: () => pool.end(),
   };
 }

@@ -100,6 +100,9 @@ pub struct NormalizedSession {
     pub skipped_lines: usize,
 }
 
+/// What a tool result needs from its call: normalized tool, path, command.
+pub(crate) type CallInfo = (Option<String>, Option<String>, Option<String>);
+
 pub(crate) fn truncate(s: &str, max: usize) -> String {
     match s.char_indices().nth(max) {
         Some((i, _)) => format!("{}\n[…truncated]", &s[..i]),

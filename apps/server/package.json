@@ -10,7 +10,8 @@
     "start": "tsx src/index.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "demo": "tsx scripts/demo.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.85",

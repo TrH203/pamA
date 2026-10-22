@@ -14,6 +14,7 @@ import { inboxRoutes } from "./routes/inbox.ts";
 import { linkRoutes } from "./routes/links.ts";
 import { publicRoutes } from "./routes/public.ts";
 import { reviewRoutes } from "./routes/review.ts";
+import { DEFAULT_WEB_DIR, staticRoutes } from "./routes/static.ts";
 import type { RuleSet } from "./safety/rules.ts";
 
 export interface Deps {
@@ -59,6 +60,7 @@ export function createApp(deps: Deps) {
   v1.route("/", inboxRoutes);
   app.route("/v1", v1);
   app.route("/a", publicRoutes);
+  app.route("/", staticRoutes(process.env.PAMA_WEB_DIR ?? DEFAULT_WEB_DIR));
 
   return app;
 }

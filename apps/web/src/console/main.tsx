@@ -1,14 +1,32 @@
-import { StrictMode, useState } from "react";
+import { type JSX, StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "../styles.css";
+import { Audit } from "./Audit.tsx";
 import { Bundles } from "./Bundles.tsx";
+import { Inbox } from "./Inbox.tsx";
+import { Links } from "./Links.tsx";
 import { Review } from "./Review.tsx";
 
-const TABS = { review: "Review", bundles: "Bundles" } as const;
+const TABS = {
+  review: "Review",
+  links: "Links",
+  inbox: "Inbox",
+  audit: "Audit",
+  bundles: "Bundles",
+} as const;
+const PAGES: Record<Tab, () => JSX.Element> = {
+  review: Review,
+  links: Links,
+  inbox: Inbox,
+  audit: Audit,
+  bundles: Bundles,
+};
 type Tab = keyof typeof TABS;
 
 function ConsoleApp() {
-  const [tab, setTab] = useState<Tab>("review");
+  const initial = (new URLSearchParams(location.search).get("tab") ?? "review") as Tab;
+  const [tab, setTab] = useState<Tab>(initial in TABS ? initial : "review");
+  const Page = PAGES[tab];
   return (
     <div className="mx-auto max-w-5xl px-4 py-6">
       <header className="mb-6 flex flex-wrap items-center gap-4">
@@ -26,7 +44,7 @@ function ConsoleApp() {
           ))}
         </nav>
       </header>
-      {tab === "review" ? <Review /> : <Bundles />}
+      <Page />
     </div>
   );
 }

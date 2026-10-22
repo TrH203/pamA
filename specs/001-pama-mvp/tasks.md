@@ -202,12 +202,12 @@ credential are refused and can be forwarded; 5 wrong PINs → 423; a revoked lin
 - [X] T095 [US2] Implement public routes in `apps/server/src/routes/public.ts`: `GET /a/{slug}/api/meta`, `POST /a/{slug}/api/ask`, `POST /a/{slug}/api/asks/{ask_id}/forward` (409 if already forwarded), `GET /a/{slug}/api/asks`; every call writes an `asks`/`visitors` audit row and sets `X-Pama-Automated: true`
 - [X] T096 [US2] Implement inbox and audit routes in `apps/server/src/routes/inbox.ts`: `GET /v1/inbox`, `POST /v1/asks/{id}/reply` (shown on the link page, emailed if the visitor verified), `POST /v1/asks/{id}/dismiss`, `GET /v1/audit` with filters and `?format=csv`
 - [X] T097 [P] [US2] Implement audit retention in `apps/server/src/jobs/retention.ts` (default 180 days, configurable; owner export/delete)
-- [ ] T098 [US2] Serve the web builds from the server in `apps/server/src/routes/static.ts` (`GET /a/{slug}` SPA, 410 page without content for expired/revoked, owner console)
-- [ ] T099 [US2] Build the Ask Link page in `apps/web/src/ask/{AskPage.tsx,AccessGate.tsx,Thread.tsx}`: owner name, coverage, suggested questions, "automated answer on behalf of <owner>" label, citations, forward button, owner replies, "link no longer active" and "owner's agent is offline" states (shown when an already-open page loses the server), and a post-answer useful/not useful rating stored on the ask (SC-006)
-- [ ] T100 [US2] Build the console in `apps/web/src/console/{LinkCreate.tsx,Links.tsx,Inbox.tsx,Audit.tsx}`: query → ranked suggestions with flagged sources unchecked, defaults (7 days, summary, PIN, 30/hour), edit suggested questions, revoke, inbox reply, audit filters and CSV export
-- [ ] T101 [US2] Implement `pama link create|list|revoke`, `pama inbox`, `pama reply`, `pama log` in `crates/pama-cli/src/cmd/{link.rs,inbox.rs,log.rs}` per contracts/cli.md
+- [X] T098 [US2] Serve the web builds from the server in `apps/server/src/routes/static.ts` (`GET /a/{slug}` SPA, 410 page without content for expired/revoked, owner console)
+- [X] T099 [US2] Build the Ask Link page in `apps/web/src/ask/{AskPage.tsx,AccessGate.tsx,Thread.tsx}`: owner name, coverage, suggested questions, "automated answer on behalf of <owner>" label, citations, forward button, owner replies, "link no longer active" and "owner's agent is offline" states (shown when an already-open page loses the server), and a post-answer useful/not useful rating stored on the ask (SC-006)
+- [X] T100 [US2] Build the console in `apps/web/src/console/{LinkCreate.tsx,Links.tsx,Inbox.tsx,Audit.tsx}`: query → ranked suggestions with flagged sources unchecked, defaults (7 days, summary, PIN, 30/hour), edit suggested questions, revoke, inbox reply, audit filters and CSV export
+- [X] T101 [US2] Implement `pama link create|list|revoke`, `pama inbox`, `pama reply`, `pama log` in `crates/pama-cli/src/cmd/{link.rs,inbox.rs,log.rs}` per contracts/cli.md
 - [X] T102 [US2] Wire `evals/runner.ts` to the real answer pipeline and add `.github/workflows/evals.yml` that runs `pnpm evals` on every PR touching `prompts/`, `rules/`, `apps/server/src/pipeline/` or `apps/server/src/policy/` (zero-leak gate)
-- [ ] T103 [US2] Add the Playwright test for quickstart Scenario 2 in `apps/web/tests/e2e/ask-link.spec.ts`
+- [X] T103 [US2] Add the Playwright test for quickstart Scenario 2 in `apps/web/tests/e2e/ask-link.spec.ts`
 
 **Checkpoint**: US1 + US2 = the core product, demoable in local mode over LAN
 

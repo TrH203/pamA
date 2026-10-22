@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use super::event::{
-    normalize_tool, truncate, Event, EventKind, NormalizedSession, SessionMeta, MAX_EDIT_CHARS,
-    MAX_RESULT_CHARS,
+    normalize_tool, truncate, CallInfo, Event, EventKind, NormalizedSession, SessionMeta,
+    MAX_EDIT_CHARS, MAX_RESULT_CHARS,
 };
 use super::reader::{for_each_json_line, ReadError};
 use crate::digest::Agent;
@@ -76,8 +76,7 @@ fn output_text(raw: &Value) -> String {
 pub fn parse(path: &Path) -> Result<NormalizedSession, ReadError> {
     let mut meta = SessionMeta::new(Agent::Codex, String::new());
     let mut events = Vec::new();
-    let mut calls: HashMap<String, (Option<String>, Option<String>, Option<String>)> =
-        HashMap::new();
+    let mut calls: HashMap<String, CallInfo> = HashMap::new();
 
     let skipped = for_each_json_line(path, |r| {
         let at = str_of(&r, "timestamp").map(String::from);

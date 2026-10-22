@@ -51,7 +51,7 @@ function setVisitorCookie(c: Context<Env>, slug: string, id: string) {
 const COLS =
   "id, email, verified_at, granted_at, failed_attempts, locked_until, otp_hash, otp_expires_at";
 
-/** The visitor of this request: from the cookie, else the latest one from this IP (lockouts). */
+/** The visitor of this request, identified by the signed cookie only. */
 export async function findVisitor(
   c: Context<Env>,
   link: ResolvedLink,
@@ -59,18 +59,25 @@ export async function findVisitor(
   const { db, config } = c.get("deps");
   const raw = getCookie(c, COOKIE);
   const id = raw ? unsign(raw, config.secret) : null;
-  if (id) {
-    const [v] = await db.query<Visitor>(
-      `SELECT ${COLS} FROM visitors WHERE id = $1 AND link_slug = $2`,
-      [id, link.slug],
-    );
-    if (v) return v;
-  }
+  if (!id) return undefined;
   const [v] = await db.query<Visitor>(
-    `SELECT ${COLS} FROM visitors WHERE link_slug = $1 AND ip_hash = $2 ORDER BY created_at DESC LIMIT 1`,
-    [link.slug, hashIp(clientIp(c), config.secret)],
+    `SELECT ${COLS} FROM visitors WHERE id = $1 AND link_slug = $2`,
+    [id, link.slug],
   );
   return v;
+}
+
+/**
+ * IP-level lockout: a new cookie must not reset the attempt counter. Any visitor from this IP that
+ * is locked locks the IP for this link. IPs are never used to *grant* access.
+ */
+async function ipLocked(c: Context<Env>, link: ResolvedLink): Promise<boolean> {
+  const { db, config } = c.get("deps");
+  const [r] = await db.query<{ locked: boolean }>(
+    `SELECT EXISTS (SELECT 1 FROM visitors WHERE link_slug = $1 AND ip_hash = $2 AND locked_until > now()) AS locked`,
+    [link.slug, hashIp(clientIp(c), config.secret)],
+  );
+  return r?.locked ?? false;
 }
 
 async function createVisitor(
@@ -140,9 +147,11 @@ export async function grantAccess(
   req: AccessRequest,
 ): Promise<void> {
   const { db, mailer } = c.get("deps");
+  if (link.accessMode !== "open" && (await ipLocked(c, link))) {
+    throw new HttpError(423, "locked", `Too many attempts. Try again in ${LOCK_MINUTES} minutes.`);
+  }
   const v =
     (await findVisitor(c, link)) ?? (await createVisitor(c, link, link.accessMode === "open"));
-  if (!getCookie(c, COOKIE)) setVisitorCookie(c, link.slug, v.id);
   if (locked(v))
     throw new HttpError(423, "locked", `Too many attempts. Try again in ${LOCK_MINUTES} minutes.`);
 

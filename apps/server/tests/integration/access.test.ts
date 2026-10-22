@@ -38,6 +38,26 @@ describeEachDb("Ask Link access", (f) => {
     expect(body.suggested_questions.length).toBeGreaterThanOrEqual(3);
   });
 
+  it("access is never inherited by another browser on the same IP", async () => {
+    const l = await link({ access_mode: "pin", pin: "4821" });
+    const a = visitor(t, l.slug, "203.0.113.50");
+    expect((await a.call("/api/access", { pin: "4821" })).status).toBe(204);
+    expect((await a.call("/api/meta")).status).toBe(200);
+    const b = visitor(t, l.slug, "203.0.113.50"); // same office NAT, no cookie
+    expect((await b.call("/api/meta")).status).toBe(401);
+    expect((await b.call("/api/ask", { question: "Do refunds include shipping?" })).status).toBe(
+      401,
+    );
+  });
+
+  it("a fresh cookie does not reset a lockout from the same IP", async () => {
+    const l = await link({ access_mode: "pin", pin: "4821" });
+    const a = visitor(t, l.slug, "203.0.113.60");
+    for (let i = 0; i < 5; i++) await a.call("/api/access", { pin: "1111" });
+    const b = visitor(t, l.slug, "203.0.113.60");
+    expect((await b.call("/api/access", { pin: "4821" })).status).toBe(423);
+  });
+
   it("PIN: 5 wrong attempts lock the visitor for 15 minutes", async () => {
     const l = await link({ access_mode: "pin", pin: "4821" });
     const v = visitor(t, l.slug);

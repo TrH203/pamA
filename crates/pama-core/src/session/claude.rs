@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use super::event::{
-    normalize_tool, truncate, Event, EventKind, NormalizedSession, SessionMeta, MAX_EDIT_CHARS,
-    MAX_RESULT_CHARS,
+    normalize_tool, truncate, CallInfo, Event, EventKind, NormalizedSession, SessionMeta,
+    MAX_EDIT_CHARS, MAX_RESULT_CHARS,
 };
 use super::reader::{for_each_json_line, ReadError};
 use crate::digest::Agent;
@@ -101,7 +101,7 @@ fn tool_call(name: &str, input: &Value, id: Option<&str>, at: Option<String>) ->
 struct Parser {
     meta: SessionMeta,
     events: Vec<Event>,
-    calls: HashMap<String, (Option<String>, Option<String>, Option<String>)>,
+    calls: HashMap<String, CallInfo>,
 }
 
 impl Parser {

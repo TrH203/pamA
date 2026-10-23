@@ -1,5 +1,6 @@
 //! Command implementations (contracts/cli.md).
 
+mod bundle_fmt;
 mod capture;
 mod config;
 mod doctor;

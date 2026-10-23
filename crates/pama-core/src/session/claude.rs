@@ -100,6 +100,7 @@ fn tool_call(name: &str, input: &Value, id: Option<&str>, at: Option<String>) ->
 
 struct Parser {
     meta: SessionMeta,
+    current_branch: Option<String>,
     events: Vec<Event>,
     calls: HashMap<String, CallInfo>,
 }
@@ -118,8 +119,12 @@ impl Parser {
         if self.meta.cwd.is_none() {
             self.meta.cwd = str_of(&r, "cwd").map(String::from);
         }
+        // Records without `gitBranch` continue on the branch seen last.
         if let Some(b) = str_of(&r, "gitBranch").filter(|b| !b.is_empty()) {
-            self.meta.git_branch = Some(b.to_string());
+            self.current_branch = Some(b.to_string());
+        }
+        if let Some(b) = self.current_branch.clone() {
+            self.meta.observe_branch(&b, at.as_deref());
         }
         if self.meta.agent_version.is_none() {
             self.meta.agent_version = str_of(&r, "version").map(String::from);
@@ -197,6 +202,7 @@ pub fn parse(path: &Path) -> Result<NormalizedSession, ReadError> {
         .unwrap_or_default();
     let mut p = Parser {
         meta: SessionMeta::new(Agent::ClaudeCode, session_id.clone()),
+        current_branch: None,
         events: Vec::new(),
         calls: HashMap::new(),
     };
@@ -214,6 +220,7 @@ pub fn parse(path: &Path) -> Result<NormalizedSession, ReadError> {
         }
     }
     p.events.sort_by(|a, b| a.at.cmp(&b.at));
+    p.meta.finish_branches();
     Ok(NormalizedSession {
         meta: p.meta,
         events: p.events,

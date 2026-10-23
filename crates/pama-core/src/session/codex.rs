@@ -208,6 +208,15 @@ pub fn parse(path: &Path) -> Result<NormalizedSession, ReadError> {
             .collect::<Vec<_>>()
             .join("-");
     }
+    // Codex reports the branch once, in `session_meta`; a one-entry list keeps the model uniform.
+    if let Some(name) = meta.git_branch.clone() {
+        meta.branches = vec![super::BranchVisit {
+            name,
+            first_seen: meta.started_at.clone(),
+            last_seen: meta.ended_at.clone(),
+            events: events.len() as u32,
+        }];
+    }
     Ok(NormalizedSession {
         meta,
         events,

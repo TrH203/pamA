@@ -53,6 +53,8 @@ export function createApp(deps: Deps) {
       mode: deps.config.mode,
       db: deps.db.kind,
       version: deps.config.version,
+      /** Optional features a sync client may rely on; absent on older servers. */
+      capabilities: ["branch_lists"],
     }),
   );
 

@@ -31,10 +31,22 @@ export interface Draft {
 export interface Bundle {
   id: string;
   name: string;
+  name_source: "key" | "suggested" | "owner";
   key: string | null;
   project: string;
   project_id: string;
-  sessions: { id: string; agent: string; agent_session_id: string; ended_at: string | null }[];
+  /** Distinct branches over the member sessions, earliest first-seen first. */
+  branches: string[];
+  session_count: number;
+  last_activity: string | null;
+  sessions: {
+    id: string;
+    agent: string;
+    agent_session_id: string;
+    ended_at: string | null;
+    branches: string[];
+    bundle_pinned: boolean;
+  }[];
 }
 
 export interface Project {

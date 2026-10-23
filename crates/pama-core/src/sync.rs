@@ -2,6 +2,9 @@
 //! server into the outbox, then deliver them to the target server with idempotency keys
 //! (`outbox_id`) and backoff. Delivery is exactly once: the receiver keeps a receipt per id.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
+
 use serde::Serialize;
 use serde_json::{json, Value};
 
@@ -26,6 +29,28 @@ pub struct DeliverReport {
     pub sent: usize,
     pub retrying: usize,
     pub dead: usize,
+}
+
+/// Does the target server accept `source.git.branches`? Older servers validate digests strictly
+/// and would reject the field, so it is only sent when `/v1/health` advertises `branch_lists`.
+pub fn supports_branch_lists(health: &Value) -> bool {
+    health["capabilities"]
+        .as_array()
+        .is_some_and(|c| c.iter().any(|x| x == "branch_lists"))
+}
+
+/// Drop what the target cannot read: the branch list stays out for servers without
+/// `branch_lists`; `git.branch` and `bundle_key` carry the same information for them.
+pub fn prepare_digest_body(body: &mut Value, branch_lists_supported: bool) {
+    if branch_lists_supported {
+        return;
+    }
+    if let Some(git) = body
+        .pointer_mut("/digest/source/git")
+        .and_then(Value::as_object_mut)
+    {
+        git.remove("branches");
+    }
 }
 
 /// Key under which the device token for `target` is kept in the OS keychain.
@@ -70,6 +95,7 @@ pub fn collect(store: &Store, local: &LocalApi) -> Result<usize, ApiError> {
             "sync_enabled_at": d["sync_enabled_at"],
             "project_name": d["project_name"],
             "bundle_name": d["bundle_name"],
+            "bundle_name_source": d["bundle_name_source"],
         });
         if store
             .outbox_push(OutboxKind::DigestUpsert, target, &payload)
@@ -102,13 +128,31 @@ pub fn collect(store: &Store, local: &LocalApi) -> Result<usize, ApiError> {
 /// HTTPS delivery to a pamA server, through the egress guard, with the paired device token.
 pub struct HttpRemote<'s> {
     client: GuardedClient<'s>,
+    /// `branch_lists` support per target, learned once from `/v1/health`.
+    branch_lists: RefCell<HashMap<String, bool>>,
 }
 
 impl<'s> HttpRemote<'s> {
     pub fn new(store: &'s Store) -> Self {
         Self {
             client: GuardedClient::new(policy_from(store), store, "desktop"),
+            branch_lists: RefCell::new(HashMap::new()),
         }
+    }
+
+    fn supports_branch_lists(&self, target: &str) -> Result<bool, DeliverError> {
+        let key = target.trim_end_matches('/').to_string();
+        if let Some(known) = self.branch_lists.borrow().get(&key) {
+            return Ok(*known);
+        }
+        let resp = self
+            .client
+            .get(&format!("{key}/v1/health"), "sync.health", None)
+            .map_err(|e| DeliverError::Retryable(e.to_string()))?;
+        let health: Value = resp.json().unwrap_or(Value::Null);
+        let known = supports_branch_lists(&health);
+        self.branch_lists.borrow_mut().insert(key, known);
+        Ok(known)
     }
 }
 
@@ -120,6 +164,14 @@ impl Remote for HttpRemote<'_> {
             OutboxKind::BundleChange => return Err(DeliverError::Rejected("unsupported".into())),
         };
         let url = format!("{}{path}", target.trim_end_matches('/'));
+        let mut prepared;
+        let body = if kind == OutboxKind::DigestUpsert {
+            prepared = body.clone();
+            prepare_digest_body(&mut prepared, self.supports_branch_lists(target)?);
+            &prepared
+        } else {
+            body
+        };
         let purpose = if kind == OutboxKind::DigestUpsert {
             "sync.digest"
         } else {

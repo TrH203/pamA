@@ -19,6 +19,19 @@ export const DecisionSchema = z.strictObject({
     .optional(),
 });
 
+/** One branch a session visited; the list is in first-seen order with unique names. */
+export const BranchVisitSchema = z.strictObject({
+  name: z.string().min(1).max(256),
+  first_seen: DATE_TIME.optional(),
+  last_seen: DATE_TIME.optional(),
+  events: z.int().min(0).optional(),
+});
+export const MAX_BRANCHES = 20;
+export const BranchListSchema = z
+  .array(BranchVisitSchema)
+  .max(MAX_BRANCHES)
+  .refine((l) => new Set(l.map((b) => b.name)).size === l.length, "branch names must be unique");
+
 export const SessionDigestSchema = z.strictObject({
   schema_version: z.literal(1),
   source: z.strictObject({
@@ -30,6 +43,7 @@ export const SessionDigestSchema = z.strictObject({
     git: z
       .strictObject({
         branch: z.string().max(256).optional(),
+        branches: BranchListSchema.optional(),
         commits: z
           .array(z.string().regex(/^[0-9a-f]{7,40}$/))
           .max(50)

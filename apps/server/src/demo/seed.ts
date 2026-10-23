@@ -3,7 +3,7 @@
 import { ulid } from "ulid";
 import type { LabelMap } from "../pipeline/items.ts";
 import type { SessionDigest } from "../schema/digest.ts";
-import { assignBundle } from "../services/bundles.ts";
+import { assignBundle, recordBranches } from "../services/bundles.ts";
 import { type PipelineDeps, storeVersion } from "../services/digests.ts";
 import { upsertProject } from "../services/projects.ts";
 
@@ -159,6 +159,14 @@ export async function seed(deps: PipelineDeps): Promise<Seeded> {
       `INSERT INTO sessions (id, workspace_id, project_id, bundle_id, agent, agent_session_id, ended_at)
        VALUES ($1, $2, $3, $4, 'claude_code', $5, now())`,
       [sessionId, ws, project.id, bundleId, s.name],
+    );
+    // refund-2 started on the feature branch and finished a typo fix on another one.
+    const branches = s.name === "refund-2" ? [s.bundle, "fix/refund-typo"] : [s.bundle];
+    await recordBranches(
+      deps.db,
+      ws,
+      sessionId,
+      branches.map((name) => ({ name })),
     );
     const d = digest(s.name, project.repo_key, s.bundle, s.d);
     const { id } = await storeVersion(deps, {

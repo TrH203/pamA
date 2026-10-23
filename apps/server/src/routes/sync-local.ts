@@ -3,6 +3,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import type { Env } from "../app.ts";
+import { listBundles } from "../services/bundles.ts";
 import { ack, pending } from "../services/sync.ts";
 import { body } from "./util.ts";
 
@@ -23,16 +24,26 @@ export const syncLocalRoutes = new Hono<Env>()
       id: string;
       project_id: string;
       name: string;
+      name_source: string;
+      key: string | null;
       sync_enabled: boolean | null;
     }>(
-      "SELECT id, project_id, name, sync_enabled FROM bundles WHERE workspace_id = $1 ORDER BY name",
+      "SELECT id, project_id, name, name_source, key, sync_enabled FROM bundles WHERE workspace_id = $1 ORDER BY name",
       [workspaceId],
     );
+    const summaries = new Map((await listBundles(db, workspaceId)).map((b) => [b.id, b]));
     const p = await pending(c.get("deps"));
     return c.json({
       projects: projects.map((x) => ({
         ...x,
-        bundles: bundles.filter((b) => b.project_id === x.id),
+        bundles: bundles
+          .filter((b) => b.project_id === x.id)
+          .map((b) => ({
+            ...b,
+            branches: summaries.get(b.id)?.branches ?? [],
+            session_count: summaries.get(b.id)?.session_count ?? 0,
+            last_activity: summaries.get(b.id)?.last_activity ?? null,
+          })),
       })),
       pending: { digests: p.digests.length, tombstones: p.tombstones.length },
     });

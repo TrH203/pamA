@@ -8,7 +8,7 @@ use std::time::{Duration, SystemTime};
 use serde_json::{json, Value};
 
 use super::enabled_for;
-use crate::digest::Agent as DigestAgent;
+use crate::digest::{Agent as DigestAgent, MAX_BRANCHES};
 use crate::project;
 use crate::redact::RuleSet;
 use crate::session::{self, NormalizedSession};
@@ -127,6 +127,22 @@ pub fn request_body(
     if let Some(b) = &branch {
         body["bundle_key"] = json!(cap(b, 256));
         body["git"] = json!({ "branch": cap(b, 256) });
+    }
+    if !s.meta.branches.is_empty() {
+        let list: Vec<Value> = project::cap_branches(s.meta.branches.clone(), MAX_BRANCHES)
+            .iter()
+            .map(|b| {
+                let mut v = json!({ "name": cap(&b.name, 256), "events": b.events });
+                if let Some(t) = &b.first_seen {
+                    v["first_seen"] = json!(t);
+                }
+                if let Some(t) = &b.last_seen {
+                    v["last_seen"] = json!(t);
+                }
+                v
+            })
+            .collect();
+        body["git"]["branches"] = json!(list);
     }
     if let Some(v) = &s.meta.agent_version {
         body["agent_version"] = json!(cap(v, 64));

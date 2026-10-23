@@ -54,7 +54,15 @@ export const draftApi = {
         repo_key: string;
         sync_enabled: boolean;
         sync_target: string | null;
-        bundles: { id: string; name: string; sync_enabled: boolean | null }[];
+        bundles: {
+          id: string;
+          name: string;
+          key: string | null;
+          sync_enabled: boolean | null;
+          branches: string[];
+          session_count: number;
+          last_activity: string | null;
+        }[];
       }[];
     }>("/v1/sync/status"),
   networkLog: () =>

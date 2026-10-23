@@ -1,7 +1,7 @@
 // Input of POST /v1/transcripts/digest: Layer-1-redacted, normalized events from the device.
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { AgentSchema } from "../schema/digest.ts";
+import { AgentSchema, BranchListSchema } from "../schema/digest.ts";
 
 export const EventSchema = z.object({
   kind: z.enum(["user", "assistant", "tool_call", "tool_result"]),
@@ -33,6 +33,7 @@ export const TranscriptInputSchema = z.strictObject({
   git: z
     .strictObject({
       branch: z.string().max(256).optional(),
+      branches: BranchListSchema.optional(),
       commits: z
         .array(z.string().regex(/^[0-9a-f]{7,40}$/))
         .max(50)

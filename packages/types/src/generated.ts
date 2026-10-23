@@ -16,13 +16,23 @@ export interface Decision {
 	labels?: SensitivityLabel[];
 }
 
+export interface DigestBranch {
+	name: string;
+	first_seen?: string;
+	last_seen?: string;
+	events?: number;
+}
+
 export enum Agent {
 	ClaudeCode = "claude_code",
 	Codex = "codex",
 }
 
 export interface GitInfo {
+	/** Branch the session is filed under. */
 	branch?: string;
+	/** Every branch visited, in first-seen order (names unique, max 20). */
+	branches?: DigestBranch[];
 	commits?: string[];
 }
 

@@ -22,6 +22,7 @@ describe("app", () => {
       mode: "local",
       db: "pglite",
       version: "0.1.0",
+      capabilities: ["branch_lists"],
     });
   });
 

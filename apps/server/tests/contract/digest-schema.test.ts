@@ -31,4 +31,11 @@ describe("SessionDigest contract", () => {
       expect(SessionDigestSchema.safeParse(doc).success).toBe(expected);
     });
   }
+
+  it("rejects duplicate branch names (not expressible in JSON Schema)", () => {
+    const valid = fixtures.find((f) => f.name === "digest-valid-branches.json")?.doc;
+    const doc = structuredClone(valid);
+    doc.source.git.branches = [{ name: "a" }, { name: "a" }];
+    expect(SessionDigestSchema.safeParse(doc).success).toBe(false);
+  });
 });

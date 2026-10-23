@@ -1,0 +1,10 @@
+packages:
+  - apps/*
+  - packages/*
+  - evals
+minimumReleaseAgeExclude:
+  - ollama-ai-provider-v2@4.1.0
+  - nodemailer@10.2.1
+allowBuilds:
+  esbuild: true
+  argon2: true

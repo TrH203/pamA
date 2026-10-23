@@ -1,0 +1,189 @@
+{
+  "schema_version": 1,
+  "source": {
+    "agent": "claude_code",
+    "agent_session_id": "5f1c2a9e-1111-4c1e-9d7e-0a1b2c3d4e5f",
+    "agent_version": "2.1.0",
+    "project_key": "github.com/acme/shop",
+    "bundle_key": "feat/refund-shipping",
+    "git": {
+      "branch": "feat/refund-shipping",
+      "commits": ["a1b2c3d", "0123456789abcdef0123456789abcdef01234567"]
+    },
+    "started_at": "2026-10-20T08:00:00Z",
+    "ended_at": "2026-10-20T09:12:00Z"
+  },
+  "goal": "Decide whether refunds include the shipping fee.",
+  "decisions": [
+    {
+      "id": 1,
+      "what": "w",
+      "why": "y"
+    },
+    {
+      "id": 2,
+      "what": "w",
+      "why": "y"
+    },
+    {
+      "id": 3,
+      "what": "w",
+      "why": "y"
+    },
+    {
+      "id": 4,
+      "what": "w",
+      "why": "y"
+    },
+    {
+      "id": 5,
+      "what": "w",
+      "why": "y"
+    },
+    {
+      "id": 6,
+      "what": "w",
+      "why": "y"
+    },
+    {
+      "id": 7,
+      "what": "w",
+      "why": "y"
+    },
+    {
+      "id": 8,
+      "what": "w",
+      "why": "y"
+    },
+    {
+      "id": 9,
+      "what": "w",
+      "why": "y"
+    },
+    {
+      "id": 10,
+      "what": "w",
+      "why": "y"
+    },
+    {
+      "id": 11,
+      "what": "w",
+      "why": "y"
+    },
+    {
+      "id": 12,
+      "what": "w",
+      "why": "y"
+    },
+    {
+      "id": 13,
+      "what": "w",
+      "why": "y"
+    },
+    {
+      "id": 14,
+      "what": "w",
+      "why": "y"
+    },
+    {
+      "id": 15,
+      "what": "w",
+      "why": "y"
+    },
+    {
+      "id": 16,
+      "what": "w",
+      "why": "y"
+    },
+    {
+      "id": 17,
+      "what": "w",
+      "why": "y"
+    },
+    {
+      "id": 18,
+      "what": "w",
+      "why": "y"
+    },
+    {
+      "id": 19,
+      "what": "w",
+      "why": "y"
+    },
+    {
+      "id": 20,
+      "what": "w",
+      "why": "y"
+    },
+    {
+      "id": 21,
+      "what": "w",
+      "why": "y"
+    },
+    {
+      "id": 22,
+      "what": "w",
+      "why": "y"
+    },
+    {
+      "id": 23,
+      "what": "w",
+      "why": "y"
+    },
+    {
+      "id": 24,
+      "what": "w",
+      "why": "y"
+    },
+    {
+      "id": 25,
+      "what": "w",
+      "why": "y"
+    },
+    {
+      "id": 26,
+      "what": "w",
+      "why": "y"
+    },
+    {
+      "id": 27,
+      "what": "w",
+      "why": "y"
+    },
+    {
+      "id": 28,
+      "what": "w",
+      "why": "y"
+    },
+    {
+      "id": 29,
+      "what": "w",
+      "why": "y"
+    },
+    {
+      "id": 30,
+      "what": "w",
+      "why": "y"
+    },
+    {
+      "id": 31,
+      "what": "w",
+      "why": "y"
+    }
+  ],
+  "outcome": "Refund service excludes shipping; tests added.",
+  "open_items": ["Confirm policy text with support team"],
+  "modules": ["refunds", "checkout"],
+  "redactions": {
+    "secret": 1,
+    "pii": 0,
+    "by_rule": {
+      "aws-access-token": 1
+    }
+  },
+  "provenance": {
+    "prompt_version": "digest@1",
+    "model": "fake",
+    "produced_at": "2026-10-20T09:13:00Z"
+  }
+}

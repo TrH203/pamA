@@ -1,0 +1,88 @@
+name: release
+
+# Tag v* to build: desktop bundles (macOS signed + notarized, Windows), the sidecar per target,
+# `pama` CLI binaries and the server image. Signing secrets are configured in the repository.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            bun: bun-darwin-arm64
+          - os: macos-13
+            target: x86_64-apple-darwin
+            bun: bun-darwin-x64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bun: bun-windows-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @pama/web build
+      - name: Sidecar
+        shell: bash
+        run: BUN=bun scripts/build-sidecar.sh ${{ matrix.bun }}
+      - name: CLI
+        run: cargo build --release -p pama-cli --target ${{ matrix.target }}
+      - name: Desktop bundle
+        uses: tauri-apps/tauri-action@v0
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: crates/pama-desktop/src-tauri
+          args: --target ${{ matrix.target }} --config crates/pama-desktop/src-tauri/tauri.release.conf.json
+          tagName: ${{ github.ref_name }}
+          releaseName: pamA ${{ github.ref_name }}
+          releaseDraft: true
+      - name: Upload CLI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ext=""; [[ "${{ matrix.target }}" == *windows* ]] && ext=".exe"
+          cp "target/${{ matrix.target }}/release/pama$ext" "pama-${{ matrix.target }}$ext"
+          gh release upload "${{ github.ref_name }}" "pama-${{ matrix.target }}$ext" --clobber
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ghcr.io/${{ github.repository }}/server:${{ github.ref_name }},ghcr.io/${{ github.repository }}/server:latest

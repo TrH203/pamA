@@ -1,0 +1,3 @@
+$ aws configure list
+export AWS_ACCESS_KEY_ID=[SECRET:aws-access-token]
+region = ap-southeast-1

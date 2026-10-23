@@ -1,0 +1,3 @@
+Tool result (Read ~/.ssh/deploy_key):
+[SECRET:private-key]
+Done.

@@ -1,0 +1,2 @@
+# secret: 0123456789012
+Chuyển khoản STK: 0123456789012 (Vietcombank) cho khách.

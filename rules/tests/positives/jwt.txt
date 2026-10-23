@@ -1,0 +1,2 @@
+# secret: ey{{}}JakvXukUTxg11vnYaUd6RmJwhfjbcjj.eyJ4XxYmruHu8WQhbJFFaMr2HZakJEIbMbNyHH0oQiC.8p_FIO_Dqh4lplQtoYquyr0gBdPQFu1HITaaLVUTvRw
+curl -H 'Authorization: Bearer ey{{}}JakvXukUTxg11vnYaUd6RmJwhfjbcjj.eyJ4XxYmruHu8WQhbJFFaMr2HZakJEIbMbNyHH0oQiC.8p_FIO_Dqh4lplQtoYquyr0gBdPQFu1HITaaLVUTvRw' https://api.acme.vn/orders

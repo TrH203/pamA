@@ -1,0 +1,15 @@
+**/node_modules
+**/dist
+target
+.git
+.pama
+.playwright
+**/test-results
+**/.vitest
+crates
+specs
+.specify
+.claude
+**/*.log
+**/.env
+deploy/.env

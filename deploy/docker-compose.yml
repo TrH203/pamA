@@ -1,0 +1,42 @@
+# Self-hosted pamA: `cp deploy/.env.example deploy/.env`, edit it, then
+#   docker compose -f deploy/docker-compose.yml up -d
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      POSTGRES_DB: pama
+      PAMA_DB_PASSWORD: ${PAMA_DB_PASSWORD:?set PAMA_DB_PASSWORD in deploy/.env}
+    volumes:
+      - pama-db:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d pama"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: pama-server:local
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      PAMA_MODE: ${PAMA_MODE:-selfhost}
+      # The server connects as a non-superuser that owns the tables; answers run as pama_app (RLS).
+      DATABASE_URL: postgres://pama_server:${PAMA_DB_PASSWORD}@db:5432/pama
+    ports:
+      - "${PAMA_PUBLISH:-127.0.0.1:7465}:7465"
+    volumes:
+      - pama-data:/data
+
+volumes:
+  pama-db:
+  pama-data:

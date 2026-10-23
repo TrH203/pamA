@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pama.dev/schemas/session-digest/v1.json",
+  "title": "SessionDigest",
+  "description": "Redacted, English summary of one AI agent session. Shared contract between pama-core (Rust), the server (TypeScript/Zod) and sync. No raw transcript content.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "source", "goal", "decisions", "outcome", "open_items", "modules", "redactions"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agent", "agent_session_id", "project_key", "ended_at"],
+      "properties": {
+        "agent": { "enum": ["claude_code", "codex"] },
+        "agent_session_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "agent_version": { "type": "string", "maxLength": 64 },
+        "project_key": { "type": "string", "description": "Normalized repo remote or path hash; never an absolute local path", "maxLength": 256 },
+        "bundle_key": { "type": "string", "description": "Usually the git branch", "maxLength": 256 },
+        "git": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "branch": { "type": "string", "maxLength": 256 },
+            "commits": { "type": "array", "items": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" }, "maxItems": 50 }
+          }
+        },
+        "started_at": { "type": "string", "format": "date-time" },
+        "ended_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "goal": { "type": "string", "minLength": 1, "maxLength": 1000 },
+    "decisions": {
+      "type": "array",
+      "maxItems": 30,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "what", "why"],
+        "properties": {
+          "id": { "type": "integer", "minimum": 1 },
+          "what": { "type": "string", "minLength": 1, "maxLength": 1000 },
+          "why": { "type": "string", "maxLength": 1000 },
+          "alternatives": { "type": "array", "items": { "type": "string", "maxLength": 500 }, "maxItems": 10 },
+          "labels": { "type": "array", "items": { "enum": ["business_sensitive", "infra", "customer"] }, "uniqueItems": true }
+        }
+      }
+    },
+    "outcome": { "type": "string", "maxLength": 1000 },
+    "open_items": { "type": "array", "items": { "type": "string", "maxLength": 500 }, "maxItems": 20 },
+    "modules": { "type": "array", "items": { "type": "string", "maxLength": 100 }, "maxItems": 30 },
+    "redactions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["secret", "pii"],
+      "properties": {
+        "secret": { "type": "integer", "minimum": 0 },
+        "pii": { "type": "integer", "minimum": 0 },
+        "by_rule": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "prompt_version": { "type": "string" },
+        "model": { "type": "string" },
+        "produced_at": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

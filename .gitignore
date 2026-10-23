@@ -1,0 +1,35 @@
+# Rust
+target/
+*.rs.bk
+*.prof*
+# Node
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+.vite/
+playwright-report/
+test-results/
+# Env and secrets
+.env
+.env.*
+!.env.example
+!**/fixtures/**/.env.sample
+# Local data
+.pama/
+*.pglite/
+# Sidecar binaries
+crates/pama-desktop/src-tauri/binaries/
+# Editors / OS
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+*.log
+.vscode/
+.idea/
+.vitest/
+test-results/
+.playwright/
+crates/pama-desktop/src-tauri/gen/

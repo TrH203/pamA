@@ -1,0 +1,33 @@
+name: docker
+
+# Self-host image: build, start with docker compose, check health, then pair a device, sync a
+# digest, answer through an Ask Link and delete it with a tombstone (deploy/smoke.sh).
+on:
+  pull_request:
+    paths: ["deploy/**", "apps/server/**", "apps/web/**", "prompts/**", "rules/**"]
+  push:
+    branches: [main]
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: |
+          cp deploy/.env.example deploy/.env
+          sed -i 's#^PAMA_BASE_URL=.*#PAMA_BASE_URL=http://localhost:7465#' deploy/.env
+          sed -i 's#^SMTP_URL=.*##' deploy/.env
+          for k in CHAT EMBED; do sed -i "s#^PAMA_${k}_PROVIDER=.*#PAMA_${k}_PROVIDER=fake#; s#^PAMA_${k}_MODEL=.*#PAMA_${k}_MODEL=fake#" deploy/.env; done
+          sed -i 's#^PAMA_SMALL_MODEL=.*#PAMA_SMALL_MODEL=fake#; s#^PAMA_EMBED_BASE_URL=.*##' deploy/.env
+      - name: Start
+        run: docker compose -f deploy/docker-compose.yml up -d --build --wait
+      - name: Health
+        run: |
+          curl -fsS http://127.0.0.1:7465/v1/health | tee health.json
+          grep -q '"mode":"selfhost"' health.json
+          grep -q '"db":"pg"' health.json
+      - name: Smoke test (pair, sync, ask, tombstone)
+        run: deploy/smoke.sh
+      - if: failure()
+        run: docker compose -f deploy/docker-compose.yml logs

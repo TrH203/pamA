@@ -1,0 +1,2 @@
+# secret: AIza{{}}SyT7XA7YCBaXpwpM8URn6A4ieEAUNdXy1vZ
+<script src="https://maps.googleapis.com/maps/api/js?key=AIza{{}}SyT7XA7YCBaXpwpM8URn6A4ieEAUNdXy1vZ"></script>

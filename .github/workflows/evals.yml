@@ -1,0 +1,28 @@
+name: evals
+
+# Red-team suite (Constitution V): any leak fails the PR.
+on:
+  pull_request:
+    paths:
+      - "prompts/**"
+      - "rules/**"
+      - "evals/**"
+      - "apps/server/src/pipeline/**"
+      - "apps/server/src/policy/**"
+      - "apps/server/src/safety/**"
+  push:
+    branches: [main]
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Red-team suite (offline models)
+        run: pnpm evals

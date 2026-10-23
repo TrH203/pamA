@@ -11,6 +11,7 @@ import { embedTexts, toVector } from "../pipeline/embed.ts";
 import { itemSearchText, itemsOf, type LabelMap } from "../pipeline/items.ts";
 import { mergeRedactions } from "../pipeline/transcript.ts";
 import { type SessionDigest, SessionDigestSchema } from "../schema/digest.ts";
+import { applySuggestedName } from "./bundles.ts";
 import { queueTombstone, sessionKey } from "./sync.ts";
 
 export type PipelineDeps = Pick<Deps, "db" | "models" | "rules" | "workspaceId">;
@@ -171,6 +172,7 @@ export async function approveDigest(
       status: "approved",
     });
     await deps.db.query("UPDATE digests SET approved_by = $2 WHERE id = $1", [v.id, by]);
+    await applySuggestedName(deps.db, row.bundle_id, digest.goal);
     return { digest_id: v.id, version: v.version, status: "approved" };
   }
   await deps.db.tx(async (q) => {
@@ -179,6 +181,7 @@ export async function approveDigest(
       [id, by],
     );
     await activate(q, row.session_id, id);
+    await applySuggestedName(q, row.bundle_id, row.content.goal);
   });
   return { digest_id: id, version: row.version, status: "approved" };
 }

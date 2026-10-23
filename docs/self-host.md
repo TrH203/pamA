@@ -25,7 +25,7 @@ $EDITOR deploy/.env       # base URL, your email, secrets, SMTP, models
 ```bash
 docker compose -f deploy/docker-compose.yml up -d --build
 curl -s http://127.0.0.1:7465/v1/health
-# {"status":"ok","mode":"selfhost","db":"pg","version":"0.1.0"}
+# {"status":"ok","mode":"selfhost","db":"pg","version":"0.1.0","capabilities":["branch_lists"]}
 ```
 
 The server listens on `127.0.0.1:7465` by default. Put a TLS reverse proxy in front.
@@ -72,6 +72,11 @@ docker compose -f deploy/docker-compose.yml exec -T db pg_restore -U postgres -d
 git pull
 docker compose -f deploy/docker-compose.yml up -d --build   # migrations run at start
 ```
+
+**Upgrade the server before the devices that sync to it.** Newer devices send a session's branch
+list (`source.git.branches`) only to servers that advertise `branch_lists` in `/v1/health`
+(`"capabilities": ["branch_lists"]`); an older server keeps working but sees only the single branch
+a session is filed under.
 
 ## pamA Cloud
 

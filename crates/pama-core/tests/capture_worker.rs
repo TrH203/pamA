@@ -172,3 +172,40 @@ fn projects_not_enabled_are_skipped_and_nothing_is_sent() {
     assert_eq!(store.capture(&id).unwrap().status, CaptureStatus::Skipped);
     assert!(sink.bodies.borrow().is_empty());
 }
+
+fn body_for(name: &str) -> Value {
+    use pama_core::redact::Counts;
+    use pama_core::session::claude;
+    let s = claude::parse(&root().join(format!("tests/fixtures/claude-branches/{name}.jsonl")))
+        .unwrap();
+    pama_core::capture::worker::request_body(&s, &Counts::default(), "fallback")
+}
+
+#[test]
+fn multi_branch_session_is_filed_under_the_filing_branch_with_the_full_list() {
+    let body = body_for("multi-branch");
+    assert_eq!(body["bundle_key"], "feat/login");
+    assert_eq!(body["git"]["branch"], "feat/login");
+    let names: Vec<_> = body["git"]["branches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|b| b["name"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(names, ["main", "feat/login", "fix/typo"]);
+    assert_eq!(body["git"]["branches"][1]["events"], 30);
+}
+
+#[test]
+fn single_branch_session_keeps_the_legacy_fields_and_adds_a_one_entry_list() {
+    let body = body_for("main-only");
+    assert_eq!(body["bundle_key"], "main");
+    assert_eq!(body["git"]["branch"], "main");
+    assert_eq!(body["git"]["branches"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn session_without_branch_info_sends_no_branch_list() {
+    let body = body_for("no-branch");
+    assert!(body["git"].get("branches").is_none());
+}

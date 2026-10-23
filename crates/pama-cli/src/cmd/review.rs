@@ -92,10 +92,11 @@ pub fn run(
                     .map(|d| {
                         let decisions = d["content"]["decisions"].as_array().map_or(0, Vec::len);
                         format!(
-                            "{}  {} / {}\n    goal: {}\n    {} decision(s), {} secret(s) and {} PII item(s) removed",
+                            "{}  {} / {}{}\n    goal: {}\n    {} decision(s), {} secret(s) and {} PII item(s) removed",
                             d["id"].as_str().unwrap_or("?"),
                             d["project"].as_str().unwrap_or("?"),
                             d["bundle"].as_str().unwrap_or("?"),
+                            super::bundle_fmt::branch_hint(&d["branches"]),
                             d["content"]["goal"].as_str().unwrap_or(""),
                             decisions,
                             d["content"]["redactions"]["secret"],

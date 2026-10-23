@@ -51,12 +51,26 @@ impl Event {
     }
 }
 
+/// One branch a session worked on: first/last time seen and how many conversation records were
+/// attributed to it. Kept in first-seen order, one entry per branch name.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BranchVisit {
+    pub name: String,
+    pub first_seen: Option<String>,
+    pub last_seen: Option<String>,
+    pub events: u32,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SessionMeta {
     pub agent: Agent,
     pub session_id: String,
     pub cwd: Option<String>,
+    /// The branch the session is filed under (see `project::pick_filing_branch`).
     pub git_branch: Option<String>,
+    /// Every branch visited, first-seen order.
+    #[serde(default)]
+    pub branches: Vec<BranchVisit>,
     pub git_commit: Option<String>,
     pub repo_url: Option<String>,
     pub agent_version: Option<String>,
@@ -71,11 +85,47 @@ impl SessionMeta {
             session_id: session_id.into(),
             cwd: None,
             git_branch: None,
+            branches: Vec::new(),
             git_commit: None,
             repo_url: None,
             agent_version: None,
             started_at: None,
             ended_at: None,
+        }
+    }
+
+    /// Attribute one conversation record to `name` (dedupes by name, keeps first-seen order).
+    pub fn observe_branch(&mut self, name: &str, at: Option<&str>) {
+        let visit = match self.branches.iter().position(|b| b.name == name) {
+            Some(i) => &mut self.branches[i],
+            None => {
+                self.branches.push(BranchVisit {
+                    name: name.to_string(),
+                    first_seen: at.map(String::from),
+                    last_seen: at.map(String::from),
+                    events: 0,
+                });
+                self.branches.last_mut().expect("just pushed")
+            }
+        };
+        visit.events += 1;
+        if let Some(t) = at {
+            if visit.first_seen.as_deref().is_none_or(|f| t < f) {
+                visit.first_seen = Some(t.to_string());
+            }
+            if visit.last_seen.as_deref().is_none_or(|l| t > l) {
+                visit.last_seen = Some(t.to_string());
+            }
+        }
+    }
+
+    /// Order the branches by first sight and set `git_branch` to the filing branch.
+    pub fn finish_branches(&mut self) {
+        self.branches.sort_by(|a, b| {
+            (a.first_seen.is_none(), &a.first_seen).cmp(&(b.first_seen.is_none(), &b.first_seen))
+        });
+        if let Some(name) = crate::project::pick_filing_branch(&self.branches) {
+            self.git_branch = Some(name.to_string());
         }
     }
 

@@ -6,6 +6,8 @@ use std::process::Command;
 
 use sha2::{Digest, Sha256};
 
+use crate::session::BranchVisit;
+
 /// `git@github.com:Acme/shop.git`, `https://user:tok@github.com/acme/shop`, `ssh://git@host:22/a/b`
 /// → `github.com/acme/shop` style keys (host lower-cased, credentials and `.git` dropped).
 pub fn normalize_remote(url: &str) -> Option<String> {
@@ -83,6 +85,62 @@ pub fn resolve(cwd: Option<&str>, reported_remote: Option<&str>) -> ProjectInfo 
         key: path_key(&root),
         name,
     }
+}
+
+const DEFAULT_BRANCHES: [&str; 2] = ["main", "master"];
+
+/// The branch a session is filed under: the one with the most events, ignoring `main`/`master`
+/// whenever any other branch was visited; ties go to the earliest first-seen (then list order).
+pub fn pick_filing_branch(branches: &[BranchVisit]) -> Option<&str> {
+    let is_default = |b: &BranchVisit| DEFAULT_BRANCHES.contains(&b.name.as_str());
+    let pool: Vec<&BranchVisit> = if branches.iter().any(|b| !is_default(b)) {
+        branches.iter().filter(|b| !is_default(b)).collect()
+    } else {
+        branches.iter().collect()
+    };
+    pool.iter()
+        .enumerate()
+        .min_by(|(ia, a), (ib, b)| {
+            b.events
+                .cmp(&a.events)
+                .then_with(|| {
+                    (a.first_seen.is_none(), &a.first_seen)
+                        .cmp(&(b.first_seen.is_none(), &b.first_seen))
+                })
+                .then(ia.cmp(ib))
+        })
+        .map(|(_, b)| b.name.as_str())
+}
+
+/// Keep at most `max` branches: the filing branch plus the earliest-visited others, in the
+/// original (first-seen) order.
+pub fn cap_branches(branches: Vec<BranchVisit>, max: usize) -> Vec<BranchVisit> {
+    if branches.len() <= max {
+        return branches;
+    }
+    let filing = pick_filing_branch(&branches).map(String::from);
+    let mut keep: Vec<bool> = vec![false; branches.len()];
+    let mut left = max;
+    if let Some(f) = &filing {
+        if let Some(i) = branches.iter().position(|b| &b.name == f) {
+            keep[i] = true;
+            left -= 1;
+        }
+    }
+    for k in keep.iter_mut() {
+        if left == 0 {
+            break;
+        }
+        if !*k {
+            *k = true;
+            left -= 1;
+        }
+    }
+    branches
+        .into_iter()
+        .zip(keep)
+        .filter_map(|(b, k)| k.then_some(b))
+        .collect()
 }
 
 /// Current branch of the cwd, used when the transcript does not report one.

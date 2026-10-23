@@ -5,7 +5,12 @@ import { ulid } from "ulid";
 import { z } from "zod";
 import { loadPrompt } from "../llm/prompts.ts";
 import type { SessionDigest } from "../schema/digest.ts";
-import { assignBundle } from "../services/bundles.ts";
+import {
+  assignBundle,
+  branchList,
+  recordBranches,
+  reevaluateSession,
+} from "../services/bundles.ts";
 import {
   approveDigest,
   cleanAndLabel,
@@ -13,6 +18,7 @@ import {
   storeVersion,
 } from "../services/digests.ts";
 import { autoApproveFor, upsertProject } from "../services/projects.ts";
+import { sanitizeDeep } from "./classify.ts";
 import {
   formatTranscript,
   inputHash,
@@ -59,21 +65,7 @@ export async function digestTranscript(
     "SELECT id, bundle_id, input_hash FROM sessions WHERE workspace_id = $1 AND agent = $2 AND agent_session_id = $3",
     [ws, input.agent, input.agent_session_id],
   );
-  if (session && session.input_hash === hash) {
-    const [latest] = await deps.db.query<{ id: string; version: number; status: string }>(
-      "SELECT id, version, status FROM digests WHERE session_id = $1 ORDER BY version DESC LIMIT 1",
-      [session.id],
-    );
-    if (latest && (latest.status === "draft" || latest.status === "approved")) {
-      return {
-        digest_id: latest.id,
-        version: latest.version,
-        status: latest.status,
-        session_id: session.id,
-        bundle_id: session.bundle_id,
-      };
-    }
-  }
+  const existed = Boolean(session);
   if (!session) {
     const bundleId = await assignBundle(deps.db, ws, project.id, bundleKey);
     [session] = await deps.db.query(
@@ -94,6 +86,29 @@ export async function digestTranscript(
     );
   }
   if (!session) throw new Error("session upsert failed");
+
+  // Branches (names redacted like every digest string) and, for an existing unpinned session,
+  // re-filing; both run even when the events are unchanged.
+  const git = sanitizeDeep(input.git ?? {}, deps.rules).value;
+  await recordBranches(deps.db, ws, session.id, branchList(git));
+  if (existed) {
+    session.bundle_id = await reevaluateSession(deps.db, ws, project.id, session.id, bundleKey);
+  }
+  if (existed && session.input_hash === hash) {
+    const [latest] = await deps.db.query<{ id: string; version: number; status: string }>(
+      "SELECT id, version, status FROM digests WHERE session_id = $1 ORDER BY version DESC LIMIT 1",
+      [session.id],
+    );
+    if (latest && (latest.status === "draft" || latest.status === "approved")) {
+      return {
+        digest_id: latest.id,
+        version: latest.version,
+        status: latest.status,
+        session_id: session.id,
+        bundle_id: session.bundle_id,
+      };
+    }
+  }
 
   // Layer 1 re-check on the server side of the device boundary.
   const recheck = deps.rules.redact(formatTranscript(input.events));

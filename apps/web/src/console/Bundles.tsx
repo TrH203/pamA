@@ -1,4 +1,6 @@
 // Bundles (US1): sessions of one task grouped by branch; rename, split and merge.
+
+import { BundleSummary } from "@pama/ui";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../lib/api.ts";
 import type { Bundle } from "./types.ts";
@@ -64,11 +66,8 @@ export function Bundles() {
               checked={picked.has(b.id)}
               onChange={() => toggle(b.id)}
             />
-            <h3 className="font-semibold">{b.name}</h3>
-            <span className="text-xs text-stone-500">
-              {b.project}
-              {b.key && b.key !== b.name ? ` · ${b.key}` : ""}
-            </span>
+            <BundleSummary bundle={b} />
+            <span className="text-xs text-stone-500">{b.project}</span>
             <button
               type="button"
               className="ml-auto text-sm text-stone-600 underline"
@@ -86,6 +85,11 @@ export function Bundles() {
               <li key={s.id} className="flex items-center gap-2">
                 <span className="text-stone-500">{s.agent.replace("_", " ")}</span>
                 <code className="text-xs">{s.agent_session_id.slice(0, 8)}</code>
+                {s.branches.length > 1 && (
+                  <span className="text-xs text-stone-500" title={s.branches.join(", ")}>
+                    {s.branches.length} branches
+                  </span>
+                )}
                 <span className="text-xs text-stone-400">
                   {s.ended_at ? new Date(s.ended_at).toLocaleString() : ""}
                 </span>

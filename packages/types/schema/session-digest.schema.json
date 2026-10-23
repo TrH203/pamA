@@ -22,7 +22,23 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "branch": { "type": "string", "maxLength": 256 },
+            "branch": { "type": "string", "maxLength": 256, "description": "Branch the session is filed under" },
+            "branches": {
+              "type": "array",
+              "maxItems": 20,
+              "description": "Every branch visited, in first-seen order; names are unique",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name"],
+                "properties": {
+                  "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+                  "first_seen": { "type": "string", "format": "date-time" },
+                  "last_seen": { "type": "string", "format": "date-time" },
+                  "events": { "type": "integer", "minimum": 0 }
+                }
+              }
+            },
             "commits": { "type": "array", "items": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" }, "maxItems": 50 }
           }
         },

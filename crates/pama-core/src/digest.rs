@@ -29,11 +29,31 @@ pub enum SensitivityLabel {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GitInfo {
+    /// Branch the session is filed under.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub branch: Option<String>,
+    /// Every branch visited, in first-seen order (names unique, max 20).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branches: Option<Vec<DigestBranch>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub commits: Option<Vec<String>>,
 }
+
+#[typeshare]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DigestBranch {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_seen: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_seen: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub events: Option<u32>,
+}
+
+/// Maximum number of branches recorded per session.
+pub const MAX_BRANCHES: usize = 20;
 
 #[typeshare]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -177,6 +197,22 @@ impl SessionDigest {
             if let Some(b) = &git.branch {
                 check_len("source.git.branch", b, 0, 256)?;
             }
+            if let Some(branches) = &git.branches {
+                if branches.len() > MAX_BRANCHES {
+                    return Err(DigestError::Invalid(format!(
+                        "source.git.branches max {MAX_BRANCHES}"
+                    )));
+                }
+                let mut seen = std::collections::HashSet::new();
+                for b in branches {
+                    check_len("source.git.branches.name", &b.name, 1, 256)?;
+                    if !seen.insert(b.name.as_str()) {
+                        return Err(DigestError::Invalid(
+                            "source.git.branches names must be unique".into(),
+                        ));
+                    }
+                }
+            }
             if let Some(commits) = &git.commits {
                 if commits.len() > 50 {
                     return Err(DigestError::Invalid("source.git.commits max 50".into()));
@@ -212,5 +248,29 @@ impl SessionDigest {
         check_items("open_items", &self.open_items, 20, 500)?;
         check_items("modules", &self.modules, 30, 100)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn with_branches(branches: &str) -> String {
+        format!(
+            r#"{{"schema_version":1,"source":{{"agent":"codex","agent_session_id":"s","project_key":"p","git":{{"branches":{branches}}},"ended_at":"2026-10-20T09:00:00Z"}},"goal":"g","decisions":[],"outcome":"","open_items":[],"modules":[],"redactions":{{"secret":0,"pii":0}}}}"#
+        )
+    }
+
+    #[test]
+    fn rejects_duplicate_branch_names() {
+        let err =
+            SessionDigest::from_json(&with_branches(r#"[{"name":"a"},{"name":"a"}]"#)).unwrap_err();
+        assert!(err.to_string().contains("unique"), "{err}");
+    }
+
+    #[test]
+    fn accepts_distinct_branch_names() {
+        SessionDigest::from_json(&with_branches(r#"[{"name":"a"},{"name":"b","events":3}]"#))
+            .unwrap();
     }
 }

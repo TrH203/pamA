@@ -7,7 +7,7 @@ import type { Deps } from "../app.ts";
 import type { Queryable } from "../db/client.ts";
 import { HttpError } from "../http.ts";
 import { SessionDigestSchema } from "../schema/digest.ts";
-import { assignBundle } from "./bundles.ts";
+import { assignBundle, branchList, recordBranches, reevaluateSession } from "./bundles.ts";
 import { cleanAndLabel, digestHash, storeVersion } from "./digests.ts";
 import { upsertProject } from "./projects.ts";
 
@@ -19,6 +19,7 @@ export const SyncDigestSchema = z.strictObject({
   sync_enabled_at: z.iso.datetime({ offset: true }),
   project_name: z.string().min(1).max(200).optional(),
   bundle_name: z.string().min(1).max(200).optional(),
+  bundle_name_source: z.enum(["key", "suggested", "owner"]).optional(),
 });
 
 export const SyncTombstoneSchema = z.strictObject({
@@ -88,10 +89,15 @@ export async function ingestDigest(
   );
   const bundleId = await assignBundle(deps.db, deps.workspaceId, project.id, bundle);
   if (body.bundle_name) {
-    await deps.db.query("UPDATE bundles SET name = $2 WHERE id = $1 AND name = key", [
-      bundleId,
-      body.bundle_name,
-    ]);
+    // The device is the source of truth: its owner name always wins, its suggestion wins unless
+    // the replica owner renamed the bundle, and a legacy name only replaces the key fallback.
+    const source = body.bundle_name_source ?? "key";
+    await deps.db.query(
+      `UPDATE bundles SET name = $2, name_source = $3, name_updated_at = now()
+       WHERE id = $1 AND name <> $2 AND (
+         $3 = 'owner' OR (name_source <> 'owner' AND ($3 = 'suggested' OR name_source = 'key')))`,
+      [bundleId, body.bundle_name, source],
+    );
   }
   const [session] = await deps.db.query<{ id: string; bundle_id: string }>(
     `INSERT INTO sessions (id, workspace_id, project_id, bundle_id, agent, agent_session_id, started_at, ended_at)
@@ -110,6 +116,15 @@ export async function ingestDigest(
     ],
   );
   if (!session) throw new Error("session upsert failed");
+  // Same rules as the local pipeline: record the branches, re-file an unpinned session.
+  await recordBranches(deps.db, deps.workspaceId, session.id, branchList(src.git));
+  session.bundle_id = await reevaluateSession(
+    deps.db,
+    deps.workspaceId,
+    project.id,
+    session.id,
+    bundle,
+  );
 
   const hash = digestHash(raw);
   const [existing] = await deps.db.query<{ id: string; version: number }>(
@@ -224,7 +239,24 @@ export async function resetDeliveries(q: Queryable, sessionFilter: string, param
   );
 }
 
-export async function pending(deps: Pick<Deps, "db" | "workspaceId">) {
+/**
+ * After an owner rename: make the bundle's latest approved digest deliverable again so the new
+ * name reaches the replica in the normal flow (the replica treats the repeated digest as a no-op).
+ */
+export async function redeliverBundleName(q: Queryable, bundleId: string) {
+  await q.query(
+    `DELETE FROM sync_deliveries WHERE digest_id = (
+       SELECT d.id FROM digests d
+       JOIN sessions s ON s.id = d.session_id
+       JOIN bundles b ON b.id = s.bundle_id
+       JOIN projects p ON p.id = s.project_id
+       WHERE b.id = $1 AND d.status = 'approved' AND COALESCE(b.sync_enabled, p.sync_enabled)
+       ORDER BY d.approved_at DESC, d.id DESC LIMIT 1)`,
+    [bundleId],
+  );
+}
+
+export async function pending(deps: Pick<Deps, "db" | "rules" | "workspaceId">) {
   const digests = await deps.db.query<{
     digest_id: string;
     target: string;
@@ -233,10 +265,11 @@ export async function pending(deps: Pick<Deps, "db" | "workspaceId">) {
     sync_enabled_at: Date | null;
     project_name: string;
     bundle_name: string;
+    bundle_name_source: string;
   }>(
     `SELECT d.id AS digest_id, p.sync_target AS target, d.content AS digest, d.approved_at,
             CASE WHEN b.sync_enabled IS NOT NULL THEN b.sync_enabled_at ELSE p.sync_enabled_at END AS sync_enabled_at,
-            p.name AS project_name, b.name AS bundle_name
+            p.name AS project_name, b.name AS bundle_name, b.name_source AS bundle_name_source
      FROM digests d JOIN sessions s ON s.id = d.session_id
      JOIN projects p ON p.id = s.project_id JOIN bundles b ON b.id = s.bundle_id
      WHERE d.workspace_id = $1 AND d.status = 'approved' AND COALESCE(b.sync_enabled, p.sync_enabled)
@@ -253,7 +286,15 @@ export async function pending(deps: Pick<Deps, "db" | "workspaceId">) {
   }>(
     "SELECT id, target, source_type, source_key FROM sync_outgoing WHERE handed_at IS NULL ORDER BY created_at, id",
   );
-  return { digests, tombstones };
+  // Names leave the machine here: mask them like every other digest string (Constitution II). A
+  // bundle's replica key is the masked key from its digests, so the tombstone key is masked too.
+  const mask = (text: string) => deps.rules.redact(text).text;
+  return {
+    digests: digests.map((d) => ({ ...d, bundle_name: mask(d.bundle_name) })),
+    tombstones: tombstones.map((t) =>
+      t.source_type === "bundle" ? { ...t, source_key: mask(t.source_key) } : t,
+    ),
+  };
 }
 
 export async function ack(

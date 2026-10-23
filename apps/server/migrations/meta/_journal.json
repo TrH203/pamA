@@ -50,6 +50,13 @@
       "when": 1792699711779,
       "tag": "0006_auth",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792775314307,
+      "tag": "0007_bundle_names_branches",
+      "breakpoints": true
     }
   ]
 }

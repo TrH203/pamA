@@ -8,6 +8,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -53,6 +54,11 @@ export const bundles = pgTable(
     name: text("name").notNull(),
     /** Usually the git branch; null for bundles created by split. */
     key: text("key"),
+    /** key = name is still the key (fallback), suggested = derived from a digest goal, owner = set by the owner. */
+    nameSource: text("name_source", { enum: ["key", "suggested", "owner"] })
+      .notNull()
+      .default("key"),
+    nameUpdatedAt: ts("name_updated_at"),
     /** Inherits the project setting when null. */
     syncEnabled: boolean("sync_enabled"),
     syncEnabledAt: ts("sync_enabled_at"),
@@ -60,6 +66,7 @@ export const bundles = pgTable(
   },
   (t) => [
     uniqueIndex("bundles_project_key").on(t.projectId, t.key).where(sql`${t.key} IS NOT NULL`),
+    check("bundles_name_source", sql`${t.nameSource} IN ('key','suggested','owner')`),
   ],
 );
 
@@ -84,11 +91,34 @@ export const sessions = pgTable(
       .default({ secret: 0, pii: 0 }),
     /** sha256 of the last submitted (redacted) events: re-submitting the same input is a no-op. */
     inputHash: text("input_hash"),
+    /** True once the owner moved the session (split/merge/move): re-capture keeps its bundle. */
+    bundlePinned: boolean("bundle_pinned").notNull().default(false),
     createdAt: ts("created_at").notNull().defaultNow(),
   },
   (t) => [
     uniqueIndex("sessions_agent_session").on(t.workspaceId, t.agent, t.agentSessionId),
     check("sessions_agent", sql`${t.agent} IN ('claude_code','codex')`),
+  ],
+);
+
+/** Every git branch a session visited, in first-seen order (names are redacted at ingest). */
+export const sessionBranches = pgTable(
+  "session_branches",
+  {
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => sessions.id, { onDelete: "cascade" }),
+    workspaceId: text("workspace_id").notNull(),
+    name: text("name").notNull(),
+    position: integer("position").notNull(),
+    firstSeenAt: ts("first_seen_at"),
+    lastSeenAt: ts("last_seen_at"),
+    eventCount: integer("event_count").notNull().default(0),
+  },
+  (t) => [
+    primaryKey({ columns: [t.sessionId, t.name] }),
+    check("session_branches_event_count", sql`${t.eventCount} >= 0`),
+    check("session_branches_name_len", sql`char_length(${t.name}) BETWEEN 1 AND 256`),
   ],
 );
 

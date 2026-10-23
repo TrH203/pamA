@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# `pama-dev …` — the development build of pama, isolated from the stable install:
+#   own data dir (~/.pama-dev), own port, server from source, CLI rebuilt (incrementally) on each run.
+# Usage: pama-dev init | review | link create … | server stop   (same commands as `pama`)
+set -euo pipefail
+ROOT="$(cd "$(dirname "$(readlink "${BASH_SOURCE[0]}" || echo "${BASH_SOURCE[0]}")")/.." && pwd)"
+
+export PAMA_HOME="${PAMA_HOME:-$HOME/.pama-dev}"
+export PAMA_PORT="${PAMA_PORT:-7600}"
+export PAMA_SERVER_CMD="cd '$ROOT/apps/server' && exec node --import tsx src/index.ts"
+
+# Server needs Node >= 24 (see .nvmrc).
+if [ "$(node -p 'process.versions.node.split(".")[0]')" -lt 24 ]; then
+  echo "pama-dev: Node 24 required (run: nvm use 24)" >&2
+  exit 1
+fi
+
+cargo build -q --manifest-path "$ROOT/Cargo.toml" -p pama-cli
+exec "$ROOT/target/debug/pama" "$@"

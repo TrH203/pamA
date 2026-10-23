@@ -70,16 +70,7 @@ fn status(ctx: &Ctx, api: &LocalApi) -> anyhow::Result<Exit> {
                     .unwrap_or_default()
             ));
             for b in p["bundles"].as_array().into_iter().flatten() {
-                let state = match b["sync_enabled"].as_bool() {
-                    Some(true) => "on",
-                    Some(false) => "off",
-                    None => "inherit",
-                };
-                lines.push(format!(
-                    "    {} {} ({state})",
-                    b["id"].as_str().unwrap_or("?"),
-                    b["name"].as_str().unwrap_or("?")
-                ));
+                lines.push(super::bundle_fmt::bundle_line(b));
             }
         }
         if lines.is_empty() {

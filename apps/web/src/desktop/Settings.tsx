@@ -1,5 +1,7 @@
 // Desktop settings (US4): sync per source (off by default), strict offline mode with declared
 // hosts and the network log, model providers, hotkey and answer source.
+
+import { BundleSummary } from "@pama/ui";
 import { useCallback, useEffect, useState } from "react";
 import { draftApi } from "./api.ts";
 import { ipc } from "./ipc.ts";
@@ -10,7 +12,15 @@ interface SyncProject {
   repo_key: string;
   sync_enabled: boolean;
   sync_target: string | null;
-  bundles: { id: string; name: string; sync_enabled: boolean | null }[];
+  bundles: {
+    id: string;
+    name: string;
+    key: string | null;
+    sync_enabled: boolean | null;
+    branches: string[];
+    session_count: number;
+    last_activity: string | null;
+  }[];
 }
 
 type Log = Awaited<ReturnType<typeof ipc.getNetworkLog>>;
@@ -187,7 +197,7 @@ export function Settings() {
               </label>
               <ul className="ml-6 mt-1 space-y-1">
                 {p.bundles.map((b) => (
-                  <li key={b.id} className="flex items-center gap-2">
+                  <li key={b.id} className="flex items-start gap-2">
                     <select
                       className="rounded border border-stone-300 px-1 py-0.5 text-xs"
                       value={b.sync_enabled === null ? "inherit" : b.sync_enabled ? "on" : "off"}
@@ -203,7 +213,7 @@ export function Settings() {
                       <option value="on">sync</option>
                       <option value="off">never sync</option>
                     </select>
-                    {b.name}
+                    <BundleSummary bundle={b} />
                   </li>
                 ))}
               </ul>

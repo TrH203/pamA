@@ -5,7 +5,7 @@ import type { Env } from "../app.ts";
 import { HttpError } from "../http.ts";
 import { listBundles, mergeBundles, renameBundle, splitBundle } from "../services/bundles.ts";
 import { approveDigest, discardDigest, withdrawDigest } from "../services/digests.ts";
-import { setBundleSync, setProjectSync } from "../services/sync.ts";
+import { redeliverBundleName, setBundleSync, setProjectSync } from "../services/sync.ts";
 import { body } from "./util.ts";
 
 export const reviewRoutes = new Hono<Env>()
@@ -13,7 +13,9 @@ export const reviewRoutes = new Hono<Env>()
     const { db, workspaceId } = c.get("deps");
     const items = await db.query(
       `SELECT d.id, d.session_id, d.version, d.status, d.content, d.created_at,
-              p.id AS project_id, p.name AS project, b.id AS bundle_id, b.name AS bundle
+              p.id AS project_id, p.name AS project, b.id AS bundle_id, b.name AS bundle,
+              COALESCE((SELECT json_agg(sb.name ORDER BY sb.position) FROM session_branches sb
+                        WHERE sb.session_id = s.id), '[]'::json) AS branches
        FROM digests d JOIN sessions s ON s.id = d.session_id
        JOIN projects p ON p.id = s.project_id JOIN bundles b ON b.id = s.bundle_id
        WHERE d.workspace_id = $1 AND d.status = 'draft'
@@ -119,6 +121,7 @@ export const reviewRoutes = new Hono<Env>()
     if (patch.name) await renameBundle(deps.db, deps.workspaceId, id, patch.name);
     if (patch.sync_enabled !== undefined)
       await setBundleSync(deps, id, patch.sync_enabled, patch.sync_target);
+    if (patch.name) await redeliverBundleName(deps.db, id);
     return c.json({ id, ...patch });
   })
   .post("/bundles/merge", async (c) => {
@@ -127,7 +130,9 @@ export const reviewRoutes = new Hono<Env>()
       c,
       z.strictObject({ bundle_ids: z.array(z.string()).min(2), name: z.string().min(1).max(200) }),
     );
-    return c.json({ id: await mergeBundles(db, workspaceId, m.bundle_ids, m.name) });
+    const id = await mergeBundles(db, workspaceId, m.bundle_ids, m.name);
+    await redeliverBundleName(db, id);
+    return c.json({ id });
   })
   .post("/bundles/:id/split", async (c) => {
     const { db, workspaceId } = c.get("deps");

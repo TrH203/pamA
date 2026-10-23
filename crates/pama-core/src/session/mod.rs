@@ -7,6 +7,6 @@ pub mod reader;
 mod redact;
 
 pub use event::{
-    Event, EventKind, NormalizedSession, SessionMeta, MAX_EDIT_CHARS, MAX_RESULT_CHARS,
+    BranchVisit, Event, EventKind, NormalizedSession, SessionMeta, MAX_EDIT_CHARS, MAX_RESULT_CHARS,
 };
 pub use redact::redact_session;

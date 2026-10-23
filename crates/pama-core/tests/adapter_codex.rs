@@ -74,3 +74,14 @@ fn normalizes_events() {
         .iter()
         .any(|e| e.kind == EventKind::Assistant && e.text.contains("explicit readiness signal")));
 }
+
+#[test]
+fn codex_session_meta_gives_a_one_entry_branch_list() {
+    let s = codex::parse(&fixture()).unwrap();
+    assert_eq!(s.meta.branches.len(), 1);
+    assert_eq!(s.meta.branches[0].name, "fix/flaky-checkout-test");
+    assert_eq!(
+        s.meta.git_branch.as_deref(),
+        Some("fix/flaky-checkout-test")
+    );
+}

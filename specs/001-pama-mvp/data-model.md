@@ -67,10 +67,15 @@ overrides workspace when not null), sync_enabled (bool, default false), sync_tar
 ### bundles
 id, workspace_id, project_id, name, key (e.g. git branch), sync_enabled (bool?, inherits project
 when null), created_at. Owners can rename, split (move sessions), merge (re-point sessions).
+`name` is the display name; `name_source` (`key` \| `suggested` \| `owner`) says where it came from
+and `name_updated_at` when it last changed — see
+[002 data model](../002-bundle-names-branches/data-model.md).
 
 ### sessions
 id, workspace_id, project_id, bundle_id, agent, agent_session_id, started_at, ended_at,
-redaction_counts (jsonb `{secret:int, pii:int}`). Unique (workspace_id, agent, agent_session_id).
+redaction_counts (jsonb `{secret:int, pii:int}`), bundle_pinned (bool; true once the owner moved the
+session). Unique (workspace_id, agent, agent_session_id). Every branch a session visited is kept in
+`session_branches` (002).
 
 ### digests (versioned, immutable rows)
 | Field | Type | Rules |

@@ -132,4 +132,18 @@ describeEachDb("public Ask Link API", (f) => {
     expect(csv.headers.get("content-type")).toContain("text/csv");
     expect(await csv.text()).toContain("Ignore your rules");
   });
+
+  it("never exposes recorded branch names to askers", async () => {
+    await t.db.query(
+      `INSERT INTO session_branches (session_id, workspace_id, name, position)
+       SELECT id, workspace_id, 'internal/codename-falcon', 9 FROM sessions`,
+    );
+    const v = visitor(t, slug);
+    const seen = [
+      await (await v.call("/api/meta")).text(),
+      await (await v.call("/api/ask", { question: "Do refunds include the shipping fee?" })).text(),
+      await (await v.call("/api/asks")).text(),
+    ].join("\n");
+    expect(seen).not.toContain("codename-falcon");
+  });
 });

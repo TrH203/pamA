@@ -91,3 +91,56 @@ fn keeps_conversation_and_tools_but_ignores_noise() {
         .unwrap();
     assert_eq!(bash.command.as_deref(), Some("env"));
 }
+
+fn branch_fixture(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/claude-branches")
+        .join(format!("{name}.jsonl"))
+}
+
+#[test]
+fn records_every_branch_in_visit_order() {
+    let s = claude::parse(&branch_fixture("multi-branch")).unwrap();
+    let names: Vec<_> = s.meta.branches.iter().map(|b| b.name.as_str()).collect();
+    assert_eq!(names, ["main", "feat/login", "fix/typo"]);
+    let counts: Vec<_> = s.meta.branches.iter().map(|b| b.events).collect();
+    assert_eq!(counts, [2, 30, 5]);
+    let login = &s.meta.branches[1];
+    assert!(login.first_seen.as_deref() < login.last_seen.as_deref());
+    assert!(
+        s.meta.branches[0].first_seen.as_deref() < login.first_seen.as_deref(),
+        "branches are ordered by first sight"
+    );
+    assert_eq!(
+        s.meta.git_branch.as_deref(),
+        Some("feat/login"),
+        "filing branch"
+    );
+}
+
+#[test]
+fn returning_to_a_branch_keeps_one_entry() {
+    let s = claude::parse(&branch_fixture("abab")).unwrap();
+    let names: Vec<_> = s.meta.branches.iter().map(|b| b.name.as_str()).collect();
+    assert_eq!(names, ["A", "B"]);
+    assert_eq!(s.meta.branches[0].events, 6);
+    assert_eq!(s.meta.branches[1].events, 4);
+}
+
+#[test]
+fn main_only_and_tie_and_no_branch() {
+    let s = claude::parse(&branch_fixture("main-only")).unwrap();
+    assert_eq!(s.meta.git_branch.as_deref(), Some("main"));
+    let s = claude::parse(&branch_fixture("tie")).unwrap();
+    assert_eq!(s.meta.git_branch.as_deref(), Some("feat/a"));
+    let s = claude::parse(&branch_fixture("no-branch")).unwrap();
+    assert!(s.meta.branches.is_empty());
+    assert_eq!(s.meta.git_branch, None);
+}
+
+#[test]
+fn existing_fixture_has_a_single_branch() {
+    let s = claude::parse(&fixture()).unwrap();
+    assert_eq!(s.meta.branches.len(), 1);
+    assert_eq!(s.meta.branches[0].name, "feat/refund-shipping");
+}

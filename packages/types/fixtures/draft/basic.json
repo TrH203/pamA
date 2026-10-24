@@ -1,0 +1,128 @@
+{
+  "_comment": "Shared draft fixture (spec 004): the server (shapeDraft) and the device (pama_core::draft::build_digest) must turn `input` + `reply` into `expected`, and format `input.events` as `prompt`.",
+  "input": {
+    "agent": "claude_code",
+    "agent_session_id": "sess-1",
+    "project_key": "github.com/acme/shop",
+    "project_name": "shop",
+    "bundle_key": "feat/refund-shipping",
+    "agent_version": "2.1.0",
+    "started_at": "2026-10-20T08:00:00Z",
+    "ended_at": "2026-10-20T09:00:00Z",
+    "git": {
+      "branch": "feat/refund-shipping",
+      "branches": [
+        {
+          "name": "feat/refund-shipping",
+          "events": 4
+        }
+      ]
+    },
+    "events": [
+      {
+        "kind": "user",
+        "text": "Should refunds include the shipping fee?"
+      },
+      {
+        "kind": "assistant",
+        "text": "Decision: no, because the carrier fee is non-refundable. Rejected: refund for damaged items."
+      },
+      {
+        "kind": "tool_call",
+        "text": "cat .env",
+        "tool": "bash",
+        "command": "cat .env"
+      },
+      {
+        "kind": "tool_result",
+        "text": "[DROPPED:cat-secret-file]",
+        "tool": "bash"
+      }
+    ],
+    "redactions": {
+      "secret": 1,
+      "pii": 0,
+      "by_rule": {
+        "cat-secret-file": 1
+      }
+    }
+  },
+  "reply": {
+    "goal": "  Decide whether refunds include the shipping fee.  ",
+    "decisions": [
+      {
+        "what": "Refunds do not include the shipping fee.",
+        "why": "The carrier fee is already paid and non-refundable.",
+        "alternatives": [
+          "Refund shipping only for damaged items"
+        ]
+      },
+      {
+        "what": "Keep the refund rule in the refunds module.",
+        "why": "One place for the policy."
+      }
+    ],
+    "outcome": "Refund service now excludes shipping; tests added.",
+    "open_items": [
+      "Confirm policy wording with support"
+    ],
+    "modules": [
+      "refunds",
+      "checkout"
+    ]
+  },
+  "prompt": "[user] Should refunds include the shipping fee?\n[assistant] Decision: no, because the carrier fee is non-refundable. Rejected: refund for damaged items.\n[tool bash] cat .env\n[result bash] [DROPPED:cat-secret-file]",
+  "expected": {
+    "schema_version": 1,
+    "source": {
+      "agent": "claude_code",
+      "agent_session_id": "sess-1",
+      "agent_version": "2.1.0",
+      "project_key": "github.com/acme/shop",
+      "bundle_key": "feat/refund-shipping",
+      "git": {
+        "branch": "feat/refund-shipping",
+        "branches": [
+          {
+            "name": "feat/refund-shipping",
+            "events": 4
+          }
+        ]
+      },
+      "started_at": "2026-10-20T08:00:00Z",
+      "ended_at": "2026-10-20T09:00:00Z"
+    },
+    "goal": "Decide whether refunds include the shipping fee.",
+    "decisions": [
+      {
+        "id": 1,
+        "what": "Refunds do not include the shipping fee.",
+        "why": "The carrier fee is already paid and non-refundable.",
+        "alternatives": [
+          "Refund shipping only for damaged items"
+        ]
+      },
+      {
+        "id": 2,
+        "what": "Keep the refund rule in the refunds module.",
+        "why": "One place for the policy.",
+        "alternatives": []
+      }
+    ],
+    "outcome": "Refund service now excludes shipping; tests added.",
+    "open_items": [
+      "Confirm policy wording with support"
+    ],
+    "modules": [
+      "refunds",
+      "checkout"
+    ],
+    "redactions": {
+      "secret": 1,
+      "pii": 0,
+      "by_rule": {
+        "cat-secret-file": 1
+      }
+    }
+  }
+}

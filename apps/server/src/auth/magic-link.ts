@@ -33,7 +33,14 @@ export const authRoutes = new Hono<Env>()
         "Email is not configured; use PAMA_OWNER_TOKEN instead.",
       );
     }
-    const { email: raw } = await body(c, z.strictObject({ email: z.email().max(320) }));
+    const { email: raw, next } = await body(
+      c,
+      z.strictObject({
+        email: z.email().max(320),
+        /** Where to land after sign-in, e.g. the device approval page. Relative paths only. */
+        next: z.string().max(500).optional(),
+      }),
+    );
     const email = raw.toLowerCase();
     let [ws] = await db.query<{ id: string }>("SELECT id FROM workspaces WHERE owner_email = $1", [
       email,
@@ -51,8 +58,8 @@ export const authRoutes = new Hono<Env>()
     if (!ws || (config.mode === "selfhost" && ws.id !== workspaceId)) return c.body(null, 204);
     const token = randomBytes(32).toString("base64url");
     await db.query(
-      "INSERT INTO login_tokens (token_hash, email, workspace_id, expires_at) VALUES ($1, $2, $3, now() + make_interval(mins => $4))",
-      [hash(token), email, ws.id, MINUTES],
+      "INSERT INTO login_tokens (token_hash, email, workspace_id, expires_at, next) VALUES ($1, $2, $3, now() + make_interval(mins => $4), $5)",
+      [hash(token), email, ws.id, MINUTES, next && /^\/(?![/\\])/.test(next) ? next : null],
     );
     await mailer.send({
       to: email,
@@ -64,14 +71,14 @@ export const authRoutes = new Hono<Env>()
   .get("/auth/callback", async (c) => {
     const { db } = c.get("deps");
     const token = c.req.query("token") ?? "";
-    const [t] = await db.query<{ email: string; workspace_id: string }>(
+    const [t] = await db.query<{ email: string; workspace_id: string; next: string | null }>(
       `UPDATE login_tokens SET used_at = now()
-       WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now() RETURNING email, workspace_id`,
+       WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now() RETURNING email, workspace_id, next`,
       [hash(token)],
     );
     if (!t) throw new HttpError(410, "link_expired", "This sign-in link was used or has expired.");
     await createSession(c, t.workspace_id, t.email);
-    return c.redirect("/", 302);
+    return c.redirect(t.next ?? "/", 302);
   })
   .post("/auth/logout", async (c) => {
     await endSession(c);

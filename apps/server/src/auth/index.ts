@@ -1,12 +1,14 @@
 // One place decides who may call what under /v1:
-//   public  : /v1/health, /v1/devices/pair
-//   device  : /v1/sync/digests, /v1/sync/tombstones (device token on servers; local token locally)
+//   public  : /v1/health, /v1/devices/pair, device login start/poll
+//   device  : /v1/sync/*, console links (device token on servers; local token locally)
 //   owner   : everything else (local token on the owner's machine; owner token on servers,
-//             plus the email sign-in session added in US5)
+//             the email sign-in session added in US5, or a device token acting as the owner
+//             of its workspace — the thin client, spec 004)
 import { timingSafeEqual } from "node:crypto";
 import type { MiddlewareHandler } from "hono";
 import type { Env } from "../app.ts";
 import { HttpError } from "../http.ts";
+import { modelsFor } from "../llm/workspace-models.ts";
 import { deviceForToken } from "./device.ts";
 import { localToken } from "./local-token.ts";
 import { ownerFromSession } from "./session.ts";
@@ -17,8 +19,16 @@ const PUBLIC = new Set([
   "/v1/auth/login",
   "/v1/auth/callback",
   "/v1/auth/local-session",
+  "/v1/auth/device/start",
+  "/v1/auth/device/token",
 ]);
-const DEVICE = new Set(["/v1/sync/digests", "/v1/sync/tombstones"]);
+const DEVICE = new Set([
+  "/v1/sync/digests",
+  "/v1/sync/tombstones",
+  "/v1/sync/drafts",
+  "/v1/sync/changes",
+  "/v1/auth/device/console-link",
+]);
 /** Only the owner's own machine may receive transcripts or hand out sync work (Constitution I). */
 const LOCAL_ONLY = new Set(["/v1/transcripts/digest", "/v1/sync/pending", "/v1/sync/ack"]);
 
@@ -50,18 +60,32 @@ export function authenticate(): MiddlewareHandler<Env> {
     const deps = c.get("deps");
     // Requests act in one workspace: the device's, the signed-in owner's, or (owner token) the
     // server's default workspace.
-    const as = (workspaceId: string) => c.set("deps", { ...deps, workspaceId });
+    // Cloud: a workspace may answer with its own chat model (FR-026).
+    const as = async (workspaceId: string) => {
+      c.set("deps", { ...deps, workspaceId, models: await modelsFor(deps, workspaceId) });
+      c.set("actor", "workspace");
+    };
     if (DEVICE.has(path)) {
       const device = token ? await deviceForToken(db, token) : null;
       if (!device) throw new HttpError(401, "unauthorized", "unknown or revoked device");
       c.set("device", device);
-      as(device.workspace_id);
+      await as(device.workspace_id);
       return next();
     }
-    if (config.ownerToken && token && same(token, config.ownerToken)) return next();
+    if (config.ownerToken && token && same(token, config.ownerToken)) {
+      c.set("actor", "operator");
+      return next();
+    }
+    if (token.startsWith("pd_")) {
+      const device = await deviceForToken(db, token);
+      if (!device) throw new HttpError(401, "unauthorized", "unknown or revoked device");
+      c.set("device", device);
+      await as(device.workspace_id);
+      return next();
+    }
     const session = await ownerFromSession(c);
     if (session) {
-      as(session.workspaceId);
+      await as(session.workspaceId);
       return next();
     }
     throw new HttpError(401, "unauthorized", "sign in required");

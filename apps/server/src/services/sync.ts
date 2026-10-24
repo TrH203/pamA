@@ -8,8 +8,8 @@ import type { Queryable } from "../db/client.ts";
 import { HttpError } from "../http.ts";
 import { SessionDigestSchema } from "../schema/digest.ts";
 import { assignBundle, branchList, recordBranches, reevaluateSession } from "./bundles.ts";
-import { cleanAndLabel, digestHash, storeVersion } from "./digests.ts";
-import { upsertProject } from "./projects.ts";
+import { approveDigest, cleanAndLabel, digestHash, storeVersion } from "./digests.ts";
+import { autoApproveFor, upsertProject } from "./projects.ts";
 
 export const SyncDigestSchema = z.strictObject({
   outbox_id: z.string().min(1).max(64),
@@ -21,6 +21,9 @@ export const SyncDigestSchema = z.strictObject({
   bundle_name: z.string().min(1).max(200).optional(),
   bundle_name_source: z.enum(["key", "suggested", "owner"]).optional(),
 });
+
+/** A draft from a thin-client device (spec 004): reviewed on the server, auto-approve applies. */
+export const SyncDraftSchema = SyncDigestSchema.omit({ approved_at: true });
 
 export const SyncTombstoneSchema = z.strictObject({
   outbox_id: z.string().min(1).max(64),
@@ -48,13 +51,16 @@ async function remember(q: Queryable, outboxId: string, deviceId: string, result
 export const bundleKey = (projectKey: string, bundle: string) => `${projectKey}#${bundle}`;
 export const sessionKey = (agent: string, id: string) => `${agent}:${id}`;
 
+type Ingested = { digest_id: string; version: number; status?: "draft" | "approved" };
+
 export async function ingestDigest(
   deps: SyncDeps,
   deviceId: string,
-  body: z.infer<typeof SyncDigestSchema>,
-) {
+  body: z.infer<typeof SyncDraftSchema>,
+  status: "approved" | "draft" = "approved",
+): Promise<Ingested> {
   const done = await receipt(deps.db, body.outbox_id);
-  if (done) return done as { digest_id: string; version: number };
+  if (done) return done as Ingested;
   const parsed = SessionDigestSchema.safeParse(body.digest);
   if (!parsed.success) throw new HttpError(422, "invalid_digest", parsed.error.message);
   const raw = parsed.data;
@@ -127,13 +133,16 @@ export async function ingestDigest(
   );
 
   const hash = digestHash(raw);
-  const [existing] = await deps.db.query<{ id: string; version: number }>(
-    "SELECT id, version FROM digests WHERE session_id = $1 AND digest_hash = $2",
+  const [existing] = await deps.db.query<{ id: string; version: number; status: string }>(
+    "SELECT id, version, status FROM digests WHERE session_id = $1 AND digest_hash = $2",
     [session.id, hash],
   );
-  let result: { digest_id: string; version: number };
+  let result: Ingested;
   if (existing) {
     result = { digest_id: existing.id, version: existing.version };
+    if (status === "draft") {
+      result.status = existing.status === "approved" ? "approved" : "draft";
+    }
   } else {
     const { digest, labels } = await cleanAndLabel(deps, raw);
     const v = await storeVersion(deps, {
@@ -142,10 +151,22 @@ export async function ingestDigest(
       projectId: project.id,
       digest,
       labels,
-      status: "approved",
+      status,
       hash,
     });
     result = { digest_id: v.id, version: v.version };
+    if (status === "draft") {
+      await deps.db.query("UPDATE digests SET origin_device_id = $2 WHERE id = $1", [
+        v.id,
+        deviceId,
+      ]);
+      result.status = "draft";
+      // Same rule as drafts made on the owner's machine.
+      if (await autoApproveFor(deps.db, project.id)) {
+        await approveDigest(deps, v.id, undefined, "auto");
+        result.status = "approved";
+      }
+    }
   }
   await remember(deps.db, body.outbox_id, deviceId, result);
   return result;
@@ -212,6 +233,45 @@ export async function applyTombstone(
   });
   await remember(deps.db, t.outbox_id, deviceId, result);
   return result;
+}
+
+/**
+ * Review decisions in the device's workspace after `since` (spec 004, FR-025): the device keeps
+ * every draft and applies these to its own copies. The cursor is the digests' review sequence.
+ */
+export async function changesSince(
+  deps: Pick<Deps, "db" | "workspaceId">,
+  since: string | undefined,
+) {
+  const after = /^\d{1,18}$/.test(since ?? "") ? (since as string) : "0";
+  const rows = await deps.db.query<{
+    seq: string;
+    digest_id: string;
+    version: number;
+    status: string;
+    content: { source: { project_key: string } } & Record<string, unknown>;
+    agent: string;
+    agent_session_id: string;
+  }>(
+    `SELECT d.review_seq::text AS seq, d.id AS digest_id, d.version, d.status, d.content,
+            s.agent, s.agent_session_id
+     FROM digests d JOIN sessions s ON s.id = d.session_id
+     WHERE d.workspace_id = $1 AND d.review_seq > $2::bigint
+     ORDER BY d.review_seq LIMIT 200`,
+    [deps.workspaceId, after],
+  );
+  return {
+    changes: rows.map((r) => ({
+      agent: r.agent,
+      agent_session_id: r.agent_session_id,
+      project_key: r.content.source.project_key,
+      digest_id: r.digest_id,
+      version: r.version,
+      status: r.status,
+      ...(r.status === "approved" ? { digest: r.content } : {}),
+    })),
+    cursor: rows.at(-1)?.seq ?? after,
+  };
 }
 
 // --- Owner's machine -------------------------------------------------------------------------

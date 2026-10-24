@@ -14,10 +14,12 @@ export const reviewRoutes = new Hono<Env>()
     const items = await db.query(
       `SELECT d.id, d.session_id, d.version, d.status, d.content, d.created_at,
               p.id AS project_id, p.name AS project, b.id AS bundle_id, b.name AS bundle,
+              dv.name AS device,
               COALESCE((SELECT json_agg(sb.name ORDER BY sb.position) FROM session_branches sb
                         WHERE sb.session_id = s.id), '[]'::json) AS branches
        FROM digests d JOIN sessions s ON s.id = d.session_id
        JOIN projects p ON p.id = s.project_id JOIN bundles b ON b.id = s.bundle_id
+       LEFT JOIN devices dv ON dv.id = d.origin_device_id
        WHERE d.workspace_id = $1 AND d.status = 'draft'
        ORDER BY d.created_at DESC, d.id DESC LIMIT 200`,
       [workspaceId],

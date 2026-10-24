@@ -23,11 +23,12 @@ import {
   formatTranscript,
   inputHash,
   mergeRedactions,
+  type Redactions,
   type TranscriptInput,
 } from "./transcript.ts";
 
 /** What the model writes; the server adds source, redactions and provenance. */
-const DraftSchema = z.object({
+export const DraftSchema = z.object({
   goal: z.string(),
   decisions: z.array(
     z.object({
@@ -42,6 +43,46 @@ const DraftSchema = z.object({
 });
 
 const cut = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 3)}...` : s);
+
+export type DraftOutput = z.infer<typeof DraftSchema>;
+
+/**
+ * The model's draft → Session Digest (limits, ids, source). The thin client does the same on the
+ * device in Rust (`pama_core::draft::build_digest`); `packages/types/fixtures/draft/` keeps them
+ * in step.
+ */
+export function shapeDraft(
+  input: TranscriptInput,
+  output: DraftOutput,
+  recheck: Redactions,
+  provenance?: SessionDigest["provenance"],
+): SessionDigest {
+  return {
+    schema_version: 1,
+    source: {
+      agent: input.agent,
+      agent_session_id: input.agent_session_id,
+      ...(input.agent_version ? { agent_version: input.agent_version } : {}),
+      project_key: input.project_key,
+      bundle_key: input.bundle_key || input.git?.branch || "default",
+      ...(input.git ? { git: input.git } : {}),
+      ...(input.started_at ? { started_at: input.started_at } : {}),
+      ended_at: input.ended_at,
+    },
+    goal: cut(output.goal.trim() || "Session without a stated goal.", 1000),
+    decisions: output.decisions.slice(0, 30).map((d, i) => ({
+      id: i + 1,
+      what: cut(d.what, 1000),
+      why: cut(d.why, 1000),
+      alternatives: d.alternatives.slice(0, 10).map((a) => cut(a, 500)),
+    })),
+    outcome: cut(output.outcome, 1000),
+    open_items: output.open_items.slice(0, 20).map((s) => cut(s, 500)),
+    modules: output.modules.slice(0, 30).map((s) => cut(s, 100)),
+    redactions: mergeRedactions(input.redactions, recheck),
+    ...(provenance ? { provenance } : {}),
+  };
+}
 
 export interface DigestResult {
   digest_id: string;
@@ -121,35 +162,11 @@ export async function digestTranscript(
     temperature: 0,
   });
 
-  const raw: SessionDigest = {
-    schema_version: 1,
-    source: {
-      agent: input.agent,
-      agent_session_id: input.agent_session_id,
-      ...(input.agent_version ? { agent_version: input.agent_version } : {}),
-      project_key: input.project_key,
-      bundle_key: bundleKey,
-      ...(input.git ? { git: input.git } : {}),
-      ...(input.started_at ? { started_at: input.started_at } : {}),
-      ended_at: input.ended_at,
-    },
-    goal: cut(output.goal.trim() || "Session without a stated goal.", 1000),
-    decisions: output.decisions.slice(0, 30).map((d, i) => ({
-      id: i + 1,
-      what: cut(d.what, 1000),
-      why: cut(d.why, 1000),
-      alternatives: d.alternatives.slice(0, 10).map((a) => cut(a, 500)),
-    })),
-    outcome: cut(output.outcome, 1000),
-    open_items: output.open_items.slice(0, 20).map((s) => cut(s, 500)),
-    modules: output.modules.slice(0, 30).map((s) => cut(s, 100)),
-    redactions: mergeRedactions(input.redactions, recheck.counts),
-    provenance: {
-      prompt_version: prompt.version,
-      model: String((deps.models.small as { modelId?: string }).modelId ?? "unknown"),
-      produced_at: new Date().toISOString(),
-    },
-  };
+  const raw = shapeDraft(input, output, recheck.counts, {
+    prompt_version: prompt.version,
+    model: String((deps.models.small as { modelId?: string }).modelId ?? "unknown"),
+    produced_at: new Date().toISOString(),
+  });
   const { digest, labels } = await cleanAndLabel(deps, raw);
 
   const stored = await storeVersion(deps, {

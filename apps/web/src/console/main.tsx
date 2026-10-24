@@ -4,6 +4,7 @@ import { ApiError, api } from "../lib/api.ts";
 import "../styles.css";
 import { Audit } from "./Audit.tsx";
 import { Bundles } from "./Bundles.tsx";
+import { DeviceApprove } from "./DeviceApprove.tsx";
 import { Doctor } from "./Doctor.tsx";
 import { Inbox } from "./Inbox.tsx";
 import { Links } from "./Links.tsx";
@@ -36,6 +37,8 @@ function ConsoleApp() {
   const [tab, setTab] = useState<Tab>(initial in TABS ? initial : "review");
   const Page = PAGES[tab];
   const [auth, setAuth] = useState<"checking" | "ok" | "login" | "local">("checking");
+  // `pama login` opens `/?device=CODE` (spec 004).
+  const [device, setDevice] = useState(new URLSearchParams(location.search).get("device"));
   useEffect(() => {
     api<{ mode: string }>("/v1/auth/me")
       .then(() => setAuth("ok"))
@@ -51,6 +54,17 @@ function ConsoleApp() {
   }, []);
   if (auth === "checking") return null;
   if (auth === "login") return <Login />;
+  if (device && auth === "ok") {
+    return (
+      <DeviceApprove
+        code={device}
+        onClose={() => {
+          history.replaceState(null, "", location.pathname);
+          setDevice(null);
+        }}
+      />
+    );
+  }
   if (auth === "local") {
     return (
       <p className="mx-auto mt-24 max-w-sm text-center text-stone-600">

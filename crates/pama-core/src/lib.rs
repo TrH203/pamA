@@ -5,10 +5,12 @@
 pub mod capture;
 pub mod client;
 pub mod digest;
+pub mod draft;
 pub mod net;
 pub mod paths;
 pub mod project;
 pub mod redact;
+pub mod remote;
 pub mod secrets;
 pub mod session;
 pub mod sidecar;

@@ -76,6 +76,19 @@ pub fn get(key: &str) -> Result<Option<String>, SecretError> {
     }
 }
 
+/// Whether a secret exists, without reading its value. On macOS this queries attributes only,
+/// which never raises the keychain access prompt (unlike [`get`]); use it for status checks.
+pub fn exists(key: &str) -> Result<bool, SecretError> {
+    if let Some(p) = test_file() {
+        return Ok(file_map(&p).contains_key(key));
+    }
+    match Entry::new(SERVICE, key)?.get_attributes() {
+        Ok(_) => Ok(true),
+        Err(Error::NoEntry) => Ok(false),
+        Err(e) => Err(e.into()),
+    }
+}
+
 pub fn delete(key: &str) -> Result<(), SecretError> {
     if let Some(p) = test_file() {
         let mut m = file_map(&p);
@@ -102,7 +115,9 @@ mod tests {
             get("provider.anthropic.key").unwrap().as_deref(),
             Some("sk-test")
         );
+        assert!(exists("provider.anthropic.key").unwrap());
         delete("provider.anthropic.key").unwrap();
+        assert!(!exists("provider.anthropic.key").unwrap());
         assert_eq!(get("provider.anthropic.key").unwrap(), None);
     }
 }

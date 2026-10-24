@@ -8,7 +8,7 @@ use pama_core::paths::home_dir;
 use serde_json::{json, Value};
 
 use super::Ctx;
-use crate::{AgentArg, Exit};
+use crate::{AgentArg, Exit, ModeArg};
 
 fn hook_command() -> String {
     let exe = std::env::current_exe()
@@ -91,7 +91,10 @@ pub fn run(
     agent: AgentArg,
     global: bool,
     project_scope: bool,
+    mode: Option<ModeArg>,
+    sync: bool,
 ) -> anyhow::Result<Exit> {
+    let explicit = project.is_some();
     let dir: PathBuf = match project {
         Some(p) => PathBuf::from(p),
         None => std::env::current_dir()?,
@@ -133,6 +136,16 @@ pub fn run(
             Ok(false) => {}
             Err(w) => warnings.push(w),
         }
+    }
+    // The agent reports the shell's (logical) directory: prefer it over the canonical path.
+    let logical = std::env::var("PWD")
+        .ok()
+        .filter(|p| !explicit && std::fs::canonicalize(p).ok().as_deref() == Some(dir.as_path()))
+        .map(PathBuf::from)
+        .unwrap_or_else(|| dir.clone());
+    match super::login::init_remote(ctx, &logical, mode, sync)? {
+        Ok(more) => changes.extend(more),
+        Err(code) => return Ok(code),
     }
     for w in &warnings {
         eprintln!("warning: {w}");

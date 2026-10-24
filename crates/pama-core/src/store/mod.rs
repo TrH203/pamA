@@ -71,7 +71,7 @@ impl CaptureStatus {
     }
 
     /// `detected → redacting → digesting → ready_for_review → submitted`; any → `failed`;
-    /// `failed → detected` (retry); `detected → skipped`.
+    /// `failed → detected` (retry); `detected|redacting|digesting → skipped`.
     pub fn can_move_to(self, to: Self) -> bool {
         use CaptureStatus::*;
         matches!(
@@ -83,6 +83,7 @@ impl CaptureStatus {
                 | (Failed, Detected)
                 | (Detected, Skipped)
                 | (Redacting, Skipped)
+                | (Digesting, Skipped)
         ) || (to == Failed && !matches!(self, Submitted | Skipped | Failed))
     }
 }
@@ -187,6 +188,38 @@ pub struct NetworkLogEntry {
     pub host: String,
     pub purpose: String,
     pub allowed: bool,
+}
+
+/// The device's copy of a digest drafted for a remote server (`remote_digest`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct RemoteDigest {
+    pub target: String,
+    pub agent: String,
+    pub agent_session_id: String,
+    pub project_key: String,
+    pub digest: serde_json::Value,
+    /// `draft`, `approved`, `discarded` or `deleted`.
+    pub status: String,
+    pub server_digest_id: Option<String>,
+    pub version: Option<i64>,
+    pub updated_at: i64,
+}
+
+impl RemoteDigest {
+    fn from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(Self {
+            target: r.get(0)?,
+            agent: r.get(1)?,
+            agent_session_id: r.get(2)?,
+            project_key: r.get(3)?,
+            digest: serde_json::from_str(&r.get::<_, String>(4)?)
+                .unwrap_or(serde_json::Value::Null),
+            status: r.get(5)?,
+            server_digest_id: r.get(6)?,
+            version: r.get(7)?,
+            updated_at: r.get(8)?,
+        })
+    }
 }
 
 pub struct Store {
@@ -489,6 +522,90 @@ impl Store {
             params![key, value],
         )?;
         Ok(())
+    }
+
+    pub fn delete_setting(&self, key: &str) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM settings WHERE key = ?1", [key])?;
+        Ok(())
+    }
+
+    // --- remote digests (thin client) ---------------------------------------------------
+
+    /// Keep the device's copy of a digest drafted for `target` (the source of truth, FR-025).
+    pub fn put_remote_digest(&self, d: &RemoteDigest) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO remote_digest (target, agent, agent_session_id, project_key, digest, status, server_digest_id, version, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             ON CONFLICT (target, agent, agent_session_id) DO UPDATE SET
+               project_key = excluded.project_key, digest = excluded.digest, status = excluded.status,
+               server_digest_id = COALESCE(excluded.server_digest_id, remote_digest.server_digest_id),
+               version = COALESCE(excluded.version, remote_digest.version), updated_at = excluded.updated_at",
+            params![
+                d.target,
+                d.agent,
+                d.agent_session_id,
+                d.project_key,
+                d.digest.to_string(),
+                d.status,
+                d.server_digest_id,
+                d.version,
+                now_ms()
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn remote_digest(
+        &self,
+        target: &str,
+        agent: &str,
+        agent_session_id: &str,
+    ) -> Result<Option<RemoteDigest>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT target, agent, agent_session_id, project_key, digest, status, server_digest_id, version, updated_at
+                 FROM remote_digest WHERE target = ?1 AND agent = ?2 AND agent_session_id = ?3",
+                params![target, agent, agent_session_id],
+                RemoteDigest::from_row,
+            )
+            .optional()?)
+    }
+
+    pub fn remote_digests(&self, target: &str) -> Result<Vec<RemoteDigest>> {
+        let mut st = self.conn.prepare(
+            "SELECT target, agent, agent_session_id, project_key, digest, status, server_digest_id, version, updated_at
+             FROM remote_digest WHERE target = ?1 ORDER BY updated_at DESC",
+        )?;
+        let rows = st.query_map([target], RemoteDigest::from_row)?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Sync turned off for a project: its copies stay on the device but are marked deleted
+    /// remotely (the tombstone always wins over the server).
+    pub fn mark_remote_project_deleted(&self, target: &str, project_key: &str) -> Result<usize> {
+        Ok(self.conn.execute(
+            "UPDATE remote_digest SET status = 'deleted', updated_at = ?3 WHERE target = ?1 AND project_key = ?2",
+            params![target, project_key, now_ms()],
+        )?)
+    }
+
+    /// Pending outbox items for one server (logout).
+    pub fn outbox_pending_for(&self, target: &str) -> Result<i64> {
+        Ok(self.conn.query_row(
+            "SELECT count(*) FROM outbox_item WHERE status = 'pending' AND target = ?1",
+            [target],
+            |r| r.get(0),
+        )?)
+    }
+
+    /// Give up on everything pending for `target` (logout --discard-pending).
+    pub fn outbox_discard_for(&self, target: &str) -> Result<usize> {
+        Ok(self.conn.execute(
+            "UPDATE outbox_item SET status = 'dead', last_error = 'discarded at logout' WHERE status = 'pending' AND target = ?1",
+            [target],
+        )?)
     }
 
     // --- network log --------------------------------------------------------------------

@@ -5,6 +5,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import type { Env } from "../app.ts";
 import { HttpError } from "../http.ts";
+import { modelsFor } from "../llm/workspace-models.ts";
 import { answerQuestion } from "../pipeline/answer.ts";
 import { grantAccess, requireAccess } from "../policy/access.ts";
 import { checkAskRate } from "../policy/rate-limit.ts";
@@ -20,7 +21,13 @@ export const publicRoutes = new Hono<Env>()
       "SELECT workspace_id FROM ask_links WHERE slug = $1",
       [c.req.param("slug")],
     );
-    if (l) c.set("deps", { ...deps, workspaceId: l.workspace_id });
+    if (l) {
+      c.set("deps", {
+        ...deps,
+        workspaceId: l.workspace_id,
+        models: await modelsFor(deps, l.workspace_id),
+      });
+    }
     await next();
   })
   .use(async (c, next) => {

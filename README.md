@@ -43,6 +43,20 @@ pama link create --suggest "refund shipping fee" --access pin
 #   → https://…/a/xxxxxxxx  PIN: 123456
 ```
 
+### Or: only the `pama` command, with a pamA server (remote mode)
+
+If your team runs a pamA server ([cloud](docs/deploy-cloud.md) or [self-host](docs/self-host.md)),
+you need nothing but the `pama` binary — no Node, no local database:
+
+```bash
+pama login --server https://pama.example.com   # approve in the browser
+cd ~/code/my-project && pama init --sync        # drafts of this project go to the server
+pama model --device show                        # the model that drafts on your machine (Ollama by default)
+```
+
+Sessions are still read and redacted on your machine, and the digest is drafted there; only the
+draft goes to the server, where you review it (`pama review` or the web console).
+
 Want to look around first? `pnpm --filter @pama/server demo` starts a server with sample data and
 prints a console URL and two Ask Links (offline models, nothing to install).
 
@@ -70,7 +84,7 @@ prints a console URL and two Ask Links (offline models, nothing to install).
 | `rules/`, `prompts/`, `evals/` | shared redaction rules, versioned prompts, red-team suite |
 
 Docs: [security model](docs/security-model.md) · [threat model](docs/threat-model.md) ·
-[self-host](docs/self-host.md) · [local links](docs/local-links.md) · [agents](docs/agents.md) ·
+[self-host](docs/self-host.md) · [cloud server](docs/deploy-cloud.md) · [local links](docs/local-links.md) · [agents](docs/agents.md) ·
 [spec & plan](specs/001-pama-mvp/).
 
 ## Develop

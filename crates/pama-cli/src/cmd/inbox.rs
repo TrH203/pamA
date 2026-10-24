@@ -1,6 +1,6 @@
 //! `pama inbox`, `pama reply <ask_id> "<text>"`, `pama log [--link] [--status]`.
 
-use pama_core::client::LocalApi;
+use pama_core::client::Api;
 use serde_json::{json, Value};
 
 use super::{api_exit, Ctx};
@@ -8,9 +8,9 @@ use crate::Exit;
 
 fn with_api(
     ctx: &Ctx,
-    f: impl FnOnce(&LocalApi) -> Result<(Value, String), pama_core::client::ApiError>,
+    f: impl FnOnce(&Api) -> Result<(Value, String), pama_core::client::ApiError>,
 ) -> anyhow::Result<Exit> {
-    let api = match LocalApi::connect(&ctx.store, "cli") {
+    let api = match ctx.api() {
         Ok(a) => a,
         Err(e) => return Ok(api_exit(&e)),
     };

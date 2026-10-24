@@ -2,7 +2,6 @@
 
 use std::process::Command;
 
-use pama_core::client::LocalApi;
 use serde_json::{json, Value};
 
 use super::{api_exit, Ctx};
@@ -48,7 +47,7 @@ pub fn run(
     discard: Option<String>,
     edit: Option<String>,
 ) -> anyhow::Result<Exit> {
-    let api = match LocalApi::connect(&ctx.store, "cli") {
+    let api = match ctx.api() {
         Ok(a) => a,
         Err(e) => return Ok(api_exit(&e)),
     };
@@ -92,11 +91,15 @@ pub fn run(
                     .map(|d| {
                         let decisions = d["content"]["decisions"].as_array().map_or(0, Vec::len);
                         format!(
-                            "{}  {} / {}{}\n    goal: {}\n    {} decision(s), {} secret(s) and {} PII item(s) removed",
+                            "{}  {} / {}{}{}\n    goal: {}\n    {} decision(s), {} secret(s) and {} PII item(s) removed",
                             d["id"].as_str().unwrap_or("?"),
                             d["project"].as_str().unwrap_or("?"),
                             d["bundle"].as_str().unwrap_or("?"),
                             super::bundle_fmt::branch_hint(&d["branches"]),
+                            d["device"]
+                                .as_str()
+                                .map(|n| format!("  (from {n})"))
+                                .unwrap_or_default(),
                             d["content"]["goal"].as_str().unwrap_or(""),
                             decisions,
                             d["content"]["redactions"]["secret"],
@@ -112,6 +115,10 @@ pub fn run(
     };
     match result {
         Ok((v, text)) => {
+            // Remote mode: a decision made here updates the device copy right away (FR-025).
+            if api.remote_url().is_some() {
+                let _ = pama_core::remote::pull_changes(&ctx.store, &api, true);
+            }
             ctx.print(&v, || text);
             Ok(Exit::Ok)
         }

@@ -3,7 +3,7 @@
 
 use std::io::{BufRead, IsTerminal, Read, Write};
 
-use pama_core::client::{ApiError, LocalApi};
+use pama_core::client::{Api, ApiError};
 use serde_json::{json, Value};
 
 use super::{api_exit, Ctx};
@@ -91,7 +91,7 @@ struct Apply {
 }
 
 /// PUT the settings, handling the confirmation and unverified flows. Returns the saved view.
-fn apply(ctx: &Ctx, api: &LocalApi, a: &Apply) -> Result<Exit, ApiError> {
+fn apply(ctx: &Ctx, api: &Api, a: &Apply) -> Result<Exit, ApiError> {
     let mut confirm_list: Vec<&str> = Vec::new();
     if a.force {
         confirm_list.push("unverified");
@@ -186,7 +186,7 @@ fn apply(ctx: &Ctx, api: &LocalApi, a: &Apply) -> Result<Exit, ApiError> {
     Ok(Exit::User)
 }
 
-fn show(ctx: &Ctx, api: &LocalApi) -> Result<Exit, ApiError> {
+fn show(ctx: &Ctx, api: &Api) -> Result<Exit, ApiError> {
     let v = api.get("/v1/models/settings", "model.show")?;
     ctx.print(&v, || {
         let mut out = String::new();
@@ -225,7 +225,7 @@ fn show(ctx: &Ctx, api: &LocalApi) -> Result<Exit, ApiError> {
     Ok(Exit::Ok)
 }
 
-fn check(ctx: &Ctx, api: &LocalApi, role: Option<String>) -> Result<Exit, ApiError> {
+fn check(ctx: &Ctx, api: &Api, role: Option<String>) -> Result<Exit, ApiError> {
     let roles: Vec<&str> = match &role {
         Some(r) => vec![r.as_str()],
         None => ROLES.to_vec(),
@@ -254,7 +254,7 @@ fn check(ctx: &Ctx, api: &LocalApi, role: Option<String>) -> Result<Exit, ApiErr
     Ok(if all_ok { Exit::Ok } else { Exit::Config })
 }
 
-fn setup(ctx: &Ctx, api: &LocalApi) -> anyhow::Result<Exit> {
+fn setup(ctx: &Ctx, api: &Api) -> anyhow::Result<Exit> {
     if !std::io::stdin().is_terminal() {
         eprintln!("error: `pama model setup` needs an interactive terminal; use `pama model set`");
         return Ok(Exit::User);
@@ -300,8 +300,124 @@ fn setup(ctx: &Ctx, api: &LocalApi) -> anyhow::Result<Exit> {
     Ok(Exit::Ok)
 }
 
-pub fn run(ctx: &Ctx, action: ModelAction) -> anyhow::Result<Exit> {
-    let api = match LocalApi::connect(&ctx.store, "cli") {
+/// `pama model --device …`: the model this machine drafts digests with in remote mode (spec
+/// 004). Settings live in the device store, keys in the OS keychain.
+fn run_device(ctx: &Ctx, action: ModelAction) -> anyhow::Result<Exit> {
+    use pama_core::draft::llm::{DraftModel, HttpModel, ModelConfig};
+    pama_core::secrets::init_platform_store();
+    let show = |ctx: &Ctx| {
+        let c = ModelConfig::from_store(&ctx.store);
+        let key_set = pama_core::secrets::exists(&format!("provider.{}.key", c.provider)).unwrap_or(false);
+        let v = json!({
+            "role": "drafting", "provider": c.provider, "model": c.model,
+            "base_url": c.base_url, "local": c.is_local(), "key_set": key_set,
+        });
+        ctx.print(&v, || {
+            format!(
+                "drafting  {:<18} {:<5} {:<24} key {:<8} {}",
+                c.provider,
+                if c.is_local() { "local" } else { "cloud" },
+                c.model,
+                if key_set { "set" } else { "not set" },
+                c.base_url.as_deref().unwrap_or("")
+            )
+        });
+    };
+    match action {
+        ModelAction::Show => {
+            show(ctx);
+            Ok(Exit::Ok)
+        }
+        ModelAction::Set(ModelSet {
+            role,
+            provider,
+            model,
+            base_url,
+            key_stdin,
+            yes,
+            ..
+        }) => {
+            if role == "embed" {
+                eprintln!("error: the device only drafts digests; embeddings run on the server");
+                return Ok(Exit::User);
+            }
+            let candidate = ModelConfig {
+                provider: provider.clone(),
+                model: model.clone(),
+                base_url: base_url.clone(),
+            };
+            if !candidate.is_local()
+                && !yes
+                && !confirm(&format!(
+                    "Drafting sends redacted session text to {provider}. Continue?"
+                ))
+            {
+                eprintln!("error: confirm with --yes: drafting with {provider} sends redacted session text to it");
+                return Ok(Exit::User);
+            }
+            let st = &ctx.store;
+            st.set_setting("provider.chat.provider", &provider)?;
+            st.set_setting(
+                if role == "small" {
+                    "provider.small.model"
+                } else {
+                    "provider.chat.model"
+                },
+                &model,
+            )?;
+            if role == "chat" {
+                // One drafting model: drop a stale small-model override.
+                st.delete_setting("provider.small.model")?;
+            }
+            match &base_url {
+                Some(u) => st.set_setting("provider.chat.base_url", u)?,
+                None => st.delete_setting("provider.chat.base_url")?,
+            }
+            if key_stdin {
+                pama_core::secrets::set(&format!("provider.{provider}.key"), &read_key()?)?;
+            }
+            show(ctx);
+            Ok(Exit::Ok)
+        }
+        ModelAction::Check { .. } => {
+            let started = std::time::Instant::now();
+            let result = HttpModel::new(&ctx.store, "cli").and_then(|m| {
+                m.complete(
+                    "Reply with the JSON object {\"ok\": true}.",
+                    "ping",
+                    &json!({ "type": "object", "properties": { "ok": { "type": "boolean" } }, "required": ["ok"] }),
+                )
+            });
+            let ms = started.elapsed().as_millis() as u64;
+            let ok = result.is_ok();
+            let detail = match &result {
+                Ok(_) => "drafting model answers with JSON".to_string(),
+                Err(e) => e.to_string(),
+            };
+            ctx.print(
+                &json!({ "ok": ok, "detail": detail, "latencyMs": ms }),
+                || {
+                    format!(
+                        "drafting: {}\n  {} {detail}\n  {ms} ms",
+                        if ok { "ok" } else { "problem" },
+                        mark(ok)
+                    )
+                },
+            );
+            Ok(if ok { Exit::Ok } else { Exit::Config })
+        }
+        _ => {
+            eprintln!("error: with --device use show, set or check");
+            Ok(Exit::User)
+        }
+    }
+}
+
+pub fn run(ctx: &Ctx, device: bool, action: ModelAction) -> anyhow::Result<Exit> {
+    if device {
+        return run_device(ctx, action);
+    }
+    let api = match ctx.api() {
         Ok(a) => a,
         Err(e) => return Ok(api_exit(&e)),
     };

@@ -25,6 +25,8 @@ export interface Draft {
   project_id: string;
   bundle: string;
   bundle_id: string;
+  /** Device that drafted it (thin client, spec 004). */
+  device?: string | null;
   content: DigestContent;
 }
 

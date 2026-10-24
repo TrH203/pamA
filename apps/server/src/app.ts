@@ -3,6 +3,7 @@
 import { Hono } from "hono";
 import { requestId } from "hono/request-id";
 import type { Device } from "./auth/device.ts";
+import { deviceFlowRoutes } from "./auth/device-flow.ts";
 import { authenticate } from "./auth/index.ts";
 import { authRoutes } from "./auth/magic-link.ts";
 import type { Config } from "./config.ts";
@@ -37,7 +38,15 @@ export interface Deps {
   mailer: Mailer;
 }
 
-export type Env = { Variables: { deps: Deps; requestId: string; device: Device } };
+export type Env = {
+  Variables: {
+    deps: Deps;
+    requestId: string;
+    device: Device;
+    /** Who calls an owner route on a server: the operator (owner token) or a workspace owner. */
+    actor: "operator" | "workspace";
+  };
+};
 
 export function createApp(deps: Deps) {
   const app = new Hono<Env>();
@@ -56,7 +65,7 @@ export function createApp(deps: Deps) {
       db: deps.db.kind,
       version: deps.config.version,
       /** Optional features a sync client may rely on; absent on older servers. */
-      capabilities: ["branch_lists"],
+      capabilities: ["branch_lists", "device_login", "drafts", "changes"],
     }),
   );
 
@@ -64,6 +73,7 @@ export function createApp(deps: Deps) {
   app.use("/v1/*", authenticate());
   for (const r of [
     authRoutes,
+    deviceFlowRoutes,
     deviceRoutes,
     reviewRoutes,
     linkRoutes,

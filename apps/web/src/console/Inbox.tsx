@@ -1,4 +1,6 @@
 // Forwarded questions: reply (shown on the link page, emailed to verified askers) or dismiss.
+// Each one can carry the reply the agent would have given; "Use this reply" puts it in the box
+// to edit before sending — nothing is sent without the owner.
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../lib/api.ts";
 
@@ -9,6 +11,49 @@ interface Item {
   asker_email: string | null;
   asker_verified: boolean;
   created_at: string;
+  suggestion: string | null;
+}
+
+function Suggestion({ item, onUse }: { item: Item; onUse: (text: string) => void }) {
+  const [text, setText] = useState(item.suggestion);
+  const [state, setState] = useState<"idle" | "loading" | "none" | "error">("idle");
+  const suggest = async () => {
+    setState("loading");
+    try {
+      const r = await api<{ suggestion: string | null }>(`/v1/asks/${item.id}/suggest`, {
+        json: {},
+      });
+      setText(r.suggestion);
+      setState(r.suggestion ? "idle" : "none");
+    } catch {
+      setState("error");
+    }
+  };
+  if (!text) {
+    return (
+      <div className="flex items-center gap-2 text-xs text-stone-500">
+        <button
+          type="button"
+          className="btn"
+          disabled={state === "loading"}
+          onClick={() => void suggest()}
+        >
+          {state === "loading" ? "Thinking…" : "Suggest a reply"}
+        </button>
+        {state === "none" && <span>Your notes don't cover this — write the reply yourself.</span>}
+        {state === "error" && <span className="text-red-700">Couldn't get a suggestion.</span>}
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-2 rounded border border-sky-200 bg-sky-50 p-3 text-sm">
+      <p className="text-xs font-medium text-sky-900">AI suggested reply</p>
+      <p className="whitespace-pre-wrap text-stone-800">{text}</p>
+      <button type="button" className="btn" onClick={() => onUse(text)}>
+        Use this reply
+      </button>
+    </div>
+  );
 }
 
 function Reply({ item, onDone }: { item: Item; onDone: () => void }) {
@@ -20,6 +65,7 @@ function Reply({ item, onDone }: { item: Item; onDone: () => void }) {
         {new Date(item.created_at).toLocaleString()}
       </p>
       <p className="font-medium">{item.question}</p>
+      <Suggestion item={item} onUse={setText} />
       <textarea
         className="w-full rounded border border-stone-300 p-2 text-sm"
         rows={3}

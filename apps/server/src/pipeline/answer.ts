@@ -27,6 +27,9 @@ export interface AnswerResult {
   guard: GuardResult | null;
   /** Items that were in scope and retrieved (for drafting UIs). */
   retrieved: ScopedItem[];
+  /** On a refusal, the answer the model wrote before it was held back. Owner-only: it is the
+   * suggested reply in the inbox and never reaches a visitor. */
+  draft?: string;
 }
 
 export interface AnswerInput {
@@ -62,6 +65,7 @@ const refuse = (
   retrieved: ScopedItem[],
   guard: GuardResult | null = null,
   confidence = 0,
+  draft?: string,
 ): AnswerResult => ({
   status: "refused",
   reason,
@@ -70,6 +74,7 @@ const refuse = (
   language,
   guard,
   retrieved,
+  ...(draft?.trim() ? { draft: draft.trim() } : {}),
 });
 
 export async function answerQuestion(
@@ -102,14 +107,14 @@ export async function answerQuestion(
   const lang = output.language || language;
   // The model found nothing in scope that answers the question.
   if (output.status === "refused" || !output.answer.trim()) {
-    return refuse("out_of_scope", lang, items, null, output.confidence);
+    return refuse("out_of_scope", lang, items, null, output.confidence, output.answer);
   }
   // Cite or escalate: only items that were actually retrieved in scope can be cited.
   const cited = [...new Set(output.citations)]
     .map((n) => items[n - 1])
     .filter((i): i is ScopedItem => i !== undefined);
   if (!cited.length || output.confidence < input.threshold) {
-    return refuse("low_confidence", lang, items, null, output.confidence);
+    return refuse("low_confidence", lang, items, null, output.confidence, output.answer);
   }
   const verdict = await checkAnswer({
     answer: output.answer,
@@ -119,7 +124,14 @@ export async function answerQuestion(
     judge: modelJudge(deps.models.small),
   });
   if (!verdict.ok)
-    return refuse(verdict.reason ?? "guard_failed", lang, items, verdict.guard, output.confidence);
+    return refuse(
+      verdict.reason ?? "guard_failed",
+      lang,
+      items,
+      verdict.guard,
+      output.confidence,
+      output.answer,
+    );
   return {
     status: "answered",
     answer: output.answer,

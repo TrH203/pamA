@@ -3,8 +3,8 @@
 // Ask Links. The draft is only shown to the owner; pamA never sends it (Constitution III).
 import { Hono } from "hono";
 import { z } from "zod";
-import type { Env } from "../app.ts";
-import { answerQuestion } from "../pipeline/answer.ts";
+import type { Deps, Env } from "../app.ts";
+import { type AnswerResult, answerQuestion } from "../pipeline/answer.ts";
 import { recordAsk } from "../services/asks.ts";
 import { SourceRefSchema } from "../services/links.ts";
 import { body } from "./util.ts";
@@ -15,9 +15,11 @@ const DraftSchema = z.strictObject({
   shorter: z.boolean().optional(),
 });
 
-export const draftRoutes = new Hono<Env>().post("/draft", async (c) => {
-  const deps = c.get("deps");
-  const input = await body(c, DraftSchema);
+/** Answer as the owner would see it: from all of their approved work, or the hinted part of it. */
+export async function draftForOwner(
+  deps: Pick<Deps, "db" | "models" | "rules" | "workspaceId">,
+  input: { question: string; scope_hint?: z.infer<typeof SourceRefSchema>[]; shorter?: boolean },
+): Promise<AnswerResult> {
   const hint = input.scope_hint ?? [];
   const ids = (t: string) => hint.filter((r) => r.type === t).map((r) => r.id);
   const sessions = await deps.db.query<{ id: string }>(
@@ -29,7 +31,7 @@ export const draftRoutes = new Hono<Env>().post("/draft", async (c) => {
     "SELECT default_deny_labels AS deny, answer_threshold::float AS t, display_name AS name FROM workspaces WHERE id = $1",
     [deps.workspaceId],
   );
-  const result = await answerQuestion(deps, {
+  return answerQuestion(deps, {
     question: input.question,
     scope: {
       workspaceId: deps.workspaceId,
@@ -43,6 +45,12 @@ export const draftRoutes = new Hono<Env>().post("/draft", async (c) => {
     threshold: ws?.t ?? 0.7,
     shorter: input.shorter,
   });
+}
+
+export const draftRoutes = new Hono<Env>().post("/draft", async (c) => {
+  const deps = c.get("deps");
+  const input = await body(c, DraftSchema);
+  const result = await draftForOwner(deps, input);
   const askId = await recordAsk(deps, { origin: "hotkey", question: input.question, result });
 
   // Suggested scope for "Create Ask Link": bundles of the retrieved items, best first.

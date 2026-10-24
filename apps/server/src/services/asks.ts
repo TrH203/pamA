@@ -17,8 +17,8 @@ export async function recordAsk(
   const id = ulid();
   const r = a.result;
   await deps.db.query(
-    `INSERT INTO asks (id, workspace_id, origin, link_slug, visitor_id, question, language, status, reason, answer, citations, confidence, guard)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+    `INSERT INTO asks (id, workspace_id, origin, link_slug, visitor_id, question, language, status, reason, answer, citations, confidence, guard, draft_answer)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
     [
       id,
       deps.workspaceId,
@@ -39,6 +39,7 @@ export async function recordAsk(
       ),
       r.confidence,
       r.guard ? JSON.stringify(r.guard) : null,
+      r.draft ?? null,
     ],
   );
   return id;

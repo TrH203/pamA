@@ -103,6 +103,31 @@ describeEachDb("public Ask Link API", (f) => {
     expect(other.items).toEqual([]);
   });
 
+  it("suggests a reply to the owner for a forwarded question, never to the visitor", async () => {
+    const v = visitor(t, slug);
+    const asked = (await (
+      await v.call("/api/ask", { question: "How was the flaky checkout test fixed?" })
+    ).json()) as AskReply;
+    // Outside this link (refunds only), but covered by the owner's checkout notes.
+    expect(asked.status).toBe("refused");
+    await v.call(`/api/asks/${asked.ask_id}/forward`, {});
+    const res = await t.req(`/v1/asks/${asked.ask_id}/suggest`, { json: {} });
+    expect(res.status).toBe(200);
+    const { suggestion } = (await res.json()) as { suggestion: string | null };
+    expect(suggestion).toBeTruthy();
+    const inbox = (await (await t.req("/v1/inbox")).json()) as {
+      items: { id: string; suggestion: string | null }[];
+    };
+    expect(inbox.items.find((i) => i.id === asked.ask_id)?.suggestion).toBe(suggestion);
+    const mine = JSON.stringify(await (await v.call("/api/asks")).json());
+    expect(mine).not.toContain(suggestion as string);
+  });
+
+  it("only suggests for forwarded questions", async () => {
+    const res = await t.req("/v1/asks/nope/suggest", { json: {} });
+    expect(res.status).toBe(404);
+  });
+
   it("revoked links return 410 with nothing but the error code", async () => {
     await revokeLink(t.deps, slug);
     const v = visitor(t, slug);

@@ -71,6 +71,7 @@ pub fn run(cli: Cli) -> anyhow::Result<Exit> {
             edit,
         } => review::run(&ctx, approve, discard, edit),
         Command::Server { action } => server::run(&ctx, action),
+        Command::Console { print } => server::console(&ctx, print),
         Command::Config { action } => config::run(&ctx, action),
         Command::Link { action } => link::run(&ctx, action),
         Command::Inbox => inbox::inbox(&ctx),

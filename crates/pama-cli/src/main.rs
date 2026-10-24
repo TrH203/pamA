@@ -112,6 +112,12 @@ pub enum Command {
         #[arg(long)]
         server: String,
     },
+    /// Open the owner console in the browser (starts the local server if needed).
+    Console {
+        /// Print the link instead of opening it.
+        #[arg(long)]
+        print: bool,
+    },
     /// Manage the local server.
     Server {
         #[command(subcommand)]

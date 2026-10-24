@@ -124,6 +124,32 @@ fn stop() -> bool {
     ok
 }
 
+fn open_url(url: &str) {
+    let _ = if cfg!(target_os = "macos") {
+        Command::new("open").arg(url).spawn()
+    } else if cfg!(windows) {
+        Command::new("cmd").args(["/C", "start", "", url]).spawn()
+    } else {
+        Command::new("xdg-open").arg(url).spawn()
+    };
+}
+
+/// `pama console`: the link carries this launch's token in the fragment (never sent to the
+/// server); the console trades it for a cookie, so later tabs need nothing.
+pub fn console(ctx: &Ctx, print: bool) -> anyhow::Result<Exit> {
+    let info = ensure_started(&ctx.store, false)?;
+    let link = format!("{}/#token={}", info.url, info.token);
+    if print {
+        ctx.print(&json!({ "url": link }), || link.clone());
+    } else {
+        open_url(&link);
+        ctx.print(&json!({ "url": info.url }), || {
+            format!("opened {} in your browser", info.url)
+        });
+    }
+    Ok(Exit::Ok)
+}
+
 pub fn run(ctx: &Ctx, action: ServerAction) -> anyhow::Result<Exit> {
     match action {
         ServerAction::Start { lan } => {

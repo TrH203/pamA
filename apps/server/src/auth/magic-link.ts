@@ -7,12 +7,22 @@ import { z } from "zod";
 import type { Env } from "../app.ts";
 import { HttpError } from "../http.ts";
 import { body } from "../routes/util.ts";
+import { assertLocalRequest, same, setLocalCookie } from "./local-token.ts";
 import { createSession, endSession, ownerFromSession } from "./session.ts";
 
 const MINUTES = 15;
 const hash = (s: string) => createHash("sha256").update(s).digest("hex");
 
 export const authRoutes = new Hono<Env>()
+  .post("/auth/local-session", async (c) => {
+    const { config } = c.get("deps");
+    if (config.mode !== "local") throw new HttpError(404, "not_found", "only used in local mode");
+    assertLocalRequest(c);
+    const { token } = await body(c, z.strictObject({ token: z.string().max(200) }));
+    if (!same(token, config.localToken)) throw new HttpError(401, "unauthorized", "bad token");
+    setLocalCookie(c, token);
+    return c.body(null, 204);
+  })
   .post("/auth/login", async (c) => {
     const { db, config, mailer, workspaceId } = c.get("deps");
     if (config.mode === "local") throw new HttpError(404, "not_found", "not used in local mode");

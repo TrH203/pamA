@@ -8,6 +8,7 @@ import { Inbox } from "./Inbox.tsx";
 import { Links } from "./Links.tsx";
 import { Login } from "./Login.tsx";
 import { Review } from "./Review.tsx";
+import { Settings } from "./Settings.tsx";
 
 const TABS = {
   review: "Review",
@@ -15,6 +16,7 @@ const TABS = {
   inbox: "Inbox",
   audit: "Audit",
   bundles: "Bundles",
+  settings: "Settings",
 } as const;
 const PAGES: Record<Tab, () => JSX.Element> = {
   review: Review,
@@ -22,6 +24,7 @@ const PAGES: Record<Tab, () => JSX.Element> = {
   inbox: Inbox,
   audit: Audit,
   bundles: Bundles,
+  settings: Settings,
 };
 type Tab = keyof typeof TABS;
 
@@ -48,7 +51,7 @@ function ConsoleApp() {
   if (auth === "local") {
     return (
       <p className="mx-auto mt-24 max-w-sm text-center text-stone-600">
-        Open the console from the pamA tray menu (it carries this launch's access token).
+        Run `pama console` or use the pamA tray menu to open the console.
       </p>
     );
   }

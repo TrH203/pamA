@@ -11,7 +11,13 @@ import { deviceForToken } from "./device.ts";
 import { localToken } from "./local-token.ts";
 import { ownerFromSession } from "./session.ts";
 
-const PUBLIC = new Set(["/v1/health", "/v1/devices/pair", "/v1/auth/login", "/v1/auth/callback"]);
+const PUBLIC = new Set([
+  "/v1/health",
+  "/v1/devices/pair",
+  "/v1/auth/login",
+  "/v1/auth/callback",
+  "/v1/auth/local-session",
+]);
 const DEVICE = new Set(["/v1/sync/digests", "/v1/sync/tombstones"]);
 /** Only the owner's own machine may receive transcripts or hand out sync work (Constitution I). */
 const LOCAL_ONLY = new Set(["/v1/transcripts/digest", "/v1/sync/pending", "/v1/sync/ack"]);

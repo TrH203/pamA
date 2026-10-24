@@ -75,6 +75,10 @@ pub fn ensure_started(store: &Store, lan: bool) -> anyhow::Result<ServerInfo> {
         .stdout(log.try_clone()?)
         .stderr(log);
     cmd.envs(server_env(store));
+    // The console's Doctor page runs `pama doctor --report` through this binary.
+    if let Ok(exe) = std::env::current_exe() {
+        cmd.env("PAMA_BIN", exe);
+    }
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;

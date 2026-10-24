@@ -81,7 +81,7 @@ pub fn run(cli: Cli) -> anyhow::Result<Exit> {
         Command::Log { link, status } => inbox::log(&ctx, link, status),
         Command::Pair { code, server } => sync::pair(&ctx, &code, &server),
         Command::Sync { action } => sync::run(&ctx, action),
-        Command::Doctor => doctor::run(&ctx),
+        Command::Doctor { report } => doctor::run(&ctx, report),
     }
 }
 

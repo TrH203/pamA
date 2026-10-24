@@ -129,7 +129,11 @@ pub enum Command {
         action: ModelAction,
     },
     /// Check hooks, models, permissions and offline config.
-    Doctor,
+    Doctor {
+        /// Internal: full report as one JSON object, for the console.
+        #[arg(long, hide = true)]
+        report: bool,
+    },
     /// Read or change settings.
     Config {
         #[command(subcommand)]

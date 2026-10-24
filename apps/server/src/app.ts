@@ -13,6 +13,7 @@ import type { Mailer } from "./mail/index.ts";
 import type { EgressGuard } from "./net/egress.ts";
 import { deviceRoutes } from "./routes/device.ts";
 import { devicesRoutes } from "./routes/devices.ts";
+import { doctorRoutes } from "./routes/doctor.ts";
 import { draftRoutes } from "./routes/draft.ts";
 import { inboxRoutes } from "./routes/inbox.ts";
 import { linkRoutes } from "./routes/links.ts";
@@ -73,6 +74,7 @@ export function createApp(deps: Deps) {
     syncLocalRoutes,
     networkLogRoutes,
     modelRoutes,
+    doctorRoutes,
   ]) {
     app.route("/v1", r);
   }

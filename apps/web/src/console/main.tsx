@@ -4,6 +4,7 @@ import { ApiError, api } from "../lib/api.ts";
 import "../styles.css";
 import { Audit } from "./Audit.tsx";
 import { Bundles } from "./Bundles.tsx";
+import { Doctor } from "./Doctor.tsx";
 import { Inbox } from "./Inbox.tsx";
 import { Links } from "./Links.tsx";
 import { Login } from "./Login.tsx";
@@ -17,6 +18,7 @@ const TABS = {
   audit: "Audit",
   bundles: "Bundles",
   settings: "Settings",
+  doctor: "Doctor",
 } as const;
 const PAGES: Record<Tab, () => JSX.Element> = {
   review: Review,
@@ -25,6 +27,7 @@ const PAGES: Record<Tab, () => JSX.Element> = {
   audit: Audit,
   bundles: Bundles,
   settings: Settings,
+  doctor: Doctor,
 };
 type Tab = keyof typeof TABS;
 

@@ -9,7 +9,7 @@ use pama_core::paths::home_dir;
 use pama_core::session::{claude, codex};
 use serde_json::json;
 
-use super::Ctx;
+use super::{scan, Ctx};
 use crate::Exit;
 
 struct Check {
@@ -35,7 +35,7 @@ fn file_contains(p: &Path, needle: &str) -> bool {
         .unwrap_or(false)
 }
 
-pub fn run(ctx: &Ctx) -> anyhow::Result<Exit> {
+pub fn run(ctx: &Ctx, report: bool) -> anyhow::Result<Exit> {
     let mut checks = Vec::new();
     let store = &ctx.store;
 
@@ -178,6 +178,43 @@ pub fn run(ctx: &Ctx) -> anyhow::Result<Exit> {
         .iter()
         .map(|c| json!({ "check": c.name, "ok": c.ok, "detail": c.detail, "fix": if c.ok { None } else { c.fix.clone() } }))
         .collect::<Vec<_>>());
+    if report {
+        // The console's Doctor page (server `GET /v1/doctor`): the checks plus scan and capture state.
+        let mut by_status = serde_json::Map::new();
+        for c in &counts {
+            let n = by_status.entry(c.status.as_str()).or_insert(json!(0));
+            *n = json!(n.as_i64().unwrap_or(0) + 1);
+        }
+        let recent: Vec<_> = counts
+            .iter()
+            .take(50)
+            .map(|c| {
+                json!({
+                    "id": c.id,
+                    "agent": c.agent,
+                    "cwd": c.cwd,
+                    "status": c.status,
+                    "error": c.error,
+                    "attempts": c.attempts,
+                    "endedAt": c.ended_at,
+                })
+            })
+            .collect();
+        let scan: Option<serde_json::Value> = store
+            .setting(scan::KEY_LAST_SCAN)?
+            .and_then(|s| serde_json::from_str(&s).ok());
+        println!(
+            "{}",
+            json!({
+                "ok": all_ok,
+                "checks": value,
+                "captures": { "total": counts.len(), "byStatus": by_status, "recent": recent },
+                "scan": scan,
+                "outbox": { "pending": outbox.pending, "failed": outbox.dead },
+            })
+        );
+        return Ok(if all_ok { Exit::Ok } else { Exit::Config });
+    }
     ctx.print(&value, || {
         checks
             .iter()

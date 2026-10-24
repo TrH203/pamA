@@ -8,6 +8,9 @@ use serde_json::json;
 use super::{parse_duration, Ctx};
 use crate::Exit;
 
+/// Setting holding the last scan's result (`{at, seen, enqueued}`) for `pama doctor --report`.
+pub const KEY_LAST_SCAN: &str = "scan.last";
+
 /// A transcript untouched for this long counts as an ended session.
 pub const IDLE: Duration = Duration::from_secs(120);
 
@@ -24,6 +27,11 @@ pub fn run(ctx: &Ctx, since: Option<String>) -> anyhow::Result<Exit> {
     };
     let (claude, codex) = default_dirs();
     let r = scan(&ctx.store, claude.as_deref(), codex.as_deref(), since, IDLE)?;
+    let at = pama_core::store::now_ms();
+    ctx.store.set_setting(
+        KEY_LAST_SCAN,
+        &json!({ "at": at, "seen": r.seen, "enqueued": r.enqueued }).to_string(),
+    )?;
     if r.enqueued > 0 {
         super::hook::spawn_drain();
     }

@@ -111,6 +111,19 @@ impl<'s> LocalApi<'s> {
         Self::handle(r)
     }
 
+    pub fn put(&self, path: &str, purpose: &str, body: &Value) -> Result<Value, ApiError> {
+        self.client.check(&self.url(path), purpose)?;
+        let r = self
+            .client
+            .raw()
+            .put(self.url(path))
+            .bearer_auth(&self.info.token)
+            .json(body)
+            .send()
+            .map_err(|e| ApiError::Net(NetError::Http(e)))?;
+        Self::handle(r)
+    }
+
     pub fn healthy(&self) -> bool {
         self.get("/v1/health", "health").is_ok()
     }

@@ -16,6 +16,7 @@ import { devicesRoutes } from "./routes/devices.ts";
 import { draftRoutes } from "./routes/draft.ts";
 import { inboxRoutes } from "./routes/inbox.ts";
 import { linkRoutes } from "./routes/links.ts";
+import { modelRoutes } from "./routes/models.ts";
 import { networkLogRoutes } from "./routes/network-log.ts";
 import { publicRoutes } from "./routes/public.ts";
 import { reviewRoutes } from "./routes/review.ts";
@@ -71,6 +72,7 @@ export function createApp(deps: Deps) {
     syncRoutes,
     syncLocalRoutes,
     networkLogRoutes,
+    modelRoutes,
   ]) {
     app.route("/v1", r);
   }

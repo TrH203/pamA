@@ -22,14 +22,14 @@ export interface Models {
 
 const OLLAMA_DEFAULT = "http://127.0.0.1:11434";
 
-function isLocal(p: ProviderConfig): boolean {
+export function isLocal(p: ProviderConfig): boolean {
   if (p.provider === "fake" || p.provider === "ollama") return true;
   if (p.provider === "anthropic") return false;
   const host = p.baseUrl ? new URL(p.baseUrl).hostname : "";
   return /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)|\.local$|\.lan$/.test(host);
 }
 
-function language(
+export function language(
   p: ProviderConfig,
   guard: EgressGuard,
   fake: FakeModels | undefined,
@@ -55,7 +55,7 @@ function language(
   }
 }
 
-function embedding(
+export function embedding(
   p: ProviderConfig,
   guard: EgressGuard,
   fake: FakeModels | undefined,

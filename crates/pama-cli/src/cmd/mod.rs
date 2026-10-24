@@ -8,6 +8,7 @@ mod hook;
 mod inbox;
 mod init;
 mod link;
+mod model;
 mod review;
 mod scan;
 mod server;
@@ -74,6 +75,7 @@ pub fn run(cli: Cli) -> anyhow::Result<Exit> {
         Command::Console { print } => server::console(&ctx, print),
         Command::Config { action } => config::run(&ctx, action),
         Command::Link { action } => link::run(&ctx, action),
+        Command::Model { action } => model::run(&ctx, action),
         Command::Inbox => inbox::inbox(&ctx),
         Command::Reply { ask_id, text } => inbox::reply(&ctx, &ask_id, &text),
         Command::Log { link, status } => inbox::log(&ctx, link, status),

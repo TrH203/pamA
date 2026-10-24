@@ -6,6 +6,7 @@ import { openDb } from "./db/client.ts";
 import { migrate } from "./db/migrate.ts";
 import { applyRetention } from "./jobs/retention.ts";
 import { createModels } from "./llm/providers.ts";
+import { overlaySaved } from "./llm/settings.ts";
 import { createMailer } from "./mail/index.ts";
 import { EgressGuard } from "./net/egress.ts";
 import { loadRuleSet } from "./safety/rules.ts";
@@ -18,6 +19,7 @@ const guard = new EgressGuard(db, {
   strict: config.strictOffline,
   declaredHosts: config.declaredHosts,
 });
+await overlaySaved(db, config);
 const models = createModels(config, guard);
 const rules = loadRuleSet(
   process.env.PAMA_RULES_DIR ?? join(import.meta.dirname, "../../../rules"),

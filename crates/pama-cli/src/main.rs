@@ -123,6 +123,11 @@ pub enum Command {
         #[command(subcommand)]
         action: ServerAction,
     },
+    /// Configure, check and switch the chat and embedding models.
+    Model {
+        #[command(subcommand)]
+        action: ModelAction,
+    },
     /// Check hooks, models, permissions and offline config.
     Doctor,
     /// Read or change settings.
@@ -211,6 +216,79 @@ pub enum ServerAction {
     },
     Stop,
     Status,
+}
+
+const ROLES: [&str; 3] = ["chat", "small", "embed"];
+
+#[derive(Debug, Subcommand)]
+pub enum ModelAction {
+    /// Show the model setup (provider, local/cloud, model, key state, status).
+    Show,
+    /// Set provider and model for a role.
+    Set(ModelSet),
+    /// Switch a role between local and cloud.
+    Switch {
+        #[arg(value_parser = ROLES)]
+        role: String,
+        #[arg(value_enum)]
+        target: SwitchTarget,
+        /// Provider for cloud (default: anthropic; embed: openai-compatible).
+        #[arg(long)]
+        provider: Option<String>,
+        /// Model (default: keep the current one when switching to local).
+        #[arg(long)]
+        model: Option<String>,
+        #[arg(long)]
+        base_url: Option<String>,
+        /// Read the API key from stdin.
+        #[arg(long)]
+        key_stdin: bool,
+        /// Confirm data-leaves-machine and re-index prompts.
+        #[arg(long)]
+        yes: bool,
+        /// Save even if the check fails.
+        #[arg(long)]
+        force: bool,
+    },
+    /// Check status and compatibility of one role or all.
+    Check {
+        #[arg(value_parser = ROLES)]
+        role: Option<String>,
+    },
+    /// Go back to the previous configuration of a role.
+    Revert {
+        #[arg(value_parser = ROLES)]
+        role: String,
+    },
+    /// Guided setup (interactive terminal).
+    Setup,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum SwitchTarget {
+    Local,
+    Cloud,
+}
+
+#[derive(Debug, Args)]
+pub struct ModelSet {
+    #[arg(value_parser = ROLES)]
+    pub role: String,
+    #[arg(long, value_parser = ["ollama", "openai-compatible", "anthropic"])]
+    pub provider: String,
+    #[arg(long)]
+    pub model: String,
+    #[arg(long)]
+    pub base_url: Option<String>,
+    /// Read the API key from stdin (never pass keys as arguments).
+    #[arg(long)]
+    pub key_stdin: bool,
+    /// Confirm data-leaves-machine and re-index prompts.
+    #[arg(long)]
+    pub yes: bool,
+    /// Save even if the check fails.
+    #[arg(long)]
+    pub force: bool,
 }
 
 #[derive(Debug, Subcommand)]

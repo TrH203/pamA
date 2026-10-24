@@ -25,7 +25,10 @@ export PAMA_SERVER_CMD="node --import tsx $PWD/apps/server/src/index.ts"   # unt
 
 # 2. Models: local (Ollama) or Anthropic
 ollama pull bge-m3 && ollama pull qwen3:14b
-#   or: pama config set provider.chat.provider anthropic && pama config set provider.anthropic.key sk-...
+#   or switch with the CLI / console Settings tab:
+#     pama model show
+#     echo "$KEY" | pama model switch chat cloud --model claude-sonnet-5-5 --key-stdin --yes
+#     pama model check
 
 # 3. Turn on capture in a project and work as usual
 cd ~/code/my-project && pama init

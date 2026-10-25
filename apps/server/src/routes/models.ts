@@ -18,13 +18,7 @@ import {
   revertWorkspaceChat,
   workspaceChatView,
 } from "../llm/workspace-models.ts";
-import { body } from "./util.ts";
-
-/** Cloud servers: workspace owners manage only their own chat model (FR-026). */
-const tenant = (c: {
-  get(k: "deps"): Env["Variables"]["deps"];
-  get(k: "actor"): Env["Variables"]["actor"];
-}) => c.get("deps").config.mode === "cloud" && c.get("actor") === "workspace";
+import { body, tenant } from "./util.ts";
 
 const CheckSchema = z.object({
   role: z.enum(["chat", "small", "embed"]),

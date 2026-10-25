@@ -88,6 +88,14 @@ export function staticItems(role: Role, p: ProviderConfig): CheckItem[] {
       fix: "set an API key for Anthropic",
     });
   }
+  if (p.provider === "openrouter" && !p.apiKey) {
+    items.push({
+      name: "key",
+      ok: false,
+      detail: "no API key is set",
+      fix: "create a key at openrouter.ai/keys and set it",
+    });
+  }
   if (role === "embed" && p.provider === "anthropic") {
     items.push({
       name: "config",

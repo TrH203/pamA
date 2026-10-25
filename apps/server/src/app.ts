@@ -25,6 +25,7 @@ import { reviewRoutes } from "./routes/review.ts";
 import { DEFAULT_WEB_DIR, staticRoutes } from "./routes/static.ts";
 import { syncRoutes } from "./routes/sync.ts";
 import { syncLocalRoutes } from "./routes/sync-local.ts";
+import { topologyRoutes } from "./routes/topology.ts";
 import type { RuleSet } from "./safety/rules.ts";
 
 export interface Deps {
@@ -84,6 +85,7 @@ export function createApp(deps: Deps) {
     syncLocalRoutes,
     networkLogRoutes,
     modelRoutes,
+    topologyRoutes,
     doctorRoutes,
   ]) {
     app.route("/v1", r);

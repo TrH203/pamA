@@ -13,7 +13,7 @@ import { createModels, isLocal } from "./providers.ts";
 export const ROLES: Role[] = ["chat", "small", "embed"];
 
 export const ApplySchema = z.object({
-  provider: z.enum(["anthropic", "openai-compatible", "ollama"]),
+  provider: z.enum(["anthropic", "openai-compatible", "openrouter", "ollama"]),
   model: z.string().trim().min(1),
   baseUrl: z.url().optional(),
   apiKey: z.string().min(1).optional(),
@@ -145,7 +145,8 @@ export async function runCheck(deps: Deps, role: Role, p: ProviderConfig): Promi
 }
 
 function hostOf(p: ProviderConfig): { host: string; port?: string } {
-  if (!p.baseUrl) return { host: "api.anthropic.com" };
+  if (!p.baseUrl)
+    return { host: p.provider === "openrouter" ? "openrouter.ai" : "api.anthropic.com" };
   const u = new URL(p.baseUrl);
   return { host: u.hostname, port: u.port || undefined };
 }

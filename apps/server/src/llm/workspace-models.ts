@@ -75,6 +75,9 @@ export async function modelsFor(deps: Deps, workspaceId: string): Promise<Models
   };
 }
 
+/** The workspace's own chat provider, or null when it uses the operator's. */
+export const workspaceChatConfig = (deps: Deps) => load(deps, deps.workspaceId);
+
 export async function workspaceChatView(deps: Deps) {
   const p = await load(deps, deps.workspaceId);
   if (!p) return null;

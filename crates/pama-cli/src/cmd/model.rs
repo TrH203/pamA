@@ -267,11 +267,11 @@ fn setup(ctx: &Ctx, api: &Api) -> anyhow::Result<Exit> {
         let x = &cur["roles"][role];
         println!("\n{role}:");
         let provider = ask(
-            "provider (ollama, openai-compatible, anthropic)",
+            "provider (ollama, openai-compatible, openrouter, anthropic)",
             s(x, "provider"),
         )?;
         let model = ask("model", s(x, "model"))?;
-        let base_url = if provider == "anthropic" {
+        let base_url = if provider == "anthropic" || provider == "openrouter" {
             String::new()
         } else {
             ask("endpoint (empty = default)", s(x, "baseUrl"))?

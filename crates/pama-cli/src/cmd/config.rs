@@ -28,9 +28,9 @@ fn is_secret(key: &str) -> bool {
 fn validate(key: &str, value: &str) -> Result<(), String> {
     match key {
         "provider.chat.provider" | "provider.embed.provider"
-            if !["anthropic", "openai-compatible", "ollama"].contains(&value) =>
+            if !["anthropic", "openai-compatible", "openrouter", "ollama"].contains(&value) =>
         {
-            Err("provider must be anthropic, openai-compatible or ollama".into())
+            Err("provider must be anthropic, openai-compatible, openrouter or ollama".into())
         }
         "hotkey.answer_source" if !["local", "server", "auto"].contains(&value) => {
             Err("answer_source must be local, server or auto".into())

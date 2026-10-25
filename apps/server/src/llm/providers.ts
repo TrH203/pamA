@@ -26,10 +26,13 @@ export interface Models {
 }
 
 const OLLAMA_DEFAULT = "http://127.0.0.1:11434";
+export const OPENROUTER_DEFAULT = "https://openrouter.ai/api/v1";
+/** OpenRouter's optional app attribution headers. */
+const OPENROUTER_HEADERS = { "HTTP-Referer": "https://github.com/TrH203/pamA", "X-Title": "pamA" };
 
 export function isLocal(p: ProviderConfig): boolean {
   if (p.provider === "fake" || p.provider === "ollama") return true;
-  if (p.provider === "anthropic") return false;
+  if (p.provider === "anthropic" || p.provider === "openrouter") return false;
   const host = p.baseUrl ? new URL(p.baseUrl).hostname : "";
   return /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)|\.local$|\.lan$/.test(host);
 }
@@ -60,6 +63,21 @@ export function language(
           settings: { providerOptions: { openaiCompatible: { strictJsonSchema: false } } },
         }),
       });
+    case "openrouter":
+      // OpenRouter speaks the OpenAI chat protocol; many of its models lack json_schema support,
+      // so structured output stays on `json_object` like other compatible endpoints.
+      return wrapLanguageModel({
+        model: createOpenAICompatible({
+          name: "openrouter",
+          baseURL: p.baseUrl ?? OPENROUTER_DEFAULT,
+          apiKey: p.apiKey,
+          headers: OPENROUTER_HEADERS,
+          fetch,
+        }).chatModel(p.model),
+        middleware: defaultSettingsMiddleware({
+          settings: { providerOptions: { openaiCompatible: { strictJsonSchema: false } } },
+        }),
+      });
     case "ollama":
       return createOllama({ baseURL: `${p.baseUrl ?? OLLAMA_DEFAULT}/api`, fetch })(p.model);
     case "fake":
@@ -81,6 +99,14 @@ export function embedding(
         name: "openai-compatible",
         baseURL: p.baseUrl,
         apiKey: p.apiKey,
+        fetch,
+      }).embeddingModel(p.model);
+    case "openrouter":
+      return createOpenAICompatible({
+        name: "openrouter",
+        baseURL: p.baseUrl ?? OPENROUTER_DEFAULT,
+        apiKey: p.apiKey,
+        headers: OPENROUTER_HEADERS,
         fetch,
       }).embeddingModel(p.model);
     case "ollama":

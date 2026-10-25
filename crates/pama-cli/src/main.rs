@@ -313,7 +313,7 @@ pub enum SwitchTarget {
 pub struct ModelSet {
     #[arg(value_parser = ROLES)]
     pub role: String,
-    #[arg(long, value_parser = ["ollama", "openai-compatible", "anthropic"])]
+    #[arg(long, value_parser = ["ollama", "openai-compatible", "openrouter", "anthropic"])]
     pub provider: String,
     #[arg(long)]
     pub model: String,

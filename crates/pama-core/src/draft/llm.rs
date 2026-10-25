@@ -14,6 +14,7 @@ use crate::store::Store;
 const TIMEOUT: Duration = Duration::from_secs(120);
 const OLLAMA_DEFAULT: &str = "http://127.0.0.1:11434";
 const ANTHROPIC_DEFAULT: &str = "https://api.anthropic.com";
+const OPENROUTER_DEFAULT: &str = "https://openrouter.ai/api/v1";
 const DEFAULT_MODEL: &str = "qwen3:14b";
 const PURPOSE: &str = "draft.model";
 
@@ -52,7 +53,7 @@ impl ModelConfig {
         if self.provider == "ollama" {
             return true;
         }
-        if self.provider == "anthropic" {
+        if self.provider == "anthropic" || self.provider == "openrouter" {
             return false;
         }
         let host = self
@@ -93,10 +94,15 @@ impl<'s> HttpModel<'s> {
                     "openai-compatible drafting needs provider.chat.base_url".into(),
                 ))
             }
-            "anthropic" | "openai-compatible" | "ollama" => {}
+            "openrouter" if key.is_none() => {
+                return Err(DraftError::Fatal(
+                    "no OpenRouter API key: `pama config set provider.openrouter.key -`".into(),
+                ))
+            }
+            "anthropic" | "openai-compatible" | "openrouter" | "ollama" => {}
             other => {
                 return Err(DraftError::Fatal(format!(
-                    "unknown drafting provider `{other}` (anthropic, openai-compatible, ollama)"
+                    "unknown drafting provider `{other}` (anthropic, openai-compatible, openrouter, ollama)"
                 )))
             }
         }
@@ -192,8 +198,13 @@ impl DraftModel for HttpModel<'_> {
                     .map(|c| c["input"].clone())
                     .ok_or_else(|| DraftError::Fatal("model did not return the digest".into()))
             }
-            "openai-compatible" => {
-                let url = format!("{}/chat/completions", self.base(""));
+            "openai-compatible" | "openrouter" => {
+                let default = if self.config.provider == "openrouter" {
+                    OPENROUTER_DEFAULT
+                } else {
+                    ""
+                };
+                let url = format!("{}/chat/completions", self.base(default));
                 self.check(&url)?;
                 let body = json!({
                     "model": self.config.model,

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, api } from "../lib/api.ts";
 
-type Role = "chat" | "small" | "embed";
+export type Role = "chat" | "small" | "embed";
 type Confirm = "data_leaves" | "reindex" | "unverified";
 
 interface CheckItem {
@@ -17,7 +17,8 @@ interface Check {
   latencyMs: number | null;
   items: CheckItem[];
 }
-interface RoleView {
+export interface RoleView {
+  scope?: "server" | "workspace";
   provider: string;
   model: string;
   baseUrl?: string;
@@ -28,7 +29,7 @@ interface RoleView {
   previous?: { provider: string; model: string; baseUrl?: string };
   lastCheck?: Check;
 }
-interface Settings {
+export interface Settings {
   strict_offline: boolean;
   roles: Record<Role, RoleView>;
 }
@@ -85,16 +86,19 @@ function CheckList({ check }: { check: Check }) {
   );
 }
 
-function RoleCard({
+export function RoleCard({
   role,
   v,
   strict,
   onSaved,
+  preset,
 }: {
   role: Role;
   v: RoleView;
   strict: boolean;
   onSaved: () => void;
+  /** Switch the form to this provider (a quick choice made elsewhere on the page). */
+  preset?: string;
 }) {
   const [provider, setProvider] = useState(v.provider);
   const [model, setModel] = useState(v.model);
@@ -109,6 +113,13 @@ function RoleCard({
   const wantsUrl = provider !== "anthropic";
   const hints = MODEL_HINTS[provider] ?? [];
   const wantsKey = provider !== "ollama";
+
+  useEffect(() => {
+    if (!preset) return;
+    setProvider(preset);
+    setBaseUrl("");
+    setApiKey("");
+  }, [preset]);
 
   // Follow the server when the settings change elsewhere (CLI, revert).
   useEffect(() => {

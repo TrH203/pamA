@@ -45,7 +45,7 @@ jobs:
       - name: CLI
         run: cargo build --release -p pama-cli --target ${{ matrix.target }}
       - name: Desktop bundle
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@v1
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}

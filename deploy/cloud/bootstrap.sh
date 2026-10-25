@@ -31,7 +31,7 @@ fi
 chmod 600 "$DEST/deploy/cloud/.env"
 
 CRON="30 3 * * * $DEST/deploy/cloud/backup.sh >> $DEST/deploy/cloud/backup.log 2>&1"
-(crontab -l 2>/dev/null | grep -v deploy/cloud/backup.sh; echo "$CRON") | crontab -
+{ crontab -l 2>/dev/null | grep -v deploy/cloud/backup.sh || true; echo "$CRON"; } | crontab -
 
 cat <<MSG
 Done. Next:

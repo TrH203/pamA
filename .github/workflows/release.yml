@@ -32,7 +32,7 @@ jobs:
         with:
           targets: ${{ matrix.target }}
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -83,7 +83,7 @@ jobs:
       - name: Image name
         id: img
         run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}/server" >> "$GITHUB_OUTPUT"
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: .
           file: deploy/Dockerfile

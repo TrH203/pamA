@@ -1,5 +1,9 @@
 # pamA — Please Ask my AI
 
+[![CI](https://github.com/TrH203/pamA/actions/workflows/ci.yml/badge.svg)](https://github.com/TrH203/pamA/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/TrH203/pamA)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/TrH203/pamA?include_prereleases)](https://github.com/TrH203/pamA/releases)
+
 You build with AI coding agents (Claude Code, Codex). People keep asking you *what was decided
 and why*. pamA reads your agent sessions **on your machine**, removes secrets, keeps short digests
 of the key decisions, and answers those questions for you — with citations, in the asker's

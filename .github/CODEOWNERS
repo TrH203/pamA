@@ -1,0 +1,9 @@
+* @TrH203
+
+# Safety-critical code: always needs the owner's review
+/rules/                           @TrH203
+/prompts/                         @TrH203
+/apps/server/src/pipeline/        @TrH203
+/apps/server/src/policy/          @TrH203
+/crates/pama-core/src/redact/     @TrH203
+/.github/                         @TrH203

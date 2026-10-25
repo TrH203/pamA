@@ -2,7 +2,12 @@
 // guard, so strict offline mode and the network log cover model calls too.
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import type { EmbeddingModel, LanguageModel } from "ai";
+import {
+  defaultSettingsMiddleware,
+  type EmbeddingModel,
+  type LanguageModel,
+  wrapLanguageModel,
+} from "ai";
 import { createOllama } from "ollama-ai-provider-v2";
 import type { Config, ProviderConfig } from "../config.ts";
 import type { EgressGuard } from "../net/egress.ts";
@@ -41,12 +46,20 @@ export function language(
       return createAnthropic({ apiKey: p.apiKey, baseURL: p.baseUrl, fetch })(p.model);
     case "openai-compatible":
       if (!p.baseUrl) throw new Error("openai-compatible provider needs a base URL");
-      return createOpenAICompatible({
-        name: "openai-compatible",
-        baseURL: p.baseUrl,
-        apiKey: p.apiKey,
-        fetch,
-      }).chatModel(p.model);
+      return wrapLanguageModel({
+        model: createOpenAICompatible({
+          name: "openai-compatible",
+          baseURL: p.baseUrl,
+          apiKey: p.apiKey,
+          fetch,
+          // Without this the schema is never sent (only `json_object`) and the model guesses the shape.
+          supportsStructuredOutputs: new URL(p.baseUrl).hostname === "api.openai.com",
+        }).chatModel(p.model),
+        // Our zod schemas use optional/default fields, which OpenAI's strict mode rejects.
+        middleware: defaultSettingsMiddleware({
+          settings: { providerOptions: { openaiCompatible: { strictJsonSchema: false } } },
+        }),
+      });
     case "ollama":
       return createOllama({ baseURL: `${p.baseUrl ?? OLLAMA_DEFAULT}/api`, fetch })(p.model);
     case "fake":

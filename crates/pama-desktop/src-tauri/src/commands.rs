@@ -180,10 +180,7 @@ pub fn get_settings(state: State<'_, AppState>) -> serde_json::Map<String, serde
         );
     }
     for p in ["anthropic", "openai-compatible"] {
-        let set = pama_core::secrets::get(&format!("provider.{p}.key"))
-            .ok()
-            .flatten()
-            .is_some();
+        let set = pama_core::secrets::exists(&format!("provider.{p}.key")).unwrap_or(false);
         out.insert(format!("provider.{p}.key"), serde_json::Value::Bool(set));
     }
     out.insert(

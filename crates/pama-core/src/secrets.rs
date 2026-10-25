@@ -50,6 +50,36 @@ fn file_map(p: &std::path::Path) -> serde_json::Map<String, serde_json::Value> {
         .unwrap_or_default()
 }
 
+/// All secrets live in ONE keychain item (a JSON object) so a process asks for keychain access
+/// at most once, however many secrets it needs. Items written by older versions (one per key)
+/// are read as a fallback and folded into the bundle on first use.
+const BUNDLE: &str = "secrets";
+
+type Bundle = serde_json::Map<String, serde_json::Value>;
+
+static CACHE: std::sync::Mutex<Option<Bundle>> = std::sync::Mutex::new(None);
+
+fn load_bundle() -> Result<Bundle, SecretError> {
+    match Entry::new(SERVICE, BUNDLE)?.get_password() {
+        Ok(v) => Ok(serde_json::from_str(&v).unwrap_or_default()),
+        Err(Error::NoEntry) => Ok(Bundle::new()),
+        Err(e) => Err(e.into()),
+    }
+}
+
+fn save_bundle(m: &Bundle) -> Result<(), SecretError> {
+    Entry::new(SERVICE, BUNDLE)?.set_password(&serde_json::to_string(m).unwrap_or_default())?;
+    Ok(())
+}
+
+fn with_bundle<T>(f: impl FnOnce(&mut Bundle) -> Result<T, SecretError>) -> Result<T, SecretError> {
+    let mut guard = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    if guard.is_none() {
+        *guard = Some(load_bundle()?);
+    }
+    f(guard.as_mut().expect("bundle loaded"))
+}
+
 /// Store a secret under `key` (e.g. `device-token:<server>` or `provider.anthropic.key`).
 pub fn set(key: &str, value: &str) -> Result<(), SecretError> {
     if let Some(p) = test_file() {
@@ -58,7 +88,12 @@ pub fn set(key: &str, value: &str) -> Result<(), SecretError> {
         let _ = std::fs::write(&p, serde_json::to_string(&m).unwrap_or_default());
         return Ok(());
     }
-    Entry::new(SERVICE, key)?.set_password(value)?;
+    with_bundle(|m| {
+        m.insert(key.into(), value.into());
+        save_bundle(m)
+    })?;
+    // A stale per-key item from an older version must not shadow or outlive the new value.
+    let _ = delete_legacy(key);
     Ok(())
 }
 
@@ -69,22 +104,41 @@ pub fn get(key: &str) -> Result<Option<String>, SecretError> {
             .and_then(|v| v.as_str())
             .map(String::from));
     }
+    if let Some(v) = with_bundle(|m| Ok(m.get(key).and_then(|v| v.as_str()).map(String::from)))? {
+        return Ok(Some(v));
+    }
     match Entry::new(SERVICE, key)?.get_password() {
-        Ok(v) => Ok(Some(v)),
+        Ok(v) => {
+            // Migrate: fold the legacy item into the bundle, then drop it.
+            if set(key, &v).is_ok() {
+                let _ = delete_legacy(key);
+            }
+            Ok(Some(v))
+        }
         Err(Error::NoEntry) => Ok(None),
         Err(e) => Err(e.into()),
     }
 }
 
-/// Whether a secret exists, without reading its value. On macOS this queries attributes only,
-/// which never raises the keychain access prompt (unlike [`get`]); use it for status checks.
+/// Whether a secret exists. Reads the bundle (one keychain access per process), then checks for
+/// a legacy item by attributes only, which never prompts.
 pub fn exists(key: &str) -> Result<bool, SecretError> {
     if let Some(p) = test_file() {
         return Ok(file_map(&p).contains_key(key));
     }
+    if with_bundle(|m| Ok(m.contains_key(key)))? {
+        return Ok(true);
+    }
     match Entry::new(SERVICE, key)?.get_attributes() {
         Ok(_) => Ok(true),
         Err(Error::NoEntry) => Ok(false),
+        Err(e) => Err(e.into()),
+    }
+}
+
+fn delete_legacy(key: &str) -> Result<(), SecretError> {
+    match Entry::new(SERVICE, key)?.delete_credential() {
+        Ok(()) | Err(Error::NoEntry) => Ok(()),
         Err(e) => Err(e.into()),
     }
 }
@@ -96,10 +150,13 @@ pub fn delete(key: &str) -> Result<(), SecretError> {
         let _ = std::fs::write(&p, serde_json::to_string(&m).unwrap_or_default());
         return Ok(());
     }
-    match Entry::new(SERVICE, key)?.delete_credential() {
-        Ok(()) | Err(Error::NoEntry) => Ok(()),
-        Err(e) => Err(e.into()),
-    }
+    with_bundle(|m| {
+        if m.remove(key).is_some() {
+            save_bundle(m)?;
+        }
+        Ok(())
+    })?;
+    delete_legacy(key)
 }
 
 #[cfg(test)]

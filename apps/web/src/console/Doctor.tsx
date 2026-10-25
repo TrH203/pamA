@@ -27,7 +27,7 @@ interface Report {
   outbox: { pending: number; failed: number };
 }
 
-const POLL_MS = 5_000;
+const POLL_MS = 30_000;
 const TONE: Record<string, string> = {
   failed: "bg-red-100 text-red-800",
   submitted: "bg-green-100 text-green-800",
@@ -58,9 +58,9 @@ export function Doctor() {
   const [r, setR] = useState<Report | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const load = useCallback(() => {
+  const load = useCallback((fresh = false) => {
     setBusy(true);
-    api<Report>("/v1/doctor")
+    api<Report>(fresh ? "/v1/doctor?fresh=1" : "/v1/doctor")
       .then((d) => {
         setR(d);
         setErr(null);
@@ -85,7 +85,7 @@ export function Doctor() {
             updated {ago(r.at)} · every {POLL_MS / 1000}s
           </span>
         )}
-        <button type="button" className="btn" disabled={busy} onClick={load}>
+        <button type="button" className="btn" disabled={busy} onClick={() => load(true)}>
           {busy ? "Checking…" : "Re-run"}
         </button>
       </div>

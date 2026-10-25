@@ -68,7 +68,7 @@ pub fn run(ctx: &Ctx, action: ConfigAction) -> anyhow::Result<Exit> {
         }
         ConfigAction::Get { key } => {
             if is_secret(&key) {
-                let set = pama_core::secrets::get(&key)?.is_some();
+                let set = pama_core::secrets::exists(&key)?;
                 ctx.print(&json!({ "key": key, "set": set }), || {
                     format!("{key} is {}", if set { "set (hidden)" } else { "not set" })
                 });

@@ -16,4 +16,6 @@ if [ "$(node -p 'process.versions.node.split(".")[0]')" -lt 24 ]; then
 fi
 
 cargo build -q --manifest-path "$ROOT/Cargo.toml" -p pama-cli
+# Rebuilds change the ad-hoc signature and re-trigger the keychain prompt; keep a stable one.
+"$ROOT/scripts/sign.sh" dev.pama.cli "$ROOT/target/debug/pama"
 exec "$ROOT/target/debug/pama" "$@"

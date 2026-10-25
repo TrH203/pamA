@@ -35,19 +35,21 @@ function runDoctor(bin: string): Promise<unknown> {
 // reuse a recent report; `?fresh=1` (the Re-run button) bypasses it.
 const CACHE_MS = 60_000;
 let inflight: Promise<unknown> | null = null;
-let cached: { at: number; report: unknown } | null = null;
+let cached: { bin: string; at: number; report: unknown } | null = null;
 
 export const doctorRoutes = new Hono<Env>().get("/doctor", async (c) => {
   if (c.get("deps").config.mode !== "local") {
     throw new HttpError(404, "not_found", "doctor is available on the owner's machine only");
   }
-  if (cached && c.req.query("fresh") !== "1" && Date.now() - cached.at < CACHE_MS) {
+  const bin = process.env.PAMA_BIN ?? "pama";
+  const fresh = c.req.query("fresh") === "1";
+  if (cached?.bin === bin && !fresh && Date.now() - cached.at < CACHE_MS) {
     return c.json({ ...(cached.report as object), at: cached.at });
   }
   // Polling tabs share one child process.
-  inflight ??= runDoctor(process.env.PAMA_BIN ?? "pama")
+  inflight ??= runDoctor(bin)
     .then((report) => {
-      cached = { at: Date.now(), report };
+      cached = { bin, at: Date.now(), report };
       return report;
     })
     .finally(() => {

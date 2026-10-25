@@ -166,7 +166,7 @@ h1 .w:nth-child(4) .ini::before { animation-delay: .75s; }
 .acr b { color: var(--ink); }
 
 /* stage */
-.stage { position: relative; min-height: 470px; }
+.stage { position: relative; min-height: 470px; margin: 0; }
 .win {
   background: var(--term); color: var(--term-ink);
   border-radius: 10px; overflow: hidden;
@@ -352,7 +352,7 @@ footer .sp { margin-left: auto; }
 
 <header class="top">
   <div class="in">
-    <a class="logo" href="#" aria-label="pamA">pam<span class="A">A</span></a>
+    <a class="logo" href="./" aria-label="pamA">pam<span class="A">A</span></a>
     <nav class="links" aria-label="Điều hướng">
       <a href="#cach-hoat-dong">Cách hoạt động</a>
       <a href="#rieng-tu">Riêng tư</a>
@@ -383,7 +383,7 @@ footer .sp { margin-left: auto; }
       <p class="acr">pamA = <b>p</b>lease <b>a</b>sk <b>m</b>y <b>A</b>I</p>
     </div>
 
-    <div class="stage" id="stage" aria-label="Minh hoạ: một phiên code được che bí mật, tóm tắt thành digest, rồi dùng để trả lời câu hỏi">
+    <figure class="stage" id="stage" aria-label="Minh hoạ: một phiên code được che bí mật, tóm tắt thành digest, rồi dùng để trả lời câu hỏi">
       <div class="stage-note">minh hoạ · dữ liệu mẫu</div>
       <div class="win">
         <div class="bar"><i></i><i></i><i></i><span>claude · billing-service</span></div>
@@ -407,7 +407,7 @@ footer .sp { margin-left: auto; }
         <div class="q"><small>Lan · PM · qua Ask Link</small>Sao team không dùng Redis cho queue?</div>
         <div class="a"><small>AI của Minh</small><span id="ans">Vì hệ thống đã có Postgres, pg-boss giúp bớt một dịch vụ phải vận hành. Retry cho webhook vẫn đang làm.</span><br><span class="cite">[1] phiên 25/10 · billing-service</span></div>
       </div>
-    </div>
+    </figure>
   </div>
 </section>
 
@@ -508,7 +508,7 @@ Quyết định: dùng pg-boss thay Redis cho hàng đợi.</textarea>
         <div class="out" id="out" aria-live="polite"></div>
       </div>
     </div>
-    <div class="chips" aria-label="Thêm ví dụ">
+    <div class="chips">
       <button class="chip" type="button" data-add="STRIPE_SECRET=sk_{live}_51HqLyjWDarjtT1zdp7dcEXAMPLEkey">+ khoá Stripe</button>
       <button class="chip" type="button" data-add="Liên hệ chị Hoa: hoa.tran@khachhang.com">+ email khách</button>
       <button class="chip" type="button" data-add="password = &quot;hunter2-prod&quot;">+ mật khẩu</button>
@@ -597,77 +597,74 @@ Quyết định: dùng pg-boss thay Redis cho hàng đợi.</textarea>
 </footer>
 
 <script>
-(function () {
+(() => {
   "use strict";
-  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
   /* ---- console address: meta tag, else app.<this host> on a real host ---- */
-  var meta = document.querySelector('meta[name="pama-app-url"]');
-  var app = meta && meta.content ? meta.content.replace(/\/$/, "") : "";
-  var h = location.hostname;
+  const meta = document.querySelector('meta[name="pama-app-url"]');
+  let app = meta?.content ? meta.content.replace(/\/$/, "") : "";
+  const h = location.hostname;
   if (!app && h && h !== "localhost" && !/^127\.|claude|usercontent|^$/.test(h) && (location.protocol === "https:" || location.protocol === "http:")) {
-    app = "https://app." + h.replace(/^www\./, "");
+    app = `https://app.${h.replace(/^www\./, "")}`;
   }
   if (app) {
-    document.querySelectorAll(".js-app").forEach(function (a) { a.href = app; });
-    document.querySelectorAll(".js-app-text").forEach(function (s) { s.textContent = app; });
+    document.querySelectorAll(".js-app").forEach((a) => { a.href = app; });
+    document.querySelectorAll(".js-app-text").forEach((s) => { s.textContent = app; });
   }
 
   /* ---- copy install commands ---- */
-  var copy = document.getElementById("copy");
-  copy.addEventListener("click", function () {
-    var text = document.getElementById("cmds").innerText.split("\n")
-      .filter(function (l) { return /^\$ /.test(l); })
-      .map(function (l) { return l.slice(2); }).join("\n");
-    var done = function () { copy.textContent = "Đã chép"; setTimeout(function () { copy.textContent = "Chép lệnh"; }, 1600); };
+  const copy = document.getElementById("copy");
+  copy.addEventListener("click", () => {
+    const text = document.getElementById("cmds").textContent.split("\n")
+      .filter((l) => /^\$ /.test(l))
+      .map((l) => l.slice(2)).join("\n");
+    const done = () => { copy.textContent = "Đã chép"; setTimeout(() => { copy.textContent = "Chép lệnh"; }, 1600); };
     try {
-      navigator.clipboard.writeText(text).then(done, function () { copy.textContent = "Không chép được"; });
+      navigator.clipboard.writeText(text).then(done, () => { copy.textContent = "Không chép được"; });
     } catch (e) { copy.textContent = "Không chép được"; }
   });
 
   /* ---- live redaction demo (a few illustrative rules) ---- */
-  var rules = [
+  const rules = [
     [/\bAKIA[0-9A-Z]{16}\b/g, "SECRET:aws-access-token"],
     [/\bgh[pousr]_[A-Za-z0-9]{30,}\b/g, "SECRET:github-pat"],
     [/\bsk-ant-[A-Za-z0-9_-]{20,}/g, "SECRET:anthropic-api-key"],
     [/\bsk_live_[A-Za-z0-9]{16,}/g, "SECRET:stripe-live-key"],
-    [/(:\/\/[^:\/\s@]+:)([^@\s]+)(@)/g, "SECRET:connection-password", 2],
-    [/((?:password|passwd|secret|token|api_key)\s*[=:]\s*)("?[^\s"\u0000]+"?)/gi, "SECRET:password-assignment", 2],
+    [/(:\/\/[^:/\s@]+:)([^@\s]+)(@)/g, "SECRET:connection-password", 2],
+    [/((?:password|passwd|secret|token|api_key)\s*[=:]\s*)("?[^\s"\uE000]+"?)/gi, "SECRET:password-assignment", 2],
     [/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "PII:email"],
     [/(?:\+84|\b0)(?:3|5|7|8|9)\d{8}\b/g, "PII:phone-vn"],
     [/\b0\d{11}\b/g, "PII:cccd"]
   ];
-  function esc(s) { return s.replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+  function esc(s) { return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
   function redact(text) {
-    var marks = [];
-    var out = text;
-    rules.forEach(function (r) {
-      out = out.replace(r[0], function () {
-        var args = arguments;
-        var token = "\u0000" + marks.length + "\u0000";
+    const marks = [];
+    let out = text;
+    rules.forEach((r) => {
+      out = out.replace(r[0], (...args) => {
+        const token = `\uE000${marks.length}\uE000`;
         marks.push(r[1]);
         if (r[2] === 2) return args[1] + token + (args[3] && args[3] === "@" ? "@" : "");
         return token;
       });
     });
-    var html = esc(out).replace(/\u0000(\d+)\u0000/g, function (_, i) {
-      return '<span class="lbl">[' + marks[+i] + "]</span>";
-    });
+    const html = esc(out).replace(/\uE000(\d+)\uE000/g, (_, i) => `<span class="lbl">[${marks[+i]}]</span>`);
     return { html: html, n: marks.length };
   }
-  var raw = document.getElementById("raw");
-  var out = document.getElementById("out");
-  var count = document.getElementById("count");
+  const raw = document.getElementById("raw");
+  const out = document.getElementById("out");
+  const count = document.getElementById("count");
   function render() {
-    var r = redact(raw.value);
+    const r = redact(raw.value);
     out.innerHTML = r.html;
-    count.innerHTML = r.n ? "đã che <b>" + r.n + "</b> mục" : "không thấy bí mật";
+    count.innerHTML = r.n ? `đã che <b>${r.n}</b> mục` : "không thấy bí mật";
   }
   raw.addEventListener("input", render);
-  document.querySelectorAll(".chip[data-add]").forEach(function (b) {
-    b.addEventListener("click", function () {
+  document.querySelectorAll(".chip[data-add]").forEach((b) => {
+    b.addEventListener("click", () => {
       // Sample keys are assembled here so the page source never holds a key-shaped string.
-      raw.value = raw.value.replace(/\s*$/, "") + "\n" + b.getAttribute("data-add").replace("{live}", "live");
+      raw.value = `${raw.value.replace(/\s*$/, "")}\n${b.getAttribute("data-add").replace("{live}", "live")}`;
       render();
     });
   });
@@ -675,12 +672,12 @@ Quyết định: dùng pg-boss thay Redis cho hàng đợi.</textarea>
 
   /* ---- hero: type the session, redact, digest, answer; loop ---- */
   if (reduce) return;
-  var term = document.getElementById("term");
-  var digest = document.getElementById("digest");
-  var chat = document.getElementById("chat");
-  var ans = document.getElementById("ans");
-  var answer = ans.textContent;
-  var lines = [
+  const term = document.getElementById("term");
+  const digest = document.getElementById("digest");
+  const chat = document.getElementById("chat");
+  const ans = document.getElementById("ans");
+  const answer = ans.textContent;
+  const lines = [
     { cls: "p", pre: "$ ", text: 'claude "thêm hàng đợi cho webhook Stripe"' },
     { cls: "d", text: "● đọc src/billing/webhook.ts" },
     { cls: "d", text: "● so sánh Redis + BullMQ với pg-boss…" },
@@ -689,13 +686,13 @@ Quyết định: dùng pg-boss thay Redis cho hàng đợi.</textarea>
     { text: "", secret: "STRIPE_SECRET=sk_" + "live_51HqLyjWDarjtT1zdp7", label: "[DROPPED:dotenv-file-read]" },
     { cls: "ok", text: "✓ chọn pg-boss: đã có Postgres, bớt một dịch vụ" }
   ];
-  var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
-  var visible = true;
-  document.addEventListener("visibilitychange", function () { visible = !document.hidden; });
+  const sleep = (ms) => new Promise((r) => { setTimeout(r, ms); });
+  let visible = true;
+  document.addEventListener("visibilitychange", () => { visible = !document.hidden; });
 
-  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; }
+  function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; }
   async function type(node, text, speed) {
-    for (var i = 0; i < text.length; i++) { node.textContent += text[i]; await sleep(speed); }
+    for (let i = 0; i < text.length; i++) { node.textContent += text[i]; await sleep(speed); }
   }
   async function run() {
     while (true) {
@@ -704,25 +701,25 @@ Quyết định: dùng pg-boss thay Redis cho hàng đợi.</textarea>
       digest.classList.add("off");
       chat.classList.add("off");
       ans.textContent = "";
-      var cur = el("span", "cur");
-      for (var i = 0; i < lines.length; i++) {
-        var L = lines[i];
-        var row = el("span");
+      const cur = el("span", "cur");
+      for (let i = 0; i < lines.length; i++) {
+        const L = lines[i];
+        const row = el("span");
         term.appendChild(row);
         if (L.pre) row.appendChild(el("span", "p", L.pre));
-        var body = el("span", L.pre ? "" : (L.cls || ""));
+        const body = el("span", L.pre ? "" : (L.cls || ""));
         row.appendChild(body);
         row.appendChild(cur);
         await type(body, L.text, L.pre ? 26 : 12);
         if (L.secret) {
-          var s = el("span", "sec");
+          const s = el("span", "sec");
           row.insertBefore(s, cur);
           await type(s, L.secret, 22);
-          if (L.after) { var a = el("span"); row.insertBefore(a, cur); await type(a, L.after, 18); }
+          if (L.after) { const a = el("span"); row.insertBefore(a, cur); await type(a, L.after, 18); }
           await sleep(350);
           s.classList.add("red");
           await sleep(420);
-          var lab = el("span", "lbl", L.label);
+          const lab = el("span", "lbl", L.label);
           s.replaceWith(lab);
         }
         row.removeChild(cur);

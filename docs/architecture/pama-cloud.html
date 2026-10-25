@@ -295,6 +295,7 @@ a:focus-visible { outline: 2px solid var(--cloud); outline-offset: 2px; }
   <h2><span class="n">2</span>Kiến trúc local – cloud</h2>
   <div class="figure" role="img" aria-label="Sơ đồ kiến trúc: máy người dùng bên trái, server pamA Cloud bên phải, ranh giới tin cậy ở giữa">
     <svg viewBox="0 0 960 690" xmlns="http://www.w3.org/2000/svg">
+      <title>Kiến trúc pamA Cloud: máy của bạn, ranh giới tin cậy, server</title>
       <defs>
         <marker id="m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0L10 5L0 10z"/></marker>
         <marker id="mu" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah-up" d="M0 0L10 5L0 10z"/></marker>
@@ -735,12 +736,12 @@ flowchart LR
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
 <script>
-(function () {
+(() => {
   if (!window.mermaid) return;
   var attr = document.documentElement.getAttribute("data-theme");
   var dark = attr ? attr === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
   var css = getComputedStyle(document.documentElement);
-  var v = function (n) { return css.getPropertyValue(n).trim(); };
+  var v = (n) => css.getPropertyValue(n).trim();
   window.mermaid.initialize({
     startOnLoad: false,
     securityLevel: "strict",
@@ -774,7 +775,7 @@ flowchart LR
       fontSize: "14px"
     }
   });
-  window.mermaid.run({ querySelector: "pre.mermaid" }).catch(function (e) { console.error(e); });
+  window.mermaid.run({ querySelector: "pre.mermaid" }).catch((e) => { console.error(e); });
 })();
 </script>
 

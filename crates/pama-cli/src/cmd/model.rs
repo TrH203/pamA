@@ -307,7 +307,8 @@ fn run_device(ctx: &Ctx, action: ModelAction) -> anyhow::Result<Exit> {
     pama_core::secrets::init_platform_store();
     let show = |ctx: &Ctx| {
         let c = ModelConfig::from_store(&ctx.store);
-        let key_set = pama_core::secrets::exists(&format!("provider.{}.key", c.provider)).unwrap_or(false);
+        let key_set =
+            pama_core::secrets::exists(&format!("provider.{}.key", c.provider)).unwrap_or(false);
         let v = json!({
             "role": "drafting", "provider": c.provider, "model": c.model,
             "base_url": c.base_url, "local": c.is_local(), "key_set": key_set,

@@ -6,6 +6,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$(readlink "${BASH_SOURCE[0]}" || echo "${BASH_SOURCE[0]}")")/.." && pwd)"
 
 export PAMA_HOME="${PAMA_HOME:-$HOME/.pama-dev}"
+export PAMA_DEV=1
 export PAMA_PORT="${PAMA_PORT:-7600}"
 export PAMA_SERVER_CMD="cd '$ROOT/apps/server' && exec node --import tsx src/index.ts"
 

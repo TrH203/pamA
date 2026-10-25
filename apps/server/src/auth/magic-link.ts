@@ -90,5 +90,6 @@ export const authRoutes = new Hono<Env>()
       email: s?.email ?? null,
       workspace_id: c.get("deps").workspaceId,
       mode: c.get("deps").config.mode,
+      dev: process.env.PAMA_DEV === "1",
     });
   });

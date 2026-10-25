@@ -39,9 +39,13 @@ function ConsoleApp() {
   const [auth, setAuth] = useState<"checking" | "ok" | "login" | "local">("checking");
   // `pama login` opens `/?device=CODE` (spec 004).
   const [device, setDevice] = useState(new URLSearchParams(location.search).get("device"));
+  const [dev, setDev] = useState(false);
   useEffect(() => {
-    api<{ mode: string }>("/v1/auth/me")
-      .then(() => setAuth("ok"))
+    api<{ mode: string; dev?: boolean }>("/v1/auth/me")
+      .then((me) => {
+        setDev(me.dev === true);
+        setAuth("ok");
+      })
       .catch((e) => {
         if (!(e instanceof ApiError) || e.status !== 401) return setAuth("ok");
         // The owner's machine uses a per-launch token: open the console from the desktop app.
@@ -75,7 +79,14 @@ function ConsoleApp() {
   return (
     <div className="mx-auto max-w-5xl px-4 py-6">
       <header className="mb-6 flex flex-wrap items-center gap-4">
-        <h1 className="text-xl font-bold">pamA</h1>
+        <h1 className="text-xl font-bold">
+          pamA
+          {dev && (
+            <span className="ml-2 rounded bg-amber-200 px-1.5 py-0.5 align-middle text-xs font-semibold text-amber-900">
+              dev
+            </span>
+          )}
+        </h1>
         <nav className="flex gap-1">
           {(Object.keys(TABS) as Tab[]).map((t) => (
             <button

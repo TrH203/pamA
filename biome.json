@@ -14,7 +14,8 @@
       "!rules",
       "!**/fixtures",
       "!prompts",
-      "!**/*.md"
+      "!**/*.md",
+      "!pnpm-lock.yaml"
     ]
   },
   "formatter": {

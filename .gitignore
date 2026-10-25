@@ -33,3 +33,5 @@ Thumbs.db
 test-results/
 .playwright/
 crates/pama-desktop/src-tauri/gen/
+deploy/cloud/backups/
+deploy/cloud/backup.log

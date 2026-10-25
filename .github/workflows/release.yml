@@ -79,10 +79,14 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # Image names must be lowercase; the repository is TrH203/pamA.
+      - name: Image name
+        id: img
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}/server" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@v6
         with:
           context: .
           file: deploy/Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: ghcr.io/${{ github.repository }}/server:${{ github.ref_name }},ghcr.io/${{ github.repository }}/server:latest
+          tags: ${{ steps.img.outputs.name }}:${{ github.ref_name }},${{ steps.img.outputs.name }}:latest

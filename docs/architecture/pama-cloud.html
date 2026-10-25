@@ -1,0 +1,785 @@
+<title>pamA Cloud</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: technical handbook — sticky contents rail on the left, one reading column; device = moss, cloud = slate blue, trust boundary = amber. */
+:root {
+  --paper: #f6f7f5;
+  --surface: #ffffff;
+  --ink: #18201d;
+  --muted: #5b6661;
+  --line: #d9dfdb;
+  --dev: #2f6b4f;
+  --dev-soft: #e4efe8;
+  --cloud: #2f5487;
+  --cloud-soft: #e3eaf4;
+  --ext: #6d5a2e;
+  --ext-soft: #f2ecdf;
+  --warn: #b5651d;
+  --bad: #a83a32;
+  --code-bg: #eef1ef;
+  --f-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --paper: #121614;
+    --surface: #1a201d;
+    --ink: #e4ebe7;
+    --muted: #9aa7a1;
+    --line: #2e3833;
+    --dev: #7cc29f;
+    --dev-soft: #1d2d25;
+    --cloud: #8db1e3;
+    --cloud-soft: #1c2533;
+    --ext: #d6bd84;
+    --ext-soft: #2a2519;
+    --warn: #e59a52;
+    --bad: #e7776d;
+    --code-bg: #1f2623;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #121614;
+  --surface: #1a201d;
+  --ink: #e4ebe7;
+  --muted: #9aa7a1;
+  --line: #2e3833;
+  --dev: #7cc29f;
+  --dev-soft: #1d2d25;
+  --cloud: #8db1e3;
+  --cloud-soft: #1c2533;
+  --ext: #d6bd84;
+  --ext-soft: #2a2519;
+  --warn: #e59a52;
+  --bad: #e7776d;
+  --code-bg: #1f2623;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--f-body);
+  font-size: 16px;
+  line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0 64px;
+}
+.wrap {
+  max-width: 1180px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 48px;
+}
+@media (max-width: 900px) {
+  .wrap { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  nav.toc { display: none; }
+}
+
+nav.toc {
+  position: sticky;
+  top: env(safe-area-inset-top, 0px);
+  align-self: start;
+  padding-block: 40px;
+  font-size: 14px;
+}
+nav.toc .label {
+  font-size: 11px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+nav.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; counter-reset: toc; }
+nav.toc li { counter-increment: toc; }
+nav.toc a { color: var(--muted); text-decoration: none; display: flex; gap: 8px; }
+nav.toc a::before { content: counter(toc); font-family: var(--f-mono); font-size: 12px; min-width: 16px; color: var(--line); }
+nav.toc a:hover, nav.toc a:focus-visible { color: var(--ink); }
+
+main { min-width: 0; padding-block: 40px 0; }
+header.doc { border-bottom: 1px solid var(--line); padding-bottom: 28px; margin-bottom: 8px; }
+.meta { font-family: var(--f-mono); font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px 18px; }
+h1 {
+  font-family: var(--f-display);
+  font-weight: 700;
+  font-size: clamp(34px, 5vw, 52px);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  margin: 14px 0 14px;
+  text-wrap: balance;
+}
+.lede { font-size: 18px; max-width: 66ch; color: var(--ink); margin: 0; }
+
+section { padding-top: 44px; scroll-margin-top: 16px; }
+h2 {
+  font-family: var(--f-display);
+  font-weight: 700;
+  font-size: 27px;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  margin: 0 0 14px;
+  text-wrap: balance;
+}
+h2 .n { font-family: var(--f-mono); font-size: 14px; font-weight: 500; color: var(--muted); margin-right: 10px; vertical-align: 4px; }
+h3 { font-family: var(--f-display); font-weight: 500; font-size: 19px; margin: 28px 0 8px; text-wrap: balance; }
+p, ul, ol { max-width: 68ch; }
+p { margin: 0 0 12px; }
+ul, ol { padding-left: 22px; margin: 0 0 14px; }
+li { margin-bottom: 4px; }
+a { color: var(--cloud); }
+code { font-family: var(--f-mono); font-size: .88em; background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+pre.code {
+  font-family: var(--f-mono);
+  font-size: 13px;
+  line-height: 1.55;
+  background: var(--code-bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  margin: 0 0 16px;
+  max-width: 100%;
+}
+pre.code code { background: none; padding: 0; font-size: inherit; }
+.c { color: var(--muted); }
+
+.figure {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 18px;
+  margin: 18px 0 10px;
+  overflow-x: auto;
+}
+.figure svg { display: block; width: 100%; min-width: 760px; height: auto; }
+.caption { font-size: 13px; color: var(--muted); max-width: 80ch; margin: 0 0 8px; }
+pre.mermaid { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; margin: 18px 0 10px; overflow-x: auto; }
+
+.legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px 20px; margin: 12px 0 8px; font-size: 14px; }
+.legend div { display: flex; gap: 10px; align-items: baseline; }
+.legend b { font-family: var(--f-mono); font-weight: 500; min-width: 22px; color: var(--cloud); }
+
+.tbl { overflow-x: auto; margin: 14px 0 18px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: none; }
+th { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; background: var(--code-bg); }
+td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.split { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin: 16px 0; }
+.zone { border-radius: 10px; padding: 16px 18px; border: 1px solid var(--line); background: var(--surface); }
+.zone h4 { margin: 0 0 8px; font-family: var(--f-display); font-weight: 500; font-size: 17px; }
+.zone ul { margin: 0; font-size: 14px; }
+.zone.dev { border-top: 4px solid var(--dev); }
+.zone.cloud { border-top: 4px solid var(--cloud); }
+.zone.ext { border-top: 4px solid var(--ext); }
+
+.pill { display: inline-block; font-family: var(--f-mono); font-size: 11px; padding: 1px 8px; border-radius: 99px; white-space: nowrap; }
+.pill.done { background: var(--dev-soft); color: var(--dev); }
+.pill.todo { background: var(--ext-soft); color: var(--ext); }
+.pill.risk { background: transparent; color: var(--bad); border: 1px solid var(--bad); }
+
+.note {
+  border: 1px solid var(--warn);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin: 16px 0;
+  max-width: 76ch;
+  font-size: 15px;
+  background: var(--surface);
+}
+.note strong { color: var(--warn); }
+
+ol.steps { counter-reset: s; list-style: none; padding: 0; max-width: 76ch; }
+ol.steps > li { counter-increment: s; display: grid; grid-template-columns: 34px 1fr; gap: 4px 10px; margin-bottom: 14px; }
+ol.steps > li::before {
+  content: counter(s);
+  font-family: var(--f-mono);
+  font-size: 13px;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  display: grid; place-items: center;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  background: var(--surface);
+}
+ol.steps > li > div > p:last-child, ol.steps > li > div > pre:last-child { margin-bottom: 0; }
+
+.check { list-style: none; padding: 0; }
+.check li { display: flex; gap: 10px; align-items: baseline; }
+.check li::before { content: ""; flex: none; width: 13px; height: 13px; border: 1.5px solid var(--muted); border-radius: 3px; transform: translateY(2px); }
+
+footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+
+/* diagram text uses tokens so both themes read */
+svg text { font-family: var(--f-body); fill: var(--ink); }
+svg .t-sm { font-size: 11.5px; fill: var(--muted); }
+svg .t-md { font-size: 13px; font-weight: 500; }
+svg .t-lg { font-size: 14px; font-weight: 600; }
+svg .t-mono { font-family: var(--f-mono); font-size: 11px; fill: var(--muted); }
+svg .zone-dev { fill: var(--dev-soft); stroke: var(--dev); }
+svg .zone-cloud { fill: var(--cloud-soft); stroke: var(--cloud); }
+svg .box { fill: var(--surface); stroke: var(--line); }
+svg .box-dev { fill: var(--surface); stroke: var(--dev); }
+svg .box-cloud { fill: var(--surface); stroke: var(--cloud); }
+svg .box-ext { fill: var(--ext-soft); stroke: var(--ext); }
+svg .chip { fill: var(--cloud-soft); stroke: var(--cloud); stroke-opacity: .5; }
+svg .ln { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+svg .ln-up { stroke: var(--dev); stroke-width: 2; fill: none; }
+svg .ln-down { stroke: var(--cloud); stroke-width: 2; fill: none; stroke-dasharray: 6 4; }
+svg .ln-cli { stroke: var(--ext); stroke-width: 2; fill: none; }
+svg .ln-bad { stroke: var(--bad); stroke-width: 2; fill: none; stroke-dasharray: 4 4; }
+svg .boundary { stroke: var(--warn); stroke-width: 2; stroke-dasharray: 10 6; }
+svg .badge { fill: var(--surface); stroke-width: 1.5; }
+svg .ah { fill: var(--muted); }
+svg .ah-up { fill: var(--dev); }
+svg .ah-down { fill: var(--cloud); }
+svg .ah-cli { fill: var(--ext); }
+svg .t-bad { fill: var(--bad); font-size: 11.5px; font-weight: 500; }
+svg .t-warn { fill: var(--warn); font-size: 11.5px; font-weight: 600; letter-spacing: .06em; }
+
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+a:focus-visible { outline: 2px solid var(--cloud); outline-offset: 2px; }
+</style>
+
+<div class="wrap">
+<nav class="toc" aria-label="Mục lục">
+  <div class="label">Mục lục</div>
+  <ol>
+    <li><a href="#tong-quan">Tổng quan</a></li>
+    <li><a href="#kien-truc">Kiến trúc</a></li>
+    <li><a href="#du-lieu">Dữ liệu đi đâu</a></li>
+    <li><a href="#dang-nhap">Đăng nhập thiết bị</a></li>
+    <li><a href="#digest">Luồng digest</a></li>
+    <li><a href="#ask">Luồng Ask Link</a></li>
+    <li><a href="#ha-tang">Hạ tầng deploy</a></li>
+    <li><a href="#cac-buoc">Các bước deploy</a></li>
+    <li><a href="#cicd">CI/CD</a></li>
+    <li><a href="#landing">Landing page</a></li>
+    <li><a href="#quyet-dinh">Cần quyết định</a></li>
+    <li><a href="#rui-ro">Rủi ro &amp; checklist</a></li>
+  </ol>
+</nav>
+
+<main>
+<header class="doc">
+  <div class="meta"><span>pamA · tài liệu trước deploy</span><span>nhánh 004-thin-client · a55c067</span><span>25/10/2026</span></div>
+  <h1>pamA Cloud: máy giữ bản gốc, server lo phần chia sẻ</h1>
+  <p class="lede">Tài liệu này mô tả cách pamA chạy khi người dùng chỉ cài lệnh <code>pama</code> và kết nối tới một server từ xa: thành phần nào nằm ở đâu, dữ liệu nào được đi qua mạng, cách deploy server lần đầu, pipeline CI/CD và kế hoạch landing page.</p>
+</header>
+
+<section id="tong-quan">
+  <h2><span class="n">1</span>Tổng quan</h2>
+  <p>pamA cho phép một người code cùng AI agent (Claude Code, Codex) để agent trả lời câu hỏi của người khác về công việc đó. Chỉ ý chính và quyết định được chia sẻ; bí mật được lọc bỏ. Cùng một codebase chạy ở ba chế độ:</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Chế độ</th><th>Người dùng cài gì</th><th>Server ở đâu</th><th>Ai vận hành</th></tr></thead>
+    <tbody>
+      <tr><td><b>Local</b></td><td>Desktop app hoặc <code>pama</code> + server sidecar (PGlite)</td><td>Trên máy, 127.0.0.1</td><td>Người dùng</td></tr>
+      <tr><td><b>Self-host</b></td><td><code>pama</code></td><td>Docker Compose của một nhóm</td><td>Nhóm tự host</td></tr>
+      <tr><td><b>Cloud</b> (tài liệu này)</td><td>Chỉ <code>pama</code></td><td>Server pamA Cloud, nhiều workspace</td><td>Chúng ta</td></tr>
+    </tbody>
+  </table></div>
+  <p>Ở chế độ remote (spec 004), máy chạy hook ghi phiên, che bí mật (Lớp 1), soạn digest bằng Rust và giữ bản gốc của mọi digest. Server giữ phần cần truy cập từ bên ngoài: duyệt digest trên web, Ask Link, hộp thư câu hỏi chuyển tiếp, audit và console.</p>
+  <div class="note"><strong>Nguyên tắc không đổi:</strong> transcript gốc và transcript đã che đều không bao giờ được gửi lên server pamA. Thứ duy nhất rời máy là digest (bản tóm tắt bằng tiếng Anh đã che bí mật), và chỉ với project đã bật sync.</div>
+</section>
+
+<section id="kien-truc">
+  <h2><span class="n">2</span>Kiến trúc local – cloud</h2>
+  <div class="figure" role="img" aria-label="Sơ đồ kiến trúc: máy người dùng bên trái, server pamA Cloud bên phải, ranh giới tin cậy ở giữa">
+    <svg viewBox="0 0 960 690" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0L10 5L0 10z"/></marker>
+        <marker id="mu" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah-up" d="M0 0L10 5L0 10z"/></marker>
+        <marker id="md" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah-down" d="M0 0L10 5L0 10z"/></marker>
+        <marker id="mc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah-cli" d="M0 0L10 5L0 10z"/></marker>
+      </defs>
+
+      <!-- people -->
+      <rect class="box" x="548" y="20" width="176" height="56" rx="8"/>
+      <text class="t-md" x="562" y="44">Bạn · trình duyệt</text>
+      <text class="t-sm" x="562" y="62">duyệt digest, quản lý link</text>
+      <rect class="box" x="744" y="20" width="176" height="56" rx="8"/>
+      <text class="t-md" x="758" y="44">Người hỏi</text>
+      <text class="t-sm" x="758" y="62">mở Ask Link, đặt câu hỏi</text>
+      <path class="ln" d="M636 76V154" marker-end="url(#m)"/>
+      <path class="ln" d="M832 76V154" marker-end="url(#m)"/>
+
+      <!-- zones -->
+      <rect class="zone-dev" x="16" y="104" width="424" height="566" rx="12" stroke-width="1.5"/>
+      <text class="t-lg" x="36" y="134">Máy của bạn</text>
+      <text class="t-sm" x="132" y="134">nguồn gốc dữ liệu · chỉ cài pama</text>
+      <rect class="zone-cloud" x="524" y="104" width="420" height="566" rx="12" stroke-width="1.5"/>
+      <text class="t-lg" x="544" y="134">Server pamA Cloud</text>
+      <text class="t-sm" x="690" y="134">1 VM · Docker Compose</text>
+
+      <!-- trust boundary -->
+      <line class="boundary" x1="510" y1="96" x2="510" y2="680"/>
+      <text class="t-warn" x="0" y="0" transform="translate(504 400) rotate(-90)" text-anchor="middle">RANH GIỚI TIN CẬY</text>
+
+      <!-- device column -->
+      <rect class="box-dev" x="36" y="154" width="240" height="54" rx="8"/>
+      <text class="t-md" x="50" y="177">Transcript của agent</text>
+      <text class="t-mono" x="50" y="196">~/.claude · ~/.codex</text>
+      <path class="ln" d="M156 208V236" marker-end="url(#m)"/>
+
+      <rect class="box-dev" x="36" y="238" width="240" height="54" rx="8"/>
+      <text class="t-md" x="50" y="261">pama capture (hook)</text>
+      <text class="t-sm" x="50" y="280">đọc tại chỗ, không sao chép</text>
+      <path class="ln" d="M156 292V320" marker-end="url(#m)"/>
+
+      <rect class="box-dev" x="36" y="322" width="240" height="54" rx="8"/>
+      <text class="t-md" x="50" y="345">Lớp 1 · che bí mật</text>
+      <text class="t-sm" x="50" y="364">gitleaks + luật pamA, Rust</text>
+      <path class="ln" d="M156 376V404" marker-end="url(#m)"/>
+
+      <rect class="box-dev" x="36" y="406" width="240" height="54" rx="8"/>
+      <text class="t-md" x="50" y="429">Drafter (Rust)</text>
+      <text class="t-sm" x="50" y="448">soạn digest, che lại lần nữa</text>
+      <path class="ln" d="M156 460V488" marker-end="url(#m)"/>
+
+      <rect class="box-ext" x="296" y="390" width="128" height="86" rx="8"/>
+      <text class="t-md" x="308" y="413">Model soạn</text>
+      <text class="t-sm" x="308" y="432">Ollama tại máy</text>
+      <text class="t-sm" x="308" y="449">hoặc API (Anthropic,</text>
+      <text class="t-sm" x="308" y="466">OpenAI-compatible)</text>
+      <path class="ln" d="M276 433H294" marker-end="url(#m)" marker-start="url(#m)"/>
+
+      <rect class="box-dev" x="36" y="490" width="240" height="54" rx="8"/>
+      <text class="t-md" x="50" y="513">Kho thiết bị · SQLite</text>
+      <text class="t-sm" x="50" y="532">bản gốc digest + outbox</text>
+
+      <rect class="box-dev" x="36" y="574" width="240" height="54" rx="8"/>
+      <text class="t-md" x="50" y="597">Lệnh pama</text>
+      <text class="t-mono" x="50" y="616">review · link · inbox · console</text>
+      <path class="ln" d="M156 572V546" marker-end="url(#m)"/>
+
+      <!-- transcript stops -->
+      <path class="ln-bad" d="M276 181H404"/>
+      <circle cx="418" cy="181" r="11" fill="none" stroke="var(--bad)" stroke-width="2"/>
+      <path d="M412 175L424 187M424 175L412 187" stroke="var(--bad)" stroke-width="2"/>
+      <text class="t-bad" x="290" y="200">transcript dừng tại máy</text>
+
+      <!-- crossing flows -->
+      <path class="ln-up" d="M276 510H470V300H546" marker-end="url(#mu)"/>
+      <path class="ln-down" d="M546 340H486V528H278" marker-end="url(#md)"/>
+      <path class="ln-cli" d="M276 601H454V182H546" marker-end="url(#mc)"/>
+      <circle class="badge" cx="470" cy="420" r="11" stroke="var(--dev)"/><text class="t-md" x="470" y="424.5" text-anchor="middle" style="fill:var(--dev)">1</text>
+      <circle class="badge" cx="486" cy="470" r="11" stroke="var(--cloud)"/><text class="t-md" x="486" y="474.5" text-anchor="middle" style="fill:var(--cloud)">2</text>
+      <circle class="badge" cx="454" cy="360" r="11" stroke="var(--ext)"/><text class="t-md" x="454" y="364.5" text-anchor="middle" style="fill:var(--ext)">3</text>
+
+      <!-- cloud column -->
+      <rect class="box-cloud" x="548" y="156" width="372" height="48" rx="8"/>
+      <text class="t-md" x="562" y="185">Caddy · HTTPS</text>
+      <text class="t-mono" x="700" y="185">app.&lt;tên-miền&gt; → :7465</text>
+      <path class="ln" d="M734 204V226" marker-end="url(#m)"/>
+
+      <rect class="box-cloud" x="548" y="228" width="372" height="174" rx="8"/>
+      <text class="t-md" x="562" y="252">pama-server</text>
+      <text class="t-mono" x="652" y="252">Hono · Node 24 · ghcr.io image</text>
+      <rect class="chip" x="560" y="266" width="114" height="54" rx="6"/>
+      <text class="t-md" x="570" y="288" style="font-size:12px">Đăng nhập</text><text class="t-sm" x="570" y="306">thiết bị</text>
+      <rect class="chip" x="682" y="266" width="114" height="54" rx="6"/>
+      <text class="t-md" x="692" y="288" style="font-size:12px">Nhận draft</text><text class="t-sm" x="692" y="306">Lớp 2</text>
+      <rect class="chip" x="804" y="266" width="104" height="54" rx="6"/>
+      <text class="t-md" x="814" y="288" style="font-size:12px">Thay đổi</text><text class="t-sm" x="814" y="306">gửi về máy</text>
+      <rect class="chip" x="560" y="330" width="114" height="54" rx="6"/>
+      <text class="t-md" x="570" y="352" style="font-size:12px">Console</text><text class="t-sm" x="570" y="370">duyệt, link, inbox</text>
+      <rect class="chip" x="682" y="330" width="114" height="54" rx="6"/>
+      <text class="t-md" x="692" y="352" style="font-size:12px">Ask Link</text><text class="t-sm" x="692" y="370">trả lời · Lớp 3</text>
+      <rect class="chip" x="804" y="330" width="104" height="54" rx="6"/>
+      <text class="t-md" x="814" y="352" style="font-size:12px">Worker</text><text class="t-sm" x="814" y="370">pg-boss</text>
+      <path class="ln" d="M734 402V424" marker-end="url(#m)"/>
+
+      <rect class="box-cloud" x="548" y="426" width="372" height="54" rx="8"/>
+      <text class="t-md" x="562" y="449">Postgres 16 + pgvector</text>
+      <text class="t-sm" x="562" y="468">workspace tách theo dòng, RLS cho truy vấn Ask Link</text>
+      <path class="ln" d="M734 480V502" marker-end="url(#m)"/>
+
+      <rect class="box-ext" x="548" y="504" width="116" height="66" rx="8"/>
+      <text class="t-md" x="560" y="527">SMTP</text>
+      <text class="t-sm" x="560" y="545">link đăng nhập,</text>
+      <text class="t-sm" x="560" y="561">mã OTP</text>
+      <rect class="box-ext" x="676" y="504" width="116" height="66" rx="8"/>
+      <text class="t-md" x="688" y="527">Model trả lời</text>
+      <text class="t-sm" x="688" y="545">của nhà vận hành</text>
+      <text class="t-sm" x="688" y="561">hoặc BYO key</text>
+      <rect class="box-ext" x="804" y="504" width="116" height="66" rx="8"/>
+      <text class="t-md" x="816" y="527">Embedding</text>
+      <text class="t-sm" x="816" y="545">1024 chiều</text>
+      <text class="t-sm" x="816" y="561">(vd. bge-m3)</text>
+      <text class="t-sm" x="548" y="598">Dịch vụ bên ngoài server gọi ra (đi qua egress guard)</text>
+      <text class="t-mono" x="548" y="640">volume: pama-db · pama-data · .env (PAMA_SECRET)</text>
+    </svg>
+  </div>
+  <p class="caption">Màu xanh rêu là phần chạy trên máy, xanh dương là server, vàng nâu là dịch vụ bên ngoài. Đường nét đứt màu cam là ranh giới tin cậy: chỉ ba luồng đánh số được phép đi qua.</p>
+  <div class="legend">
+    <div><b>1</b><span><code>POST /v1/sync/drafts</code>: digest đã che, đi từ outbox lên server. Thử lại khi mất mạng.</span></div>
+    <div><b>2</b><span><code>GET /v1/sync/changes</code>: quyết định duyệt trên web được kéo về máy (tối đa 1 lần/60 giây). Lệnh xoá trên máy luôn thắng.</span></div>
+    <div><b>3</b><span>Lệnh <code>pama</code> gọi API của owner bằng device token lưu trong keychain.</span></div>
+  </div>
+</section>
+
+<section id="du-lieu">
+  <h2><span class="n">3</span>Dữ liệu nào nằm ở đâu</h2>
+  <div class="split">
+    <div class="zone dev">
+      <h4>Chỉ ở trên máy</h4>
+      <ul>
+        <li>Transcript gốc của agent (đọc tại chỗ)</li>
+        <li>Sự kiện đã qua Lớp 1 (chỉ gửi tới model soạn do bạn chọn)</li>
+        <li>Bản gốc mọi digest và trạng thái của nó (<code>remote_digest</code>)</li>
+        <li>Device token, API key model soạn (OS keychain)</li>
+        <li>Danh sách project bật sync (<code>remote.sync_projects</code>)</li>
+      </ul>
+    </div>
+    <div class="zone cloud">
+      <h4>Trên server</h4>
+      <ul>
+        <li>Digest của project đã bật sync (bản nháp hoặc đã duyệt)</li>
+        <li>Item đã embed để truy xuất cho Ask Link</li>
+        <li>Ask Link, câu hỏi, hộp thư chuyển tiếp, audit (giữ 180 ngày)</li>
+        <li>Tài khoản email, workspace, thiết bị (token đã băm scrypt)</li>
+        <li>API key BYO của workspace, mã hoá bằng <code>PAMA_SECRET</code></li>
+      </ul>
+    </div>
+    <div class="zone ext">
+      <h4>Gửi tới bên thứ ba</h4>
+      <ul>
+        <li>Model soạn: văn bản phiên đã che (nếu chọn API thay vì Ollama)</li>
+        <li>Model trả lời: câu hỏi + item trong phạm vi link</li>
+        <li>Embedding: nội dung item</li>
+        <li>SMTP: địa chỉ email, link đăng nhập</li>
+      </ul>
+    </div>
+  </div>
+  <h3>Ba lớp che bí mật</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Lớp</th><th>Chạy ở đâu</th><th>Làm gì</th></tr></thead>
+    <tbody>
+      <tr><td>Lớp 1</td><td>Máy (Rust)</td><td>222 luật gitleaks + luật pamA, bỏ cả kết quả tool đọc file <code>.env</code>/key. Chạy trước mọi model. Chạy lại trên mọi chuỗi model soạn trả về.</td></tr>
+      <tr><td>Lớp 2</td><td>Server, lúc nhận draft</td><td>Chạy lại các luật và phân loại item (<code>business_sensitive</code>, <code>infra</code>, <code>customer</code>).</td></tr>
+      <tr><td>Lớp 3</td><td>Server, trước khi hiện câu trả lời</td><td>Quét lại câu trả lời, kiểm tra chủ đề bị cấm, model giám khảo tìm rò rỉ. Lỗi bất kỳ thì từ chối và đề nghị chuyển câu hỏi cho bạn.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="dang-nhap">
+  <h2><span class="n">4</span>Luồng đăng nhập thiết bị</h2>
+  <p>Kiểu RFC 8628: máy xin một mã, bạn duyệt mã đó trên web sau khi đăng nhập bằng email, máy nhận token đúng một lần.</p>
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant CLI as pama (máy)
+  participant S as Server pamA
+  participant B as Trình duyệt của bạn
+  participant M as Hộp thư
+  CLI->>S: POST /v1/auth/device/start (tên máy)
+  S-->>CLI: device_code, user_code ABCD-EFGH, hạn 10 phút
+  CLI->>B: mở /?device=ABCD-EFGH
+  B->>S: POST /v1/auth/login (email, next)
+  S->>M: link đăng nhập
+  M->>B: bấm link, quay lại trang duyệt
+  B->>S: POST /v1/auth/device/approve
+  loop mỗi 2 giây
+    CLI->>S: POST /v1/auth/device/token
+    S-->>CLI: 428 authorization_pending
+  end
+  S-->>CLI: 200 device token (chỉ giao một lần)
+  CLI->>CLI: lưu token vào keychain, mode = remote
+</pre>
+  <p class="caption">Lệnh: <code>pama login --server https://app.&lt;tên-miền&gt;</code>. Qua SSH dùng <code>--no-browser</code> và mở link in ra ở máy khác. <code>pama logout</code> thu hồi token trên server.</p>
+</section>
+
+<section id="digest">
+  <h2><span class="n">5</span>Luồng digest: từ phiên làm việc tới server và quay về</h2>
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant A as Agent (Claude Code, Codex)
+  participant H as pama hook
+  participant D as Drafter + kho SQLite
+  participant L as Model soạn
+  participant S as Server pamA
+  participant O as Bạn (web)
+  A->>H: kết thúc phiên
+  H->>D: xếp hàng, trả về trong 1,5 giây
+  D->>D: Lớp 1 che bí mật trên sự kiện
+  D->>L: transcript đã che (tối đa 48.000 ký tự)
+  L-->>D: JSON digest
+  D->>D: che lại mọi chuỗi, áp giới hạn, lưu bản gốc
+  D->>S: POST /v1/sync/drafts (chỉ project đã bật sync)
+  S->>S: Lớp 2, lưu nháp hoặc tự duyệt
+  O->>S: duyệt, sửa hoặc bỏ trên console
+  D->>S: GET /v1/sync/changes?since=cursor
+  S-->>D: trạng thái mới, digest đã sửa
+  D->>D: cập nhật bản gốc trên máy
+</pre>
+  <ul>
+    <li>Không có daemon: <code>pama capture drain</code> chạy tách ra sau hook, gửi outbox và kéo thay đổi về.</li>
+    <li>Mất mạng: draft nằm trong outbox, gửi lại với backoff tối đa 60 giây.</li>
+    <li>Tắt sync một project (<code>pama sync disable</code>) gửi tombstone; server xoá draft và digest của project đó. Draft cũ đến sau tombstone bị từ chối (409).</li>
+  </ul>
+</section>
+
+<section id="ask">
+  <h2><span class="n">6</span>Luồng Ask Link</h2>
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant V as Người hỏi
+  participant S as Server pamA
+  participant DB as Postgres (RLS)
+  participant AM as Model trả lời
+  participant O as Bạn
+  V->>S: mở Ask Link (open, PIN, OTP email hoặc allowlist)
+  V->>S: câu hỏi
+  S->>DB: truy xuất trong phạm vi link, role pama_app
+  DB-->>S: item được phép
+  S->>AM: câu hỏi + item (model của workspace hoặc nhà vận hành)
+  AM-->>S: câu trả lời có trích dẫn
+  S->>S: Lớp 3 kiểm tra
+  alt qua kiểm tra
+    S-->>V: câu trả lời + trích dẫn
+  else bị từ chối
+    S-->>V: đề nghị chuyển câu hỏi
+    S->>O: vào inbox (pama inbox hoặc console)
+  end
+</pre>
+  <p class="caption">Mọi câu hỏi đều ghi vào audit. Năm lần nhập sai PIN/OTP khoá người hỏi và IP trong 15 phút.</p>
+</section>
+
+<section id="ha-tang">
+  <h2><span class="n">7</span>Hạ tầng deploy</h2>
+  <p>Server là một tiến trình chạy liên tục: worker pg-boss, job dọn audit mỗi ngày (<code>setInterval</code> trong <code>apps/server/src/index.ts</code>), migration lúc khởi động. Vì vậy chọn máy ảo chạy Docker Compose, không dùng Lambda.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Thành phần</th><th>Lựa chọn đề xuất</th><th>Ghi chú</th></tr></thead>
+    <tbody>
+      <tr><td>Máy chủ</td><td><b>Lightsail 2 GB</b> (<code>small_3_0</code>, $12/tháng, 60 GB SSD, 3 TB băng thông, IP tĩnh), Ubuntu 24.04, thêm 2 GB swap</td><td>Giá cố định; image server có bản amd64 và arm64</td></tr>
+      <tr><td>Container</td><td><code>deploy/cloud/docker-compose.yml</code>: <code>db</code> (pgvector/pgvector:pg16), <code>server</code> (image ghcr.io), <code>caddy</code></td><td>Server không mở cổng ra ngoài, chỉ Caddy gọi vào</td></tr>
+      <tr><td>HTTPS</td><td>Caddy, chứng chỉ Let's Encrypt tự động</td><td>Cookie chỉ bật <code>Secure</code> khi <code>PAMA_BASE_URL</code> là https</td></tr>
+      <tr><td>Email</td><td>Amazon SES hoặc Resend qua SMTP</td><td>Bắt buộc ở chế độ cloud: đăng nhập bằng link email</td></tr>
+      <tr><td>Model trả lời</td><td>Anthropic <code>claude-sonnet-5-5</code>, small <code>claude-haiku-5-5</code></td><td>Workspace có thể dùng key riêng (chỉ endpoint https công khai)</td></tr>
+      <tr><td>Embedding</td><td><b>Qua API</b>: <code>BAAI/bge-m3</code> trên endpoint OpenAI-compatible (mặc định DeepInfra)</td><td>Cùng model với bản local nên kết quả giống nhau; DB lưu <code>vector(1024)</code>; không chạy Ollama nên đủ 2 GB</td></tr>
+      <tr><td>Database</td><td><b>Postgres trong container</b> trên cùng VM</td><td>Không tốn thêm; chuyển RDS sau chỉ cần đổi <code>DATABASE_URL</code></td></tr>
+      <tr><td>Sao lưu</td><td><code>deploy/cloud/backup.sh</code> lúc 03:30 mỗi đêm: <code>pg_dump</code> lên S3, giữ 14 ngày; bật thêm snapshot Lightsail</td><td>Sao lưu cả <code>deploy/.env</code>; mất <code>PAMA_SECRET</code> thì không giải mã được key đã lưu</td></tr>
+      <tr><td>Sau này</td><td>Postgres sang RDS; server sang ECS Fargate</td><td>Không phải sửa code, chỉ đổi <code>DATABASE_URL</code> và nơi chạy image</td></tr>
+    </tbody>
+  </table></div>
+  <h3>Tên miền</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Địa chỉ</th><th>Trỏ tới</th><th>Dùng cho</th></tr></thead>
+    <tbody>
+      <tr><td><code>&lt;tên-miền&gt;</code></td><td>GitHub Pages hoặc Cloudflare Pages</td><td>Landing page, tài liệu</td></tr>
+      <tr><td><code>app.&lt;tên-miền&gt;</code></td><td>IP tĩnh của VM (Caddy)</td><td>API, console, Ask Link, đăng nhập thiết bị</td></tr>
+      <tr><td><code>&lt;tên-miền&gt;/install.sh</code></td><td>File tĩnh trên landing</td><td>Cài <code>pama</code> từ GitHub Releases (chưa có, cần viết)</td></tr>
+    </tbody>
+  </table></div>
+  <h3>Biến môi trường cho cloud</h3>
+<p>Đầy đủ trong <code>deploy/cloud/.env.example</code>. <code>PAMA_MODE=cloud</code> và <code>PAMA_BASE_URL</code> được compose tự đặt từ <code>PAMA_DOMAIN</code>.</p>
+<pre class="code"><code>PAMA_DOMAIN=app.&lt;tên-miền&gt;
+PAMA_IMAGE=ghcr.io/trh203/pama/server:vX.Y.Z
+PAMA_OWNER_EMAIL=                 <span class="c"># để trống: email nào cũng đăng ký được</span>
+PAMA_SECRET=…                     <span class="c"># openssl rand -base64 36</span>
+PAMA_OWNER_TOKEN=…                <span class="c"># chỉ nhà vận hành giữ</span>
+POSTGRES_PASSWORD=…
+PAMA_DB_PASSWORD=…
+SMTP_URL=smtp://…:587
+SMTP_FROM=pamA &lt;no-reply@&lt;tên-miền&gt;&gt;
+PAMA_CHAT_PROVIDER=anthropic
+PAMA_CHAT_MODEL=claude-sonnet-5-5
+PAMA_SMALL_MODEL=claude-haiku-5-5
+PAMA_CHAT_API_KEY=…
+PAMA_EMBED_PROVIDER=openai-compatible
+PAMA_EMBED_BASE_URL=https://api.deepinfra.com/v1/openai
+PAMA_EMBED_MODEL=BAAI/bge-m3
+PAMA_EMBED_API_KEY=…
+BACKUP_S3_URI=s3://…/db           <span class="c"># nơi chứa bản backup</span></code></pre>
+  <h3>Chi phí ước tính mỗi tháng</h3>
+  <p class="caption">Ước tính để so sánh, chưa tra giá hiện tại.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Hạng mục</th><th>Giai đoạn đầu</th><th>Ghi chú</th></tr></thead>
+    <tbody>
+      <tr><td>Lightsail 2 GB</td><td class="num">$12</td><td>Giá lấy từ API Lightsail (Singapore), đã gồm ổ đĩa, băng thông, IP tĩnh</td></tr>
+      <tr><td>Embedding API</td><td class="num">~ $0–1</td><td>Ước tính ở lượng dùng ban đầu</td></tr>
+      <tr><td>Snapshot + S3 backup</td><td class="num">~ $1–3</td><td>Ước tính</td></tr>
+      <tr><td>Email</td><td class="num">~ $0–1</td><td>SES tính theo số email</td></tr>
+      <tr><td>Tên miền</td><td class="num">~ $1</td><td>theo năm, chia tháng</td></tr>
+      <tr><td>Model trả lời</td><td class="num">theo lượng dùng</td><td>Chi phí lớn nhất khi mở đăng ký tự do</td></tr>
+      <tr><td><b>Hạ tầng cố định</b></td><td class="num"><b>~ $14–17</b></td><td>Credit AWS còn $129.48 đủ khoảng 8–9 tháng hạ tầng (nếu credit áp dụng cho Lightsail)</td></tr>
+      <tr><td>Landing page</td><td class="num">$0</td><td>GitHub Pages / Cloudflare Pages</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="cac-buoc">
+  <h2><span class="n">8</span>Các bước deploy lần đầu</h2>
+  <ol class="steps">
+    <li><div><p><b>Merge nhánh <code>004-thin-client</code> vào main</b> và gắn tag (ví dụ <code>v0.4.0</code>). Workflow <code>release.yml</code> sẽ build image <code>ghcr.io/trh203/pama/server</code> và binary <code>pama</code>.</p></div></li>
+    <li><div><p><b>Mua tên miền, tạo Lightsail 2 GB</b> (Ubuntu 24.04), gắn IP tĩnh, mở cổng 22 (chỉ IP của bạn), 80 và 443. Đặt AWS Budgets cảnh báo ở $15/tháng.</p></div></li>
+    <li><div><p><b>Chạy <code>deploy/cloud/bootstrap.sh</code></b> trên VM: cài Docker và AWS CLI, thêm swap, clone repo vào <code>/opt/pama</code>, đặt lịch backup.</p></div></li>
+    <li><div><p><b>Trỏ DNS</b> <code>app.&lt;tên-miền&gt;</code> về IP của VM.</p></div></li>
+    <li><div><p><b>Xác minh domain gửi mail</b> trên SES/Resend (SPF, DKIM) và lấy thông tin SMTP.</p></div></li>
+    <li><div><p><b>Điền <code>deploy/cloud/.env</code></b> theo mục 7, sinh bí mật bằng <code>openssl rand -base64 36</code>, cất bản sao vào password manager.</p></div></li>
+    <li><div><p><b>Khởi động</b> và kiểm tra:</p>
+<pre class="code"><code>docker compose -f deploy/cloud/docker-compose.yml up -d
+curl -s https://app.&lt;tên-miền&gt;/v1/health
+<span class="c"># "mode":"cloud", capabilities có device_login, drafts, changes</span></code></pre></div></li>
+    <li><div><p><b>Thử end-to-end</b> từ một máy sạch: <code>pama login --server …</code>, <code>pama init --sync</code>, kết thúc một phiên, duyệt trên web, tạo Ask Link, hỏi thử, rồi <code>pama doctor</code>.</p></div></li>
+    <li><div><p><b>Bật sao lưu hằng đêm</b> và thử khôi phục một lần vào DB trống.</p></div></li>
+  </ol>
+</section>
+
+<section id="cicd">
+  <h2><span class="n">9</span>CI/CD</h2>
+  <h3>Đã có trong <code>.github/workflows</code></h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Workflow</th><th>Khi nào chạy</th><th>Làm gì</th><th></th></tr></thead>
+    <tbody>
+      <tr><td><code>ci.yml</code></td><td>PR, push main</td><td>Rust fmt/clippy/test trên macOS, Windows, Linux; TypeScript lint, typecheck, test với Postgres</td><td><span class="pill done">có</span></td></tr>
+      <tr><td><code>docker.yml</code></td><td>PR đụng server/web/deploy</td><td>Build image, chạy compose, smoke test (pair, sync, ask, tombstone)</td><td><span class="pill done">có</span></td></tr>
+      <tr><td><code>evals.yml</code></td><td>PR đụng prompt/luật/pipeline</td><td>Bộ red-team 55 case, rò rỉ nào cũng làm fail</td><td><span class="pill done">có</span></td></tr>
+      <tr><td><code>release.yml</code></td><td>tag <code>v*</code></td><td>Desktop, binary <code>pama</code>, image ghcr.io amd64 + arm64</td><td><span class="pill done">có</span></td></tr>
+      <tr><td><code>deploy.yml</code></td><td>release được publish, hoặc chạy tay</td><td>Deploy image lên VM</td><td><span class="pill todo">cần viết</span></td></tr>
+      <tr><td><code>landing.yml</code></td><td>push main đụng thư mục landing</td><td>Build và publish landing page</td><td><span class="pill todo">cần viết</span></td></tr>
+    </tbody>
+  </table></div>
+  <h3>Pipeline đề xuất</h3>
+<pre class="mermaid">
+flowchart LR
+  PR[Pull request] --> CI[ci + docker + evals]
+  CI -->|merge| MAIN[main]
+  MAIN -->|tag v*| REL["release.yml: image ghcr.io + binary pama"]
+  REL --> GATE{Duyệt môi trường production}
+  GATE --> BK[pg_dump trước khi deploy]
+  BK --> PULL["SSH: compose pull + up -d với tag mới"]
+  PULL --> HC{"health ok trong 2 phút?"}
+  HC -->|có| SMOKE["smoke: health, login start, Ask Link"]
+  HC -->|không| RB[quay về tag cũ]
+  SMOKE --> DONE[Xong]
+  MAIN -->|đổi landing| LP["landing.yml: build + Pages"]
+</pre>
+  <ul>
+    <li><b>Môi trường <code>production</code></b> trong GitHub với người duyệt bắt buộc; secret SSH key và host chỉ nằm ở đó.</li>
+    <li><b>Ghim phiên bản</b>: VM chạy <code>PAMA_IMAGE=ghcr.io/trh203/pama/server:vX.Y.Z</code>, không dùng <code>latest</code>, để rollback chỉ là đổi lại tag.</li>
+    <li><b>Migration chạy lúc khởi động</b>, nên backup trước khi deploy là bước bắt buộc; migration nên luôn thêm cột/bảng thay vì xoá để rollback image vẫn chạy được.</li>
+    <li><b>Binary <code>pama</code></b>: release đã upload lên GitHub Releases; cần thêm <code>install.sh</code> và ký/notarize macOS (đang có <code>scripts/sign.sh</code> chưa commit).</li>
+  </ul>
+</section>
+
+<section id="landing">
+  <h2><span class="n">10</span>Landing page</h2>
+  <p>Mục tiêu: một người mới đọc trong 30 giây hiểu pamA làm gì, tin rằng transcript không rời máy, và cài được <code>pama</code> bằng một lệnh.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Phần</th><th>Nội dung</th></tr></thead>
+    <tbody>
+      <tr><td>Mở đầu</td><td>Một câu nói rõ lợi ích, lệnh cài đặt, nút “Dùng pamA Cloud” và “Tự host”</td></tr>
+      <tr><td>Cách hoạt động</td><td>Ba bước: làm việc với agent, duyệt digest, gửi Ask Link; dùng lại sơ đồ ở mục 2 ở dạng đơn giản</td></tr>
+      <tr><td>Riêng tư</td><td>Bảng “ở trên máy / trên server” của mục 3, ba lớp che bí mật</td></tr>
+      <tr><td>Ví dụ Ask Link</td><td>Một câu hỏi thật và câu trả lời có trích dẫn (dữ liệu mẫu, ghi rõ là mẫu)</td></tr>
+      <tr><td>Chế độ</td><td>Local, self-host, cloud; link tới tài liệu</td></tr>
+      <tr><td>Mã nguồn mở</td><td>Apache-2.0, link GitHub</td></tr>
+    </tbody>
+  </table></div>
+  <p>Đề xuất kỹ thuật: site tĩnh trong <code>apps/landing</code> (Astro hoặc Vite), deploy lên GitHub Pages hoặc Cloudflare Pages, tách khỏi server để server có sự cố thì landing vẫn sống.</p>
+</section>
+
+<section id="quyet-dinh">
+  <h2><span class="n">11</span>Cần quyết định trước khi làm</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Câu hỏi</th><th>Đề xuất</th><th>Lý do</th></tr></thead>
+    <tbody>
+      <tr><td>Tên miền</td><td>Bạn chọn</td><td>Cần cho DNS, SMTP, landing</td></tr>
+      <tr><td>Nhà cung cấp VM</td><td><span class="pill done">đã chốt</span> Lightsail 2 GB</td><td>Giá cố định $12, dùng credit AWS</td></tr>
+      <tr><td>Database</td><td><span class="pill done">đã chốt</span> Postgres trong container</td><td>Không tốn thêm; backup lên S3</td></tr>
+      <tr><td>Embedding</td><td><span class="pill done">đã chốt</span> qua API, <code>bge-m3</code></td><td>Mặc định DeepInfra; đổi nhà cung cấp chỉ cần sửa 3 biến <code>PAMA_EMBED_*</code></td></tr>
+      <tr><td>Ai được đăng ký</td><td>Giới hạn ban đầu (danh sách mời)</td><td>Hiện cloud mode cho mọi email đăng ký; chi phí model trả lời do nhà vận hành chịu. Cần thêm tính năng giới hạn</td></tr>
+      <tr><td>Email</td><td>Amazon SES</td><td>Cùng AWS, rẻ; cần xin thoát sandbox</td></tr>
+      <tr><td>Landing</td><td>Astro + GitHub Pages</td><td>Miễn phí, cùng repo, CI đơn giản</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="rui-ro">
+  <h2><span class="n">12</span>Rủi ro và checklist</h2>
+  <div class="tbl"><table>
+    <thead><tr><th></th><th>Rủi ro</th><th>Cách giảm</th></tr></thead>
+    <tbody>
+      <tr><td><span class="pill risk">cao</span></td><td>Đăng ký tự do làm tăng chi phí model trả lời</td><td>Danh sách mời, giới hạn theo workspace, khuyến khích BYO key</td></tr>
+      <tr><td><span class="pill risk">cao</span></td><td>Mất <code>PAMA_SECRET</code> hoặc DB</td><td>Backup hằng đêm ra ngoài VM, lưu <code>.env</code> trong password manager, thử khôi phục</td></tr>
+      <tr><td><span class="pill risk">vừa</span></td><td>Một VM là điểm hỏng duy nhất</td><td>Chấp nhận ở giai đoạn đầu; snapshot; sau chuyển RDS + Fargate</td></tr>
+      <tr><td><span class="pill risk">vừa</span></td><td>Luồng soạn digest chưa chạy với Anthropic/Ollama thật (mới thử với model giả)</td><td>Chạy thử end-to-end ở bước 8 với cả hai</td></tr>
+      <tr><td><span class="pill risk">vừa</span></td><td>Test Postgres của spec 004 chưa chạy (thiếu <code>PAMA_TEST_PG_URL</code>)</td><td>CI có Postgres; chạy lại local với pgvector trước khi merge</td></tr>
+      <tr><td><span class="pill risk">thấp</span></td><td>Email đăng nhập vào spam</td><td>SPF, DKIM, DMARC cho domain gửi</td></tr>
+    </tbody>
+  </table></div>
+  <h3>Checklist trước khi bấm deploy</h3>
+  <ul class="check">
+    <li>Nhánh 004 đã merge, CI xanh, có tag release và image trên ghcr.io</li>
+    <li>Tên miền, DNS cho <code>app.</code>, SMTP đã xác minh</li>
+    <li><code>deploy/.env</code> đủ biến, bí mật đã cất ở nơi khác</li>
+    <li><code>deploy/cloud/</code> đã thử trên VM thật (compose đã viết, mới kiểm tra cú pháp)</li>
+    <li>Quyết định chính sách đăng ký</li>
+    <li>Backup hằng đêm chạy và đã thử khôi phục</li>
+    <li>Thử end-to-end từ một máy chỉ cài <code>pama</code></li>
+    <li><code>deploy.yml</code> có bước backup, health check, rollback</li>
+  </ul>
+</section>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
+<script>
+(function () {
+  if (!window.mermaid) return;
+  var attr = document.documentElement.getAttribute("data-theme");
+  var dark = attr ? attr === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+  var css = getComputedStyle(document.documentElement);
+  var v = function (n) { return css.getPropertyValue(n).trim(); };
+  window.mermaid.initialize({
+    startOnLoad: false,
+    securityLevel: "strict",
+    theme: "base",
+    fontFamily: v("--f-body"),
+    themeVariables: {
+      darkMode: dark,
+      background: v("--surface"),
+      mainBkg: v("--cloud-soft"),
+      primaryColor: v("--cloud-soft"),
+      primaryBorderColor: v("--cloud"),
+      primaryTextColor: v("--ink"),
+      secondaryColor: v("--dev-soft"),
+      tertiaryColor: v("--ext-soft"),
+      lineColor: v("--muted"),
+      textColor: v("--ink"),
+      actorBkg: v("--cloud-soft"),
+      actorBorder: v("--cloud"),
+      actorTextColor: v("--ink"),
+      actorLineColor: v("--muted"),
+      signalColor: v("--ink"),
+      signalTextColor: v("--ink"),
+      labelBoxBkgColor: v("--ext-soft"),
+      labelBoxBorderColor: v("--ext"),
+      labelTextColor: v("--ink"),
+      loopTextColor: v("--ink"),
+      noteBkgColor: v("--ext-soft"),
+      noteTextColor: v("--ink"),
+      sequenceNumberColor: v("--surface"),
+      edgeLabelBackground: v("--surface"),
+      fontSize: "14px"
+    }
+  });
+  window.mermaid.run({ querySelector: "pre.mermaid" }).catch(function (e) { console.error(e); });
+})();
+</script>
+
+<footer>
+  Nguồn: <code>specs/004-thin-client/</code>, <code>docs/deploy-cloud.md</code>, <code>docs/security-model.md</code>, <code>deploy/</code>, <code>.github/workflows/</code>. Bản này nằm trong repo tại <code>docs/architecture/pama-cloud.html</code>.
+</footer>
+</main>
+</div>

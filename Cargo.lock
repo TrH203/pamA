@@ -5507,14 +5507,14 @@ dependencies = [
 
 [[package]]
 name = "uiautomation"
-version = "0.22.2"
+version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69aeef90dc81842d583d8d39714e5a8e7ec86dcea0c3000ee5d48eb6fbc1f330"
+checksum = "fa2eacf9390a8491bc949b04230f40c12520c6423a2962a6087eea1ef14373af"
 dependencies = [
  "chrono",
  "uiautomation_derive",
- "windows 0.61.3",
- "windows-core 0.61.2",
+ "windows 0.62.2",
+ "windows-core 0.62.2",
 ]
 
 [[package]]

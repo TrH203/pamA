@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>pamA</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<meta name="description" content="pamA (Please Ask my AI): đồng nghiệp hỏi qua một đường link, AI trả lời từ các phiên code của bạn, có trích dẫn, bí mật ở lại trên máy.">
+<meta name="description" content="pamA (Please Ask my AI): đồng nghiệp hỏi qua một đường link, AI trả lời từ các phiên code của bạn, có trích dẫn, bí mật ở lại trên máy." data-en="pamA (Please Ask my AI): teammates ask through a link, AI answers from your coding sessions, with citations, secrets stay on your machine.">
 <!-- Set to the console address when it is not app.<this host>, e.g. https://app.example.com -->
 <meta name="pama-app-url" content="">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -114,6 +114,7 @@ header.top .in { display: flex; align-items: center; gap: 24px; padding-block: 1
 .logo { display: inline-flex; align-items: center; gap: 2px; font-family: var(--f-display); font-weight: 900; font-size: 22px; letter-spacing: -0.03em; color: var(--ink); text-decoration: none; }
 .logo .A { background: var(--bar); color: var(--bar-ink); padding: 0 5px; border-radius: 2px; margin-left: 2px; }
 nav.links { display: flex; gap: 22px; margin-left: auto; font-size: 15px; }
+nav.links + .lang { margin-left: 0; }
 nav.links a { color: var(--ink-2); text-decoration: none; }
 nav.links a:hover { color: var(--ink); }
 .btn {
@@ -132,7 +133,11 @@ nav.links a:hover { color: var(--ink); }
 .btn.solid { background: var(--ink); color: var(--paper); }
 .btn.solid:hover { background: var(--cobalt); border-color: var(--cobalt); color: #fff; }
 .btn.sm { padding: 9px 14px; font-size: 14px; }
-@media (max-width: 760px) { nav.links { display: none; } header.top .btn { margin-left: auto; } }
+.lang { display: inline-flex; border: 1.5px solid var(--ink); border-radius: 6px; overflow: hidden; }
+.lang button { font: 600 13px/1 var(--f-mono); padding: 8px 10px; background: transparent; color: var(--ink); border: 0; cursor: pointer; }
+.lang button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.lang button:focus-visible { outline: 2px solid var(--cobalt); outline-offset: -2px; }
+@media (max-width: 760px) { nav.links { display: none; } .lang { margin-left: auto; } }
 
 /* ---------- hero ---------- */
 .hero .in { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 56px; align-items: center; padding-block: 64px 72px; }
@@ -353,14 +358,17 @@ footer .sp { margin-left: auto; }
 <header class="top">
   <div class="in">
     <a class="logo" href="./" aria-label="pamA">pam<span class="A">A</span></a>
-    <nav class="links" aria-label="Điều hướng">
-      <a href="#cach-hoat-dong">Cách hoạt động</a>
-      <a href="#rieng-tu">Riêng tư</a>
-      <a href="#thu">Thử che bí mật</a>
-      <a href="#cai-dat">Cài đặt</a>
+    <nav class="links" aria-label="Điều hướng" data-en-aria-label="Navigation">
+      <a href="#cach-hoat-dong" data-en="How it works">Cách hoạt động</a>
+      <a href="#rieng-tu" data-en="Privacy">Riêng tư</a>
+      <a href="#thu" data-en="Try redaction">Thử che bí mật</a>
+      <a href="#cai-dat" data-en="Install">Cài đặt</a>
       <a href="https://github.com/TrH203/pamA">GitHub</a>
     </nav>
-    <a class="btn solid sm js-app" href="#cai-dat">Mở pamA Cloud</a>
+    <div class="lang" id="lang">
+      <button type="button" data-lang="vi" lang="vi" aria-label="Tiếng Việt" aria-pressed="true">VI</button><button type="button" data-lang="en" lang="en" aria-label="English" aria-pressed="false">EN</button>
+    </div>
+    <a class="btn solid sm js-app" href="#cai-dat" data-en="Open pamA Cloud">Mở pamA Cloud</a>
   </div>
 </header>
 
@@ -368,26 +376,32 @@ footer .sp { margin-left: auto; }
 <section class="hero">
   <div class="in">
     <div>
-      <div class="eyebrow"><span class="dot" aria-hidden="true"></span>Mã nguồn mở · Apache-2.0 · cho Claude Code &amp; Codex</div>
+<div class="eyebrow"><span class="dot" aria-hidden="true"></span><span data-en="Open source · Apache-2.0 · for Claude Code &amp; Codex">Mã nguồn mở · Apache-2.0 · cho Claude Code &amp; Codex</span></div>
       <h1 aria-label="Please Ask my AI">
         <span class="w"><span class="ini">P</span>lease</span>
         <span class="w"><span class="ini">A</span>sk</span>
         <span class="w"><span class="ini">m</span>y</span>
         <span class="w"><span class="ini">A</span>I.</span>
       </h1>
-      <p class="lede">Bạn code cùng AI agent. Đồng nghiệp muốn biết <b>bạn đã quyết định gì và vì sao</b>? Họ hỏi qua một đường link. pamA trả lời từ bản tóm tắt các phiên làm việc, có trích dẫn, và <b>bí mật không bao giờ rời máy bạn</b>.</p>
+      <p class="lede" data-en="You code with an AI agent. A teammate wants to know <b>what you decided and why</b>? They ask through a link. pamA answers from summaries of your work sessions, with citations, and <b>secrets never leave your machine</b>.">Bạn code cùng AI agent. Đồng nghiệp muốn biết <b>bạn đã quyết định gì và vì sao</b>? Họ hỏi qua một đường link. pamA trả lời từ bản tóm tắt các phiên làm việc, có trích dẫn, và <b>bí mật không bao giờ rời máy bạn</b>.</p>
       <div class="cta">
-        <a class="btn solid js-app" href="#cai-dat">Bắt đầu với pamA Cloud</a>
-        <a class="btn" href="https://github.com/TrH203/pamA">Xem mã nguồn</a>
+        <a class="btn solid js-app" href="#cai-dat" data-en="Get started with pamA Cloud">Bắt đầu với pamA Cloud</a>
+        <a class="btn" href="https://github.com/TrH203/pamA" data-en="View source">Xem mã nguồn</a>
       </div>
       <p class="acr">pamA = <b>p</b>lease <b>a</b>sk <b>m</b>y <b>A</b>I</p>
     </div>
 
-    <figure class="stage" id="stage" aria-label="Minh hoạ: một phiên code được che bí mật, tóm tắt thành digest, rồi dùng để trả lời câu hỏi">
-      <div class="stage-note">minh hoạ · dữ liệu mẫu</div>
+    <figure class="stage" id="stage" aria-label="Minh hoạ: một phiên code được che bí mật, tóm tắt thành digest, rồi dùng để trả lời câu hỏi" data-en-aria-label="Illustration: a coding session is redacted, summarized into a digest, then used to answer a question">
+      <div class="stage-note" data-en="illustration · sample data">minh hoạ · dữ liệu mẫu</div>
       <div class="win">
         <div class="bar"><i></i><i></i><i></i><span>claude · billing-service</span></div>
-        <div class="term" id="term"><span class="p">$</span> claude "thêm hàng đợi cho webhook Stripe"
+        <div class="term" id="term" data-en="<span class=&quot;p&quot;>$</span> claude &quot;add a queue for the Stripe webhook&quot;
+<span class=&quot;d&quot;>● reading src/billing/webhook.ts</span>
+<span class=&quot;d&quot;>● comparing Redis + BullMQ with pg-boss…</span>
+<span class=&quot;p&quot;>$</span> export DATABASE_URL=postgres://admin:<span class=&quot;lbl&quot;>[SECRET:connection-password]</span>@db.internal/app
+<span class=&quot;p&quot;>$</span> cat .env
+<span class=&quot;lbl&quot;>[DROPPED:dotenv-file-read]</span>
+<span class=&quot;ok&quot;>✓ chose pg-boss: Postgres already there, one less service</span>"><span class="p">$</span> claude "thêm hàng đợi cho webhook Stripe"
 <span class="d">● đọc src/billing/webhook.ts</span>
 <span class="d">● so sánh Redis + BullMQ với pg-boss…</span>
 <span class="p">$</span> export DATABASE_URL=postgres://admin:<span class="lbl">[SECRET:connection-password]</span>@db.internal/app
@@ -396,16 +410,16 @@ footer .sp { margin-left: auto; }
 <span class="ok">✓ chọn pg-boss: đã có Postgres, bớt một dịch vụ</span></div>
       </div>
       <div class="card digest" id="digest">
-        <div class="k">Digest · 25/10 · billing-service <span class="tag">đã duyệt</span></div>
+        <div class="k"><span data-en="Digest · Oct 25 · billing-service">Digest · 25/10 · billing-service</span> <span class="tag" data-en="approved">đã duyệt</span></div>
         <ul>
-          <li><em>quyết định</em><span>Dùng pg-boss cho hàng đợi webhook thay vì Redis + BullMQ.</span></li>
-          <li><em>lý do</em><span>Hệ thống đã có Postgres, bớt một dịch vụ phải vận hành.</span></li>
-          <li><em>còn mở</em><span>Thêm retry có backoff cho webhook Stripe.</span></li>
+          <li data-en="<em>decision</em><span>Use pg-boss for the webhook queue instead of Redis + BullMQ.</span>"><em>quyết định</em><span>Dùng pg-boss cho hàng đợi webhook thay vì Redis + BullMQ.</span></li>
+          <li data-en="<em>reason</em><span>The system already has Postgres, one less service to run.</span>"><em>lý do</em><span>Hệ thống đã có Postgres, bớt một dịch vụ phải vận hành.</span></li>
+          <li data-en="<em>open</em><span>Add retry with backoff for the Stripe webhook.</span>"><em>còn mở</em><span>Thêm retry có backoff cho webhook Stripe.</span></li>
         </ul>
       </div>
       <div class="card chat" id="chat">
-        <div class="q"><small>Lan · PM · qua Ask Link</small>Sao team không dùng Redis cho queue?</div>
-        <div class="a"><small>AI của Minh</small><span id="ans">Vì hệ thống đã có Postgres, pg-boss giúp bớt một dịch vụ phải vận hành. Retry cho webhook vẫn đang làm.</span><br><span class="cite">[1] phiên 25/10 · billing-service</span></div>
+        <div class="q" data-en="<small>Lan · PM · via Ask Link</small>Why didn't the team use Redis for the queue?"><small>Lan · PM · qua Ask Link</small>Sao team không dùng Redis cho queue?</div>
+        <div class="a"><small>AI của Minh</small><span id="ans" data-en="Because the system already has Postgres, pg-boss saves running one more service. Retry for the webhook is still in progress.">Vì hệ thống đã có Postgres, pg-boss giúp bớt một dịch vụ phải vận hành. Retry cho webhook vẫn đang làm.</span><br><span class="cite" data-en="[1] session Oct 25 · billing-service">[1] phiên 25/10 · billing-service</span></div>
       </div>
     </figure>
   </div>
@@ -421,43 +435,43 @@ footer .sp { margin-left: auto; }
 <section class="band" id="cach-hoat-dong">
   <div class="in">
     <div class="head">
-      <div><div class="eyebrow">Cách hoạt động</div><h2>Ba bước, không đổi cách bạn làm việc.</h2></div>
-      <p>Bạn vẫn code với Claude Code hay Codex như mọi ngày. pamA chạy ở phía sau: ghi phiên, che bí mật, tóm tắt, và chỉ chia sẻ những gì bạn đã duyệt.</p>
+      <div><div class="eyebrow" data-en="How it works">Cách hoạt động</div><h2 data-en="Three steps, no change to how you work.">Ba bước, không đổi cách bạn làm việc.</h2></div>
+      <p data-en="You keep coding with Claude Code or Codex as usual. pamA runs behind the scenes: records sessions, redacts secrets, summarizes, and shares only what you approved.">Bạn vẫn code với Claude Code hay Codex như mọi ngày. pamA chạy ở phía sau: ghi phiên, che bí mật, tóm tắt, và chỉ chia sẻ những gì bạn đã duyệt.</p>
     </div>
     <div class="steps">
       <div class="step">
         <span class="num">01</span>
-        <h3>Làm việc như bình thường</h3>
-        <p>Hook của <code>pama</code> đọc phiên làm việc ngay trên máy. Bí mật bị che trước khi bất kỳ model nào nhìn thấy.</p>
+        <h3 data-en="Work as usual">Làm việc như bình thường</h3>
+        <p data-en="The <code>pama</code> hook reads the session right on your machine. Secrets are redacted before any model sees them.">Hook của <code>pama</code> đọc phiên làm việc ngay trên máy. Bí mật bị che trước khi bất kỳ model nào nhìn thấy.</p>
       </div>
       <div class="step">
         <span class="num">02</span>
-        <h3>Duyệt bản tóm tắt</h3>
-        <p>Mỗi phiên thành một digest: quyết định, lý do, việc còn mở. Bạn duyệt trên web hoặc bằng <code>pama review</code>.</p>
+        <h3 data-en="Review the summary">Duyệt bản tóm tắt</h3>
+        <p data-en="Each session becomes a digest: decisions, reasons, open items. You review it on the web or with <code>pama review</code>.">Mỗi phiên thành một digest: quyết định, lý do, việc còn mở. Bạn duyệt trên web hoặc bằng <code>pama review</code>.</p>
       </div>
       <div class="step">
         <span class="num">03</span>
-        <h3>Gửi Ask Link</h3>
-        <p>Người hỏi mở link, có thể cần PIN hoặc mã qua email. Câu trả lời luôn kèm trích dẫn; câu nào không chắc sẽ được chuyển vào hộp thư của bạn.</p>
+        <h3 data-en="Send an Ask Link">Gửi Ask Link</h3>
+        <p data-en="The asker opens the link, possibly needing a PIN or an emailed code. Answers always carry citations; anything uncertain is routed to your inbox.">Người hỏi mở link, có thể cần PIN hoặc mã qua email. Câu trả lời luôn kèm trích dẫn; câu nào không chắc sẽ được chuyển vào hộp thư của bạn.</p>
       </div>
     </div>
 
-    <div class="flow" role="img" aria-label="Digest đi từ máy lên server; transcript dừng ở ranh giới; câu trả lời đi tới người hỏi">
+    <div class="flow" role="img" aria-label="Digest đi từ máy lên server; transcript dừng ở ranh giới; câu trả lời đi tới người hỏi" data-en-aria-label="The digest goes from your machine to the server; the transcript stops at the boundary; the answer goes to the asker">
       <div class="flow-inner">
-        <div class="node n1"><b>Máy của bạn</b><span>transcript, Lớp 1, bản gốc digest</span></div>
-        <div class="wall"></div><div class="wall-l">ranh giới</div>
+        <div class="node n1" data-en="<b>Your machine</b><span>transcript, Layer 1, digest originals</span>"><b>Máy của bạn</b><span>transcript, Lớp 1, bản gốc digest</span></div>
+        <div class="wall"></div><div class="wall-l" data-en="boundary">ranh giới</div>
         <div class="wire"></div>
-        <div class="node n2"><b>pamA Cloud</b><span>duyệt, Ask Link, Lớp 2 + 3</span></div>
-        <div class="node n3"><b>Người hỏi</b><span>đồng nghiệp, khách hàng</span></div>
+        <div class="node n2" data-en="<b>pamA Cloud</b><span>review, Ask Link, Layers 2 + 3</span>"><b>pamA Cloud</b><span>duyệt, Ask Link, Lớp 2 + 3</span></div>
+        <div class="node n3" data-en="<b>Asker</b><span>teammate, customer</span>"><b>Người hỏi</b><span>đồng nghiệp, khách hàng</span></div>
         <span class="pk good">digest</span>
         <span class="pk good b">digest</span>
-        <span class="pk bad">transcript ✕</span>
-        <span class="pk ans">câu trả lời [1]</span>
+        <span class="pk bad" data-en="transcript ✕">transcript ✕</span>
+        <span class="pk ans" data-en="answer [1]">câu trả lời [1]</span>
       </div>
       <div class="flow-legend">
-        <span><i style="background:var(--ok)"></i>digest đã che, chỉ project bạn bật sync</span>
-        <span><i style="background:var(--stop)"></i>transcript luôn dừng lại trên máy</span>
-        <span><i style="background:var(--cobalt)"></i>câu trả lời có trích dẫn</span>
+        <span data-en="<i style=&quot;background:var(--ok)&quot;></i>redacted digest, only projects you sync"><i style="background:var(--ok)"></i>digest đã che, chỉ project bạn bật sync</span>
+        <span data-en="<i style=&quot;background:var(--stop)&quot;></i>transcript always stays on your machine"><i style="background:var(--stop)"></i>transcript luôn dừng lại trên máy</span>
+        <span data-en="<i style=&quot;background:var(--cobalt)&quot;></i>answer with citations"><i style="background:var(--cobalt)"></i>câu trả lời có trích dẫn</span>
       </div>
     </div>
   </div>
@@ -466,22 +480,22 @@ footer .sp { margin-left: auto; }
 <section class="band alt" id="rieng-tu">
   <div class="in">
     <div class="head">
-      <div><div class="eyebrow">Riêng tư</div><h2>Ba lớp che bí mật, trước và sau mỗi model.</h2></div>
-      <p>Lớp đầu tiên chạy trên máy bạn, bằng Rust, trước khi có bất kỳ lời gọi model nào. Hai lớp sau chạy lại trên server, nên một lỗi bỏ sót ở lớp trước vẫn còn cơ hội bị chặn.</p>
+      <div><div class="eyebrow" data-en="Privacy">Riêng tư</div><h2 data-en="Three layers of redaction, before and after every model.">Ba lớp che bí mật, trước và sau mỗi model.</h2></div>
+      <p data-en="The first layer runs on your machine, in Rust, before any model call. The next two run again on the server, so anything missed earlier still has a chance to be caught.">Lớp đầu tiên chạy trên máy bạn, bằng Rust, trước khi có bất kỳ lời gọi model nào. Hai lớp sau chạy lại trên server, nên một lỗi bỏ sót ở lớp trước vẫn còn cơ hội bị chặn.</p>
     </div>
     <div class="priv">
       <div class="layers">
-        <div class="layer"><div class="L">1</div><div><h3>Trên máy, trước mọi model</h3><p>222 luật gitleaks cùng luật riêng của pamA: mật khẩu trong chuỗi kết nối, biến môi trường, số điện thoại và CCCD Việt Nam. Bỏ hẳn kết quả khi agent đọc file <code>.env</code> hay in biến môi trường.</p></div></div>
-        <div class="layer"><div class="L">2</div><div><h3>Khi digest tới server</h3><p>Chạy lại toàn bộ luật trên mọi câu model đã viết, rồi gắn nhãn nội dung nhạy cảm về kinh doanh, hạ tầng hoặc khách hàng.</p></div></div>
-        <div class="layer"><div class="L">3</div><div><h3>Trước khi hiện câu trả lời</h3><p>Quét lại câu trả lời, kiểm tra chủ đề bị cấm, và một model giám khảo tìm rò rỉ. Có lỗi là từ chối, rồi đề nghị chuyển câu hỏi cho bạn.</p></div></div>
+        <div class="layer"><div class="L">1</div><div><h3 data-en="On your machine, before any model">Trên máy, trước mọi model</h3><p data-en="222 gitleaks rules plus pamA's own: passwords in connection strings, environment variables, Vietnamese phone numbers and CCCD. Output is dropped entirely when the agent reads a <code>.env</code> file or prints environment variables.">222 luật gitleaks cùng luật riêng của pamA: mật khẩu trong chuỗi kết nối, biến môi trường, số điện thoại và CCCD Việt Nam. Bỏ hẳn kết quả khi agent đọc file <code>.env</code> hay in biến môi trường.</p></div></div>
+        <div class="layer"><div class="L">2</div><div><h3 data-en="When the digest reaches the server">Khi digest tới server</h3><p data-en="Re-runs every rule over every sentence the model wrote, then labels business-, infrastructure- or customer-sensitive content.">Chạy lại toàn bộ luật trên mọi câu model đã viết, rồi gắn nhãn nội dung nhạy cảm về kinh doanh, hạ tầng hoặc khách hàng.</p></div></div>
+        <div class="layer"><div class="L">3</div><div><h3 data-en="Before the answer is shown">Trước khi hiện câu trả lời</h3><p data-en="Scans the answer again, checks for banned topics, and a judge model looks for leaks. Any failure means refusal, then offering to forward the question to you.">Quét lại câu trả lời, kiểm tra chủ đề bị cấm, và một model giám khảo tìm rò rỉ. Có lỗi là từ chối, rồi đề nghị chuyển câu hỏi cho bạn.</p></div></div>
       </div>
       <div class="ledger">
-        <div class="row hd"><div class="stay">Ở lại trên máy</div><div class="leave">Lên server</div></div>
-        <div class="row"><div>Transcript gốc của agent</div><div>Digest đã duyệt hoặc chờ duyệt</div></div>
-        <div class="row"><div>Sự kiện đã che</div><div>Ask Link và câu hỏi</div></div>
-        <div class="row"><div>Bản gốc mọi digest</div><div>Nhật ký audit 180 ngày</div></div>
-        <div class="row"><div>Token và API key, trong keychain</div><div>Chỉ project bạn bật sync</div></div>
-        <div class="foot">Tắt sync một project là digest của nó bị xoá khỏi server. Máy luôn giữ bản gốc.</div>
+        <div class="row hd"><div class="stay" data-en="Stays on your machine">Ở lại trên máy</div><div class="leave" data-en="Goes to the server">Lên server</div></div>
+        <div class="row"><div data-en="Original agent transcript">Transcript gốc của agent</div><div data-en="Approved or pending digests">Digest đã duyệt hoặc chờ duyệt</div></div>
+        <div class="row"><div data-en="Redacted events">Sự kiện đã che</div><div data-en="Ask Links and questions">Ask Link và câu hỏi</div></div>
+        <div class="row"><div data-en="Originals of every digest">Bản gốc mọi digest</div><div data-en="180-day audit log">Nhật ký audit 180 ngày</div></div>
+        <div class="row"><div data-en="Tokens and API keys, in the keychain">Token và API key, trong keychain</div><div data-en="Only projects you enable sync for">Chỉ project bạn bật sync</div></div>
+        <div class="foot" data-en="Turn off sync for a project and its digests are deleted from the server. Your machine always keeps the originals.">Tắt sync một project là digest của nó bị xoá khỏi server. Máy luôn giữ bản gốc.</div>
       </div>
     </div>
   </div>
@@ -490,12 +504,12 @@ footer .sp { margin-left: auto; }
 <section class="band" id="thu">
   <div class="in">
     <div class="head">
-      <div><div class="eyebrow">Thử ngay</div><h2>Dán một đoạn log. Xem bí mật biến mất.</h2></div>
-      <p>Đoạn bên trái là mẫu, bạn có thể sửa thoải mái. Mọi thứ chạy trong trình duyệt của bạn; không có gì được gửi đi.</p>
+      <div><div class="eyebrow" data-en="Try it now">Thử ngay</div><h2 data-en="Paste a log. Watch the secrets disappear.">Dán một đoạn log. Xem bí mật biến mất.</h2></div>
+      <p data-en="The left side is a sample you can edit freely. Everything runs in your browser; nothing is sent anywhere.">Đoạn bên trái là mẫu, bạn có thể sửa thoải mái. Mọi thứ chạy trong trình duyệt của bạn; không có gì được gửi đi.</p>
     </div>
     <div class="demo">
       <div class="pane">
-        <label for="raw">Phiên làm việc <span>bạn sửa được</span></label>
+        <label for="raw" data-en="Work session <span>editable</span>">Phiên làm việc <span>bạn sửa được</span></label>
         <textarea id="raw" spellcheck="false">$ export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
 $ git push https://ghp_1a2B3c4D5e6F7g8H9i0J1k2L3m4N5o6P7q8R@github.com/acme/api
 Gửi báo cáo cho minh.nguyen@acme.vn, gọi 0912345678 nếu lỗi
@@ -504,45 +518,45 @@ ANTHROPIC_API_KEY=sk-ant-api03-Xy9kQ2mN8vB4cL7pR1tW6zH3jF5gD0sA
 Quyết định: dùng pg-boss thay Redis cho hàng đợi.</textarea>
       </div>
       <div class="pane">
-        <div class="out-h">Sau Lớp 1 <span class="count" id="count"></span></div>
+        <div class="out-h"><span data-en="After Layer 1">Sau Lớp 1</span> <span class="count" id="count"></span></div>
         <div class="out" id="out" aria-live="polite"></div>
       </div>
     </div>
     <div class="chips">
-      <button class="chip" type="button" data-add="STRIPE_SECRET=sk_{live}_51HqLyjWDarjtT1zdp7dcEXAMPLEkey">+ khoá Stripe</button>
-      <button class="chip" type="button" data-add="Liên hệ chị Hoa: hoa.tran@khachhang.com">+ email khách</button>
-      <button class="chip" type="button" data-add="password = &quot;hunter2-prod&quot;">+ mật khẩu</button>
+      <button class="chip" type="button" data-add="STRIPE_SECRET=sk_{live}_51HqLyjWDarjtT1zdp7dcEXAMPLEkey" data-en="+ Stripe key">+ khoá Stripe</button>
+      <button class="chip" type="button" data-add="Liên hệ chị Hoa: hoa.tran@khachhang.com" data-en="+ customer email">+ email khách</button>
+      <button class="chip" type="button" data-add="password = &quot;hunter2-prod&quot;" data-en="+ password">+ mật khẩu</button>
       <button class="chip" type="button" data-add="CCCD: 001203004567">+ CCCD</button>
     </div>
-    <p class="demo-note">Bản minh hoạ dùng vài luật đơn giản. pamA thật dùng 222 luật gitleaks, kiểm tra độ ngẫu nhiên của chuỗi, và cùng một bộ luật được chạy lại ở Lớp 2 và Lớp 3.</p>
+    <p class="demo-note" data-en="This demo uses a few simple rules. The real pamA uses 222 gitleaks rules, string-entropy checks, and the same rule set re-runs at Layer 2 and Layer 3.">Bản minh hoạ dùng vài luật đơn giản. pamA thật dùng 222 luật gitleaks, kiểm tra độ ngẫu nhiên của chuỗi, và cùng một bộ luật được chạy lại ở Lớp 2 và Lớp 3.</p>
   </div>
 </section>
 
 <section class="band alt" id="che-do">
   <div class="in">
     <div class="head">
-      <div><div class="eyebrow">Chạy ở đâu</div><h2>Cùng một mã nguồn, ba cách chạy.</h2></div>
-      <p>Bắt đầu với pamA Cloud cho nhanh. Khi cần, chuyển sang tự host hoặc chạy hoàn toàn trên máy mà không đổi cách dùng.</p>
+      <div><div class="eyebrow" data-en="Where it runs">Chạy ở đâu</div><h2 data-en="One codebase, three ways to run.">Cùng một mã nguồn, ba cách chạy.</h2></div>
+      <p data-en="Start with pamA Cloud for speed. When needed, move to self-hosting or run fully on your machine without changing how you use it.">Bắt đầu với pamA Cloud cho nhanh. Khi cần, chuyển sang tự host hoặc chạy hoàn toàn trên máy mà không đổi cách dùng.</p>
     </div>
     <div class="modes">
       <div class="mode hot">
-        <span class="pill">dễ nhất</span>
+        <span class="pill" data-en="easiest">dễ nhất</span>
         <h3>pamA Cloud</h3>
-        <span class="who">bạn cài: pama</span>
-        <p>Đăng nhập bằng email, kết nối máy bằng một lệnh. Duyệt digest và quản lý Ask Link trên web.</p>
-        <ul><li>Digest soạn ngay trên máy</li><li>Model trả lời có sẵn, hoặc dùng key riêng</li></ul>
+        <span class="who" data-en="you install: pama">bạn cài: pama</span>
+        <p data-en="Sign in with email, connect your machine with one command. Review digests and manage Ask Links on the web.">Đăng nhập bằng email, kết nối máy bằng một lệnh. Duyệt digest và quản lý Ask Link trên web.</p>
+        <ul data-en="<li>Digests drafted on your machine</li><li>Answer model included, or bring your own key</li>"><li>Digest soạn ngay trên máy</li><li>Model trả lời có sẵn, hoặc dùng key riêng</li></ul>
       </div>
       <div class="mode">
-        <h3>Tự host</h3>
-        <span class="who">nhóm bạn chạy: Docker Compose</span>
-        <p>Cùng image server, chạy trên máy chủ của nhóm. Một tệp <code>.env</code>, Postgres và Caddy.</p>
-        <ul><li>Dữ liệu nằm trong hạ tầng của bạn</li><li>Chọn model nào cũng được</li></ul>
+        <h3 data-en="Self-host">Tự host</h3>
+        <span class="who" data-en="your team runs: Docker Compose">nhóm bạn chạy: Docker Compose</span>
+        <p data-en="Same server image, on your team's own server. One <code>.env</code> file, Postgres and Caddy.">Cùng image server, chạy trên máy chủ của nhóm. Một tệp <code>.env</code>, Postgres và Caddy.</p>
+        <ul data-en="<li>Data stays in your infrastructure</li><li>Use any model you like</li>"><li>Dữ liệu nằm trong hạ tầng của bạn</li><li>Chọn model nào cũng được</li></ul>
       </div>
       <div class="mode">
-        <h3>Chỉ trên máy</h3>
-        <span class="who">bạn cài: desktop app</span>
-        <p>Mọi thứ chạy trên máy, kể cả model qua Ollama. Có phím tắt để soạn câu trả lời ngay trong ô chat đang mở.</p>
-        <ul><li>Chạy được khi không có mạng</li><li>Không có telemetry</li></ul>
+        <h3 data-en="On-device only">Chỉ trên máy</h3>
+        <span class="who" data-en="you install: desktop app">bạn cài: desktop app</span>
+        <p data-en="Everything runs on your machine, models included via Ollama. A hotkey drafts an answer right in the chat box you have open.">Mọi thứ chạy trên máy, kể cả model qua Ollama. Có phím tắt để soạn câu trả lời ngay trong ô chat đang mở.</p>
+        <ul data-en="<li>Works offline</li><li>No telemetry</li>"><li>Chạy được khi không có mạng</li><li>Không có telemetry</li></ul>
       </div>
     </div>
   </div>
@@ -551,23 +565,23 @@ Quyết định: dùng pg-boss thay Redis cho hàng đợi.</textarea>
 <section class="band" id="cai-dat">
   <div class="in install">
     <div>
-      <div class="eyebrow">Cài đặt</div>
-      <h2>Kết nối trong hai phút.</h2>
+      <div class="eyebrow" data-en="Install">Cài đặt</div>
+      <h2 data-en="Connected in two minutes.">Kết nối trong hai phút.</h2>
       <ol style="margin-top:28px">
-        <li><div><b>Tải <code>pama</code></b><p>Bản cho macOS, Windows và Linux trên <a href="https://github.com/TrH203/pamA/releases">GitHub Releases</a>.</p></div></li>
-        <li><div><b>Đăng nhập</b><p>Lệnh mở trình duyệt; bạn đăng nhập bằng email rồi bấm duyệt mã hiện trên màn hình.</p></div></li>
-        <li><div><b>Bật cho một project</b><p>Từ giờ mỗi phiên kết thúc sẽ thành một bản nháp chờ bạn duyệt.</p></div></li>
+        <li><div data-en="<b>Download <code>pama</code></b><p>Builds for macOS, Windows and Linux on <a href=&quot;https://github.com/TrH203/pamA/releases&quot;>GitHub Releases</a>.</p>"><b>Tải <code>pama</code></b><p>Bản cho macOS, Windows và Linux trên <a href="https://github.com/TrH203/pamA/releases">GitHub Releases</a>.</p></div></li>
+        <li><div data-en="<b>Sign in</b><p>The command opens your browser; sign in with email, then approve the code shown on screen.</p>"><b>Đăng nhập</b><p>Lệnh mở trình duyệt; bạn đăng nhập bằng email rồi bấm duyệt mã hiện trên màn hình.</p></div></li>
+        <li><div data-en="<b>Enable for a project</b><p>From now on every finished session becomes a draft waiting for your review.</p>"><b>Bật cho một project</b><p>Từ giờ mỗi phiên kết thúc sẽ thành một bản nháp chờ bạn duyệt.</p></div></li>
       </ol>
     </div>
     <div class="shell">
-      <div class="bar win-bar" style="display:flex;align-items:center;gap:7px;padding:10px 14px;font:12px var(--f-mono);color:var(--term-dim);background:color-mix(in srgb, var(--term) 80%, #fff 6%)"><span>terminal</span><button class="copy" type="button" id="copy">Chép lệnh</button></div>
-<pre id="cmds"><span class="c"># 1. kết nối máy này với pamA Cloud</span>
+      <div class="bar win-bar" style="display:flex;align-items:center;gap:7px;padding:10px 14px;font:12px var(--f-mono);color:var(--term-dim);background:color-mix(in srgb, var(--term) 80%, #fff 6%)"><span>terminal</span><button class="copy" type="button" id="copy" data-en="Copy commands">Chép lệnh</button></div>
+<pre id="cmds"><span class="c" data-en="# 1. connect this machine to pamA Cloud"># 1. kết nối máy này với pamA Cloud</span>
 <span class="p">$ </span>pama login --server <span class="js-app-text">https://app.&lt;tên-miền&gt;</span>
 
-<span class="c"># 2. bật ghi phiên cho project hiện tại</span>
+<span class="c" data-en="# 2. enable session capture for the current project"># 2. bật ghi phiên cho project hiện tại</span>
 <span class="p">$ </span>cd ~/code/du-an &amp;&amp; pama init --sync
 
-<span class="c"># 3. kiểm tra mọi thứ</span>
+<span class="c" data-en="# 3. check everything"># 3. kiểm tra mọi thứ</span>
 <span class="p">$ </span>pama doctor</pre>
     </div>
   </div>
@@ -575,11 +589,11 @@ Quyết định: dùng pg-boss thay Redis cho hàng đợi.</textarea>
 
 <section class="closing alt band" style="padding:0">
   <div class="in">
-    <div class="eyebrow">Sẵn sàng</div>
-    <h2>Để AI của bạn trả lời. <span class="ini">Giữ bí mật</span> cho bạn.</h2>
+    <div class="eyebrow" data-en="Ready">Sẵn sàng</div>
+    <h2 data-en="Let your AI answer. <span class=&quot;ini&quot;>Keep the secrets</span> with you.">Để AI của bạn trả lời. <span class="ini">Giữ bí mật</span> cho bạn.</h2>
     <div class="cta">
-      <a class="btn solid js-app" href="#cai-dat">Mở pamA Cloud</a>
-      <a class="btn" href="https://github.com/TrH203/pamA">Đóng góp trên GitHub</a>
+      <a class="btn solid js-app" href="#cai-dat" data-en="Open pamA Cloud">Mở pamA Cloud</a>
+      <a class="btn" href="https://github.com/TrH203/pamA" data-en="Contribute on GitHub">Đóng góp trên GitHub</a>
     </div>
   </div>
 </section>
@@ -590,9 +604,9 @@ Quyết định: dùng pg-boss thay Redis cho hàng đợi.</textarea>
     <span>pamA · Please Ask my AI</span>
     <span>Apache-2.0</span>
     <a href="https://github.com/TrH203/pamA">GitHub</a>
-    <a href="https://github.com/TrH203/pamA/blob/main/docs/security-model.md">Mô hình bảo mật</a>
+    <a href="https://github.com/TrH203/pamA/blob/main/docs/security-model.md" data-en="Security model">Mô hình bảo mật</a>
     <a class="js-app" href="#cai-dat">Console</a>
-    <span class="sp">Không telemetry. Không quảng cáo.</span>
+    <span class="sp" data-en="No telemetry. No ads.">Không telemetry. Không quảng cáo.</span>
   </div>
 </footer>
 
@@ -613,16 +627,96 @@ Quyết định: dùng pg-boss thay Redis cho hàng đợi.</textarea>
     document.querySelectorAll(".js-app-text").forEach((s) => { s.textContent = app; });
   }
 
+  /* ---- language: Vietnamese is the markup; data-en holds the English twin ---- */
+  const STR = {
+    vi: {
+      copy: "Chép lệnh", copied: "Đã chép", copyFail: "Không chép được",
+      found: (n) => `đã che <b>${n}</b> mục`, none: "không thấy bí mật",
+      sample: `$ export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+$ git push https://ghp_1a2B3c4D5e6F7g8H9i0J1k2L3m4N5o6P7q8R@github.com/acme/api
+Gửi báo cáo cho minh.nguyen@acme.vn, gọi 0912345678 nếu lỗi
+DATABASE_URL=postgres://admin:S3cr3t-p4ss@db.internal:5432/app
+ANTHROPIC_API_KEY=sk-ant-api03-Xy9kQ2mN8vB4cL7pR1tW6zH3jF5gD0sA
+Quyết định: dùng pg-boss thay Redis cho hàng đợi.`,
+      chipEmail: "Liên hệ chị Hoa: hoa.tran@khachhang.com",
+      lines: [
+        { cls: "p", pre: "$ ", text: 'claude "thêm hàng đợi cho webhook Stripe"' },
+        { cls: "d", text: "● đọc src/billing/webhook.ts" },
+        { cls: "d", text: "● so sánh Redis + BullMQ với pg-boss…" },
+        { cls: "ok", text: "✓ chọn pg-boss: đã có Postgres, bớt một dịch vụ" }
+      ]
+    },
+    en: {
+      copy: "Copy commands", copied: "Copied", copyFail: "Copy failed",
+      found: (n) => `redacted <b>${n}</b> ${n === 1 ? "item" : "items"}`, none: "no secrets found",
+      sample: `$ export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+$ git push https://ghp_1a2B3c4D5e6F7g8H9i0J1k2L3m4N5o6P7q8R@github.com/acme/api
+Send the report to minh.nguyen@acme.vn, call 0912345678 if it breaks
+DATABASE_URL=postgres://admin:S3cr3t-p4ss@db.internal:5432/app
+ANTHROPIC_API_KEY=sk-ant-api03-Xy9kQ2mN8vB4cL7pR1tW6zH3jF5gD0sA
+Decision: use pg-boss instead of Redis for the queue.`,
+      chipEmail: "Contact Hoa: hoa.tran@khachhang.com",
+      lines: [
+        { cls: "p", pre: "$ ", text: 'claude "add a queue for the Stripe webhook"' },
+        { cls: "d", text: "● reading src/billing/webhook.ts" },
+        { cls: "d", text: "● comparing Redis + BullMQ with pg-boss…" },
+        { cls: "ok", text: "✓ chose pg-boss: Postgres already there, one less service" }
+      ]
+    }
+  };
+  let lang = "vi";
+  let animating = false;
+  try {
+    const saved = localStorage.getItem("pama-lang");
+    if (saved === "vi" || saved === "en") lang = saved;
+    else if (!/^vi/i.test(navigator.language || "vi")) lang = "en";
+  } catch (e) { /* storage blocked: default stays */ }
+  const t = () => STR[lang];
+  // Snapshot the Vietnamese originals now: the hero animation rewrites some of them later.
+  document.querySelectorAll("[data-en]").forEach((n) => {
+    n.setAttribute("data-vi", n.tagName === "META" ? n.content : n.innerHTML);
+  });
+  const pending = []; // callbacks that re-render dynamic bits after a switch
+
+  function applyLang(next) {
+    const prev = lang;
+    lang = next;
+    document.documentElement.lang = next;
+    const skip = animating ? new Set([document.getElementById("term"), document.getElementById("ans")]) : null;
+    document.querySelectorAll("[data-en]").forEach((n) => {
+      if (skip?.has(n)) return;
+      if (n.tagName === "META") {
+        if (!n.hasAttribute("data-vi")) n.setAttribute("data-vi", n.content);
+        n.content = next === "en" ? n.getAttribute("data-en") : n.getAttribute("data-vi");
+        return;
+      }
+      if (!n.hasAttribute("data-vi")) n.setAttribute("data-vi", n.innerHTML);
+      n.innerHTML = next === "en" ? n.getAttribute("data-en") : n.getAttribute("data-vi");
+    });
+    document.querySelectorAll("[data-en-aria-label]").forEach((n) => {
+      if (!n.hasAttribute("data-vi-aria-label")) n.setAttribute("data-vi-aria-label", n.getAttribute("aria-label"));
+      n.setAttribute("aria-label", next === "en" ? n.getAttribute("data-en-aria-label") : n.getAttribute("data-vi-aria-label"));
+    });
+    document.querySelectorAll("#lang button").forEach((b) => {
+      b.setAttribute("aria-pressed", String(b.dataset.lang === next));
+    });
+    for (const f of pending) f(prev);
+    try { localStorage.setItem("pama-lang", next); } catch (e) { /* ignore */ }
+  }
+  document.querySelectorAll("#lang button").forEach((b) => {
+    b.addEventListener("click", () => { if (b.dataset.lang !== lang) applyLang(b.dataset.lang); });
+  });
+
   /* ---- copy install commands ---- */
   const copy = document.getElementById("copy");
   copy.addEventListener("click", () => {
     const text = document.getElementById("cmds").textContent.split("\n")
       .filter((l) => /^\$ /.test(l))
       .map((l) => l.slice(2)).join("\n");
-    const done = () => { copy.textContent = "Đã chép"; setTimeout(() => { copy.textContent = "Chép lệnh"; }, 1600); };
+    const done = () => { copy.textContent = t().copied; setTimeout(() => { copy.textContent = t().copy; }, 1600); };
     try {
-      navigator.clipboard.writeText(text).then(done, () => { copy.textContent = "Không chép được"; });
-    } catch (e) { copy.textContent = "Không chép được"; }
+      navigator.clipboard.writeText(text).then(done, () => { copy.textContent = t().copyFail; });
+    } catch (e) { copy.textContent = t().copyFail; }
   });
 
   /* ---- live redaction demo (a few illustrative rules) ---- */
@@ -658,7 +752,7 @@ Quyết định: dùng pg-boss thay Redis cho hàng đợi.</textarea>
   function render() {
     const r = redact(raw.value);
     out.innerHTML = r.html;
-    count.innerHTML = r.n ? `đã che <b>${r.n}</b> mục` : "không thấy bí mật";
+    count.innerHTML = r.n ? t().found(r.n) : t().none;
   }
   raw.addEventListener("input", render);
   document.querySelectorAll(".chip[data-add]").forEach((b) => {
@@ -668,7 +762,17 @@ Quyết định: dùng pg-boss thay Redis cho hàng đợi.</textarea>
       render();
     });
   });
+  // Swap the sample log only while it is still the untouched default of the previous language.
+  pending.push((prev) => {
+    if (raw.value === STR[prev].sample) raw.value = t().sample;
+    const chip = document.querySelector(".chip[data-add-email]");
+    if (chip) chip.setAttribute("data-add", t().chipEmail);
+    render();
+  });
   render();
+  const initial = lang;
+  lang = "vi";
+  if (initial !== "vi") applyLang(initial);
 
   /* ---- hero: type the session, redact, digest, answer; loop ---- */
   if (reduce) return;
@@ -676,16 +780,17 @@ Quyết định: dùng pg-boss thay Redis cho hàng đợi.</textarea>
   const digest = document.getElementById("digest");
   const chat = document.getElementById("chat");
   const ans = document.getElementById("ans");
-  const answer = ans.textContent;
-  const lines = [
-    { cls: "p", pre: "$ ", text: 'claude "thêm hàng đợi cho webhook Stripe"' },
-    { cls: "d", text: "● đọc src/billing/webhook.ts" },
-    { cls: "d", text: "● so sánh Redis + BullMQ với pg-boss…" },
-    { cls: "p", pre: "$ ", text: "export DATABASE_URL=postgres://admin:", secret: "S3cr3t-p4ss", after: "@db.internal/app", label: "[SECRET:connection-password]" },
-    { cls: "p", pre: "$ ", text: "cat .env" },
-    { text: "", secret: "STRIPE_SECRET=sk_" + "live_51HqLyjWDarjtT1zdp7", label: "[DROPPED:dotenv-file-read]" },
-    { cls: "ok", text: "✓ chọn pg-boss: đã có Postgres, bớt một dịch vụ" }
-  ];
+  const getAnswer = () => (lang === "en" ? ans.getAttribute("data-en") : ans.getAttribute("data-vi")) || ans.textContent;
+  const getLines = () => {
+    const L = t().lines;
+    return [
+      L[0], L[1], L[2],
+      { cls: "p", pre: "$ ", text: "export DATABASE_URL=postgres://admin:", secret: "S3cr3t-p4ss", after: "@db.internal/app", label: "[SECRET:connection-password]" },
+      { cls: "p", pre: "$ ", text: "cat .env" },
+      { text: "", secret: "STRIPE_SECRET=sk_" + "live_51HqLyjWDarjtT1zdp7", label: "[DROPPED:dotenv-file-read]" },
+      L[3]
+    ];
+  };
   const sleep = (ms) => new Promise((r) => { setTimeout(r, ms); });
   let visible = true;
   document.addEventListener("visibilitychange", () => { visible = !document.hidden; });
@@ -695,8 +800,11 @@ Quyết định: dùng pg-boss thay Redis cho hàng đợi.</textarea>
     for (let i = 0; i < text.length; i++) { node.textContent += text[i]; await sleep(speed); }
   }
   async function run() {
+    animating = true;
     while (true) {
       while (!visible) await sleep(500);
+      const lines = getLines();
+      const answer = getAnswer();
       term.textContent = "";
       digest.classList.add("off");
       chat.classList.add("off");

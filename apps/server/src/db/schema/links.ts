@@ -137,6 +137,8 @@ export const asks = pgTable(
     }>(),
     ownerReply: text("owner_reply"),
     ownerRepliedAt: ts("owner_replied_at"),
+    /** Suggested reply for the owner's inbox; never shown to visitors. */
+    draftAnswer: text("draft_answer"),
     /** Asker feedback after an answer (SC-006): true useful, false not useful. */
     useful: boolean("useful"),
     createdAt: ts("created_at").notNull().defaultNow(),

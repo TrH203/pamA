@@ -8,12 +8,14 @@ mod hook;
 mod inbox;
 mod init;
 mod link;
+mod login;
+mod model;
 mod review;
 mod scan;
 mod server;
 mod sync;
 
-use pama_core::client::ApiError;
+use pama_core::client::{Api, ApiError};
 use pama_core::store::Store;
 
 use crate::{Cli, Command, Exit};
@@ -21,9 +23,28 @@ use crate::{Cli, Command, Exit};
 pub struct Ctx {
     pub json: bool,
     pub store: Store,
+    /// `--server`: a remote server for this command.
+    pub server: Option<String>,
 }
 
 impl Ctx {
+    /// The server an owner command talks to (`Api::resolve`). For a remote server, review
+    /// decisions made there are pulled into the device copies first (at most once a minute).
+    pub fn api(&self) -> Result<Api<'_>, ApiError> {
+        pama_core::secrets::init_platform_store();
+        let api = Api::resolve(&self.store, "cli", self.server.as_deref())?;
+        if api.remote_url().is_some() {
+            if let Err(e) = pama_core::remote::pull_changes(&self.store, &api, false) {
+                if matches!(e, ApiError::Status { status: 401, .. }) {
+                    return Err(ApiError::NotLoggedIn(
+                        api.remote_url().unwrap_or_default().to_string(),
+                    ));
+                }
+            }
+        }
+        Ok(api)
+    }
+
     pub fn print(&self, value: &serde_json::Value, human: impl FnOnce() -> String) {
         if self.json {
             println!("{}", serde_json::to_string_pretty(value).expect("json"));
@@ -41,6 +62,7 @@ pub fn api_exit(e: &ApiError) -> Exit {
     eprintln!("error: {e}");
     match e {
         ApiError::NotRunning | ApiError::Net(_) => Exit::Network,
+        ApiError::NotLoggedIn(_) => Exit::Config,
         ApiError::Status {
             status: 401 | 403, ..
         } => Exit::Config,
@@ -54,6 +76,7 @@ pub fn run(cli: Cli) -> anyhow::Result<Exit> {
     let ctx = Ctx {
         json: cli.global.json,
         store,
+        server: cli.global.server.clone(),
     };
     match cli.command {
         Command::Hook { agent } => hook::run(&ctx, agent),
@@ -63,7 +86,12 @@ pub fn run(cli: Cli) -> anyhow::Result<Exit> {
             agent,
             global,
             project_scope,
-        } => init::run(&ctx, project, agent, global, project_scope),
+            mode,
+            sync,
+        } => init::run(&ctx, project, agent, global, project_scope, mode, sync),
+        Command::Login { no_browser } => login::login(&ctx, no_browser),
+        Command::Logout { discard_pending } => login::logout(&ctx, discard_pending),
+        Command::Mode { mode } => login::mode(&ctx, mode),
         Command::Scan { since } => scan::run(&ctx, since),
         Command::Review {
             approve,
@@ -71,14 +99,16 @@ pub fn run(cli: Cli) -> anyhow::Result<Exit> {
             edit,
         } => review::run(&ctx, approve, discard, edit),
         Command::Server { action } => server::run(&ctx, action),
+        Command::Console { print } => server::console(&ctx, print),
         Command::Config { action } => config::run(&ctx, action),
         Command::Link { action } => link::run(&ctx, action),
+        Command::Model { device, action } => model::run(&ctx, device, action),
         Command::Inbox => inbox::inbox(&ctx),
         Command::Reply { ask_id, text } => inbox::reply(&ctx, &ask_id, &text),
         Command::Log { link, status } => inbox::log(&ctx, link, status),
         Command::Pair { code, server } => sync::pair(&ctx, &code, &server),
         Command::Sync { action } => sync::run(&ctx, action),
-        Command::Doctor => doctor::run(&ctx),
+        Command::Doctor { report } => doctor::run(&ctx, report),
     }
 }
 

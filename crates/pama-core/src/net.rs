@@ -45,7 +45,7 @@ impl Policy {
     }
 }
 
-fn host_port(url: &str) -> Result<(String, Option<u16>), NetError> {
+pub fn host_port(url: &str) -> Result<(String, Option<u16>), NetError> {
     let rest = url
         .split_once("://")
         .map(|(_, r)| r)

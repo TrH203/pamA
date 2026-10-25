@@ -36,7 +36,8 @@ pub struct Global {
     /// Machine-readable output on stdout.
     #[arg(long, global = true)]
     pub json: bool,
-    /// Server URL (default: the local sidecar).
+    /// Remote server for this command (one you are logged in to); default: the server chosen at
+    /// login in remote mode, else the local server.
     #[arg(long, global = true)]
     pub server: Option<String>,
     /// Verbosity (repeat for more).
@@ -65,6 +66,31 @@ pub enum Command {
         /// Allow editing committed project settings.
         #[arg(long)]
         project_scope: bool,
+        /// Where this machine sends its work: everything local, or a remote server (asked
+        /// interactively on a fresh install).
+        #[arg(long, value_enum)]
+        mode: Option<ModeArg>,
+        /// Remote mode: turn on sync for this project without asking.
+        #[arg(long)]
+        sync: bool,
+    },
+    /// Connect this machine to a remote pamA server (browser approval). Give the server with
+    /// `--server <url>` (default: $PAMA_CLOUD_URL).
+    Login {
+        /// Print the approval link instead of opening a browser.
+        #[arg(long)]
+        no_browser: bool,
+    },
+    /// Disconnect this machine from a remote server (`--server`, default: the default server).
+    Logout {
+        /// Drop drafts and deletions not yet delivered to that server.
+        #[arg(long)]
+        discard_pending: bool,
+    },
+    /// Show or change where this machine works: local or remote.
+    Mode {
+        #[arg(value_enum)]
+        mode: Option<ModeArg>,
     },
     /// Hook entrypoint called by the coding agents.
     Hook {
@@ -112,13 +138,31 @@ pub enum Command {
         #[arg(long)]
         server: String,
     },
+    /// Open the owner console in the browser (starts the local server if needed).
+    Console {
+        /// Print the link instead of opening it.
+        #[arg(long)]
+        print: bool,
+    },
     /// Manage the local server.
     Server {
         #[command(subcommand)]
         action: ServerAction,
     },
+    /// Configure, check and switch the chat and embedding models.
+    Model {
+        /// The drafting model on this machine (remote mode) instead of the server's models.
+        #[arg(long)]
+        device: bool,
+        #[command(subcommand)]
+        action: ModelAction,
+    },
     /// Check hooks, models, permissions and offline config.
-    Doctor,
+    Doctor {
+        /// Internal: full report as one JSON object, for the console.
+        #[arg(long, hide = true)]
+        report: bool,
+    },
     /// Read or change settings.
     Config {
         #[command(subcommand)]
@@ -130,6 +174,12 @@ pub enum Command {
         #[command(subcommand)]
         action: CaptureAction,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum ModeArg {
+    Local,
+    Remote,
 }
 
 #[derive(Debug, Subcommand)]
@@ -205,6 +255,79 @@ pub enum ServerAction {
     },
     Stop,
     Status,
+}
+
+const ROLES: [&str; 3] = ["chat", "small", "embed"];
+
+#[derive(Debug, Subcommand)]
+pub enum ModelAction {
+    /// Show the model setup (provider, local/cloud, model, key state, status).
+    Show,
+    /// Set provider and model for a role.
+    Set(ModelSet),
+    /// Switch a role between local and cloud.
+    Switch {
+        #[arg(value_parser = ROLES)]
+        role: String,
+        #[arg(value_enum)]
+        target: SwitchTarget,
+        /// Provider for cloud (default: anthropic; embed: openai-compatible).
+        #[arg(long)]
+        provider: Option<String>,
+        /// Model (default: keep the current one when switching to local).
+        #[arg(long)]
+        model: Option<String>,
+        #[arg(long)]
+        base_url: Option<String>,
+        /// Read the API key from stdin.
+        #[arg(long)]
+        key_stdin: bool,
+        /// Confirm data-leaves-machine and re-index prompts.
+        #[arg(long)]
+        yes: bool,
+        /// Save even if the check fails.
+        #[arg(long)]
+        force: bool,
+    },
+    /// Check status and compatibility of one role or all.
+    Check {
+        #[arg(value_parser = ROLES)]
+        role: Option<String>,
+    },
+    /// Go back to the previous configuration of a role.
+    Revert {
+        #[arg(value_parser = ROLES)]
+        role: String,
+    },
+    /// Guided setup (interactive terminal).
+    Setup,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum SwitchTarget {
+    Local,
+    Cloud,
+}
+
+#[derive(Debug, Args)]
+pub struct ModelSet {
+    #[arg(value_parser = ROLES)]
+    pub role: String,
+    #[arg(long, value_parser = ["ollama", "openai-compatible", "openrouter", "anthropic"])]
+    pub provider: String,
+    #[arg(long)]
+    pub model: String,
+    #[arg(long)]
+    pub base_url: Option<String>,
+    /// Read the API key from stdin (never pass keys as arguments).
+    #[arg(long)]
+    pub key_stdin: bool,
+    /// Confirm data-leaves-machine and re-index prompts.
+    #[arg(long)]
+    pub yes: bool,
+    /// Save even if the check fails.
+    #[arg(long)]
+    pub force: bool,
 }
 
 #[derive(Debug, Subcommand)]

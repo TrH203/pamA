@@ -1,0 +1,70 @@
+# pamA Cloud on one small VM (Lightsail 2 GB): Postgres + pgvector in a container, the server image
+# from ghcr.io, Caddy for HTTPS and the landing page. Embeddings come from an API, so no Ollama runs here.
+#   cp deploy/cloud/.env.example deploy/cloud/.env && $EDITOR deploy/cloud/.env
+#   docker compose -f deploy/cloud/docker-compose.yml up -d
+# See docs/deploy-cloud.md.
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/cloud/.env}
+      POSTGRES_DB: pama
+      PAMA_DB_PASSWORD: ${PAMA_DB_PASSWORD:?set PAMA_DB_PASSWORD in deploy/cloud/.env}
+    # Sized for a 2 GB VM shared with the server.
+    command: ["postgres", "-c", "shared_buffers=256MB", "-c", "max_connections=50"]
+    volumes:
+      - pama-db:/var/lib/postgresql/data
+      - ../initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d pama"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  server:
+    # A pinned release tag; falls back to building from this checkout if the image is missing.
+    image: ${PAMA_IMAGE:-ghcr.io/trh203/pama/server:latest}
+    build:
+      context: ../..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      PAMA_MODE: cloud
+      PAMA_BASE_URL: https://${PAMA_DOMAIN:?set PAMA_DOMAIN in deploy/cloud/.env}
+      DATABASE_URL: postgres://pama_server:${PAMA_DB_PASSWORD}@db:5432/pama
+      NODE_OPTIONS: --max-old-space-size=768
+    # No published port: only Caddy reaches the server, so X-Forwarded-For cannot be spoofed.
+    expose:
+      - "7465"
+    volumes:
+      - pama-data:/data
+
+  caddy:
+    image: caddy:2.8
+    restart: unless-stopped
+    depends_on:
+      - server
+    environment:
+      PAMA_DOMAIN: ${PAMA_DOMAIN}
+      PAMA_LANDING_DOMAIN: ${PAMA_LANDING_DOMAIN:?set PAMA_LANDING_DOMAIN in deploy/cloud/.env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../../landing:/srv/landing:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  pama-db:
+  pama-data:
+  caddy-data:
+  caddy-config:

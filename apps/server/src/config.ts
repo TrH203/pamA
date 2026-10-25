@@ -9,7 +9,7 @@ import { z } from "zod";
 export const VERSION = "0.1.0";
 
 const ProviderSchema = z.object({
-  provider: z.enum(["anthropic", "openai-compatible", "ollama", "fake"]),
+  provider: z.enum(["anthropic", "openai-compatible", "openrouter", "ollama", "fake"]),
   model: z.string().min(1),
   baseUrl: z.url().optional(),
   apiKey: z.string().optional(),

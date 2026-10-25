@@ -45,3 +45,18 @@ CREATE TABLE IF NOT EXISTS network_log (
   purpose   TEXT NOT NULL,
   allowed   INTEGER NOT NULL
 );
+
+-- Thin client (spec 004): the device's copy of every digest it drafted for a remote server. The
+-- device is the source of truth; review decisions made on the server are pulled back into it.
+CREATE TABLE IF NOT EXISTS remote_digest (
+  target            TEXT NOT NULL,
+  agent             TEXT NOT NULL,
+  agent_session_id  TEXT NOT NULL,
+  project_key       TEXT NOT NULL,
+  digest            TEXT NOT NULL,
+  status            TEXT NOT NULL CHECK (status IN ('draft', 'approved', 'discarded', 'deleted')),
+  server_digest_id  TEXT,
+  version           INTEGER,
+  updated_at        INTEGER NOT NULL,
+  PRIMARY KEY (target, agent, agent_session_id)
+);

@@ -29,7 +29,10 @@ export PAMA_SERVER_CMD="node --import tsx $PWD/apps/server/src/index.ts"   # unt
 
 # 2. Models: local (Ollama) or Anthropic
 ollama pull bge-m3 && ollama pull qwen3:14b
-#   or: pama config set provider.chat.provider anthropic && pama config set provider.anthropic.key sk-...
+#   or switch with the CLI / console Settings tab:
+#     pama model show
+#     echo "$KEY" | pama model switch chat cloud --model claude-sonnet-5-5 --key-stdin --yes
+#     pama model check
 
 # 3. Turn on capture in a project and work as usual
 cd ~/code/my-project && pama init
@@ -43,6 +46,20 @@ pama review --approve <id>
 pama link create --suggest "refund shipping fee" --access pin
 #   → https://…/a/xxxxxxxx  PIN: 123456
 ```
+
+### Or: only the `pama` command, with a pamA server (remote mode)
+
+If your team runs a pamA server ([cloud](docs/deploy-cloud.md) or [self-host](docs/self-host.md)),
+you need nothing but the `pama` binary — no Node, no local database:
+
+```bash
+pama login --server https://pama.example.com   # approve in the browser
+cd ~/code/my-project && pama init --sync        # drafts of this project go to the server
+pama model --device show                        # the model that drafts on your machine (Ollama by default)
+```
+
+Sessions are still read and redacted on your machine, and the digest is drafted there; only the
+draft goes to the server, where you review it (`pama review` or the web console).
 
 Want to look around first? `pnpm --filter @pama/server demo` starts a server with sample data and
 prints a console URL and two Ask Links (offline models, nothing to install).
@@ -71,7 +88,7 @@ prints a console URL and two Ask Links (offline models, nothing to install).
 | `rules/`, `prompts/`, `evals/` | shared redaction rules, versioned prompts, red-team suite |
 
 Docs: [security model](docs/security-model.md) · [threat model](docs/threat-model.md) ·
-[self-host](docs/self-host.md) · [local links](docs/local-links.md) · [agents](docs/agents.md) ·
+[self-host](docs/self-host.md) · [cloud server](docs/deploy-cloud.md) · [local links](docs/local-links.md) · [agents](docs/agents.md) ·
 [spec & plan](specs/001-pama-mvp/).
 
 ## Develop

@@ -1,15 +1,17 @@
 //! `pama pair <code> --server <url>` and `pama sync status|enable|disable` (contracts/cli.md).
 //! Sync is off by default and opt-in per project or bundle; disabling issues tombstones.
 
-use pama_core::client::{policy_from, LocalApi};
+use pama_core::client::{policy_from, Api};
 use pama_core::net::GuardedClient;
+use pama_core::remote;
+use pama_core::store::OutboxKind;
 use pama_core::sync::{sync_once, token_key};
 use serde_json::{json, Value};
 
 use super::{api_exit, Ctx};
 use crate::{Exit, SyncAction, SyncTarget};
 
-pub const KEY_DEFAULT_TARGET: &str = "sync.default_target";
+pub const KEY_DEFAULT_TARGET: &str = remote::KEY_DEFAULT_TARGET;
 
 pub fn pair(ctx: &Ctx, code: &str, server: &str) -> anyhow::Result<Exit> {
     pama_core::secrets::init_platform_store();
@@ -46,7 +48,7 @@ pub fn pair(ctx: &Ctx, code: &str, server: &str) -> anyhow::Result<Exit> {
     Ok(Exit::Ok)
 }
 
-fn status(ctx: &Ctx, api: &LocalApi) -> anyhow::Result<Exit> {
+fn status(ctx: &Ctx, api: &Api) -> anyhow::Result<Exit> {
     let v = match api.get("/v1/sync/status", "sync.status") {
         Ok(v) => v,
         Err(e) => return Ok(api_exit(&e)),
@@ -85,7 +87,7 @@ fn status(ctx: &Ctx, api: &LocalApi) -> anyhow::Result<Exit> {
     Ok(Exit::Ok)
 }
 
-fn set(ctx: &Ctx, api: &LocalApi, t: &SyncTarget, enabled: bool) -> anyhow::Result<Exit> {
+fn set(ctx: &Ctx, api: &Api, t: &SyncTarget, enabled: bool) -> anyhow::Result<Exit> {
     let target = t.target.clone().or(ctx.store.setting(KEY_DEFAULT_TARGET)?);
     if enabled && target.is_none() {
         eprintln!("error: no target server; pair first (`pama pair <code> --server <url>`) or pass --target");
@@ -130,12 +132,118 @@ fn set(ctx: &Ctx, api: &LocalApi, t: &SyncTarget, enabled: bool) -> anyhow::Resu
     Ok(Exit::Ok)
 }
 
+/// `--project` in remote mode: a directory (resolved to its project keys) or a project key.
+fn project_keys(arg: &str) -> Vec<String> {
+    if std::path::Path::new(arg).is_dir() {
+        return remote::project_keys(arg)
+            .into_iter()
+            .map(|p| p.key)
+            .collect();
+    }
+    vec![arg.to_string()]
+}
+
+/// Remote mode (spec 004): sync is a list of projects on this device; turning one off sends a
+/// tombstone so the server deletes its copies (the device always wins).
+fn run_remote(ctx: &Ctx, api: &Api, action: SyncAction) -> anyhow::Result<Exit> {
+    let server = api.remote_url().unwrap_or_default().to_string();
+    match action {
+        SyncAction::Status => {
+            let _ = remote::pull_changes(&ctx.store, api, true);
+            let counts = ctx.store.outbox_counts()?;
+            let mut by_status = std::collections::BTreeMap::<String, usize>::new();
+            for d in ctx.store.remote_digests(&server)? {
+                *by_status.entry(d.status).or_default() += 1;
+            }
+            let projects = remote::sync_projects(&ctx.store);
+            ctx.print(
+                &json!({ "mode": "remote", "server": server, "projects": projects, "digests": by_status, "outbox": counts }),
+                || {
+                    let mut lines = vec![format!("remote mode → {server}")];
+                    if projects.is_empty() {
+                        lines.push("no project sends drafts yet (`pama init --sync`)".into());
+                    }
+                    for p in &projects {
+                        lines.push(format!("● {p}"));
+                    }
+                    let digests: Vec<String> =
+                        by_status.iter().map(|(k, v)| format!("{v} {k}")).collect();
+                    if !digests.is_empty() {
+                        lines.push(format!("digests on this device: {}", digests.join(", ")));
+                    }
+                    lines.push(format!(
+                        "\noutbox: {} pending, {} sent, {} failed",
+                        counts.pending, counts.sent, counts.dead
+                    ));
+                    lines.join("\n")
+                },
+            );
+            Ok(Exit::Ok)
+        }
+        SyncAction::Enable(t) | SyncAction::Disable(t) if t.bundle.is_some() => {
+            let _ = t;
+            eprintln!("error: in remote mode sync is per project (--project <dir|key>)");
+            Ok(Exit::User)
+        }
+        SyncAction::Enable(t) | SyncAction::Disable(t) if t.project.is_none() => {
+            let _ = t;
+            eprintln!("error: give --project <dir|key> (see `pama sync status`)");
+            Ok(Exit::User)
+        }
+        SyncAction::Enable(t) => {
+            let keys = project_keys(t.project.as_deref().unwrap_or_default());
+            for k in &keys {
+                remote::set_project_sync(&ctx.store, k, true)?;
+            }
+            let key = keys[0].clone();
+            ctx.print(&json!({ "project": key, "enabled": true }), || {
+                format!("drafts of {key} go to {server} from now on")
+            });
+            Ok(Exit::Ok)
+        }
+        SyncAction::Disable(t) => {
+            let keys = project_keys(t.project.as_deref().unwrap_or_default());
+            for k in &keys {
+                remote::set_project_sync(&ctx.store, k, false)?;
+                ctx.store.mark_remote_project_deleted(&server, k)?;
+                ctx.store.outbox_push(
+                    OutboxKind::SourceTombstone,
+                    &server,
+                    &json!({ "source_type": "project", "source_key": k }),
+                )?;
+            }
+            let key = keys[0].clone();
+            let report = pama_core::sync::deliver_due(
+                &ctx.store,
+                &pama_core::sync::HttpRemote::new(&ctx.store),
+            )?;
+            ctx.print(
+                &json!({ "project": key, "enabled": false, "delivery": report }),
+                || {
+                    format!(
+                        "sync off for {key}; the server copies {}",
+                        if report.retrying > 0 {
+                            "will be deleted when the server is reachable"
+                        } else {
+                            "are deleted"
+                        }
+                    )
+                },
+            );
+            Ok(Exit::Ok)
+        }
+    }
+}
+
 pub fn run(ctx: &Ctx, action: SyncAction) -> anyhow::Result<Exit> {
     pama_core::secrets::init_platform_store();
-    let api = match LocalApi::connect(&ctx.store, "cli") {
+    let api = match ctx.api() {
         Ok(a) => a,
         Err(e) => return Ok(api_exit(&e)),
     };
+    if api.remote_url().is_some() {
+        return run_remote(ctx, &api, action);
+    }
     match action {
         SyncAction::Status => status(ctx, &api),
         SyncAction::Enable(t) => set(ctx, &api, &t, true),

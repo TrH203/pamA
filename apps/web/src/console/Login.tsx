@@ -11,7 +11,9 @@ export function Login() {
     e.preventDefault();
     setError(null);
     try {
-      await api("/v1/auth/login", { json: { email } });
+      // Come back to the same page (e.g. a device approval) after following the email link.
+      const next = location.pathname + location.search;
+      await api("/v1/auth/login", { json: next === "/" ? { email } : { email, next } });
       setSent(true);
     } catch (err) {
       setError((err as Error).message);

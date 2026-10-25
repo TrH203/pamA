@@ -1,5 +1,6 @@
-//! Talking to the local server from the device (CLI, desktop): base URL + per-launch token from
-//! `server.json`, every request through the egress guard.
+//! Talking to a pamA server from the device (CLI, desktop), every request through the egress
+//! guard: the local server (base URL + per-launch token from `server.json`) or, in remote mode
+//! (thin client, spec 004), a remote server with this device's token from the OS keychain.
 
 use serde_json::Value;
 
@@ -38,6 +39,8 @@ pub enum ApiError {
     Net(#[from] NetError),
     #[error("server returned {status}: {body}")]
     Status { status: u16, body: String },
+    #[error("not logged in to {0} (run `pama login --server {0}`)")]
+    NotLoggedIn(String),
 }
 
 impl ApiError {
@@ -45,26 +48,94 @@ impl ApiError {
         match self {
             ApiError::NotRunning | ApiError::Net(_) => true,
             ApiError::Status { status, .. } => *status >= 500 || *status == 429,
+            ApiError::NotLoggedIn(_) => false,
         }
     }
 }
 
-pub struct LocalApi<'s> {
+pub struct Api<'s> {
     client: GuardedClient<'s>,
     info: ServerInfo,
+    /// Set for a remote server: its normalized base URL.
+    remote: Option<String>,
 }
 
-impl<'s> LocalApi<'s> {
+/// Kept for the local-only call sites (sidecar health, sync collection).
+pub type LocalApi<'s> = Api<'s>;
+
+impl<'s> Api<'s> {
+    /// The local server on this machine.
     pub fn connect(store: &'s Store, component: &'static str) -> Result<Self, ApiError> {
         let info = ServerInfo::load().ok_or(ApiError::NotRunning)?;
         Ok(Self {
             client: GuardedClient::new(policy_from(store), store, component),
             info,
+            remote: None,
         })
+    }
+
+    /// A remote server this device is logged in to.
+    pub fn remote(
+        store: &'s Store,
+        component: &'static str,
+        server: &str,
+    ) -> Result<Self, ApiError> {
+        let url = crate::remote::normalize(server);
+        let token = crate::secrets::get(&crate::sync::token_key(&url))
+            .ok()
+            .flatten()
+            .ok_or_else(|| ApiError::NotLoggedIn(url.clone()))?;
+        Ok(Self {
+            client: GuardedClient::new(policy_from(store), store, component),
+            info: ServerInfo {
+                url: url.clone(),
+                token,
+                pid: 0,
+            },
+            remote: Some(url),
+        })
+    }
+
+    /// What an owner command talks to: `server` if given, else the remote default server in
+    /// remote mode, else the local server.
+    pub fn resolve(
+        store: &'s Store,
+        component: &'static str,
+        server: Option<&str>,
+    ) -> Result<Self, ApiError> {
+        match server.map(str::to_string).or_else(|| {
+            (crate::remote::mode(store) == crate::remote::Mode::Remote)
+                .then(|| crate::remote::default_server(store))
+                .flatten()
+        }) {
+            Some(url) => Self::remote(store, component, &url),
+            None if crate::remote::mode(store) == crate::remote::Mode::Remote => {
+                Err(ApiError::NotLoggedIn("a pamA server".into()))
+            }
+            None => Self::connect(store, component),
+        }
+    }
+
+    /// The remote server's base URL, or `None` for the local server.
+    pub fn remote_url(&self) -> Option<&str> {
+        self.remote.as_deref()
+    }
+
+    pub fn base_url(&self) -> &str {
+        self.info.url.trim_end_matches('/')
     }
 
     pub fn url(&self, path: &str) -> String {
         format!("{}{}", self.info.url.trim_end_matches('/'), path)
+    }
+
+    fn not_running(&self, e: NetError) -> ApiError {
+        match e {
+            NetError::Http(ref h) if h.is_connect() && self.remote.is_none() => {
+                ApiError::NotRunning
+            }
+            other => ApiError::Net(other),
+        }
     }
 
     fn handle(resp: reqwest::blocking::Response) -> Result<Value, ApiError> {
@@ -80,10 +151,7 @@ impl<'s> LocalApi<'s> {
         let r = self
             .client
             .get(&self.url(path), purpose, Some(&self.info.token))
-            .map_err(|e| match e {
-                NetError::Http(ref h) if h.is_connect() => ApiError::NotRunning,
-                other => ApiError::Net(other),
-            })?;
+            .map_err(|e| self.not_running(e))?;
         Self::handle(r)
     }
 
@@ -91,10 +159,7 @@ impl<'s> LocalApi<'s> {
         let r = self
             .client
             .post_json(&self.url(path), purpose, Some(&self.info.token), body)
-            .map_err(|e| match e {
-                NetError::Http(ref h) if h.is_connect() => ApiError::NotRunning,
-                other => ApiError::Net(other),
-            })?;
+            .map_err(|e| self.not_running(e))?;
         Self::handle(r)
     }
 
@@ -111,12 +176,25 @@ impl<'s> LocalApi<'s> {
         Self::handle(r)
     }
 
+    pub fn put(&self, path: &str, purpose: &str, body: &Value) -> Result<Value, ApiError> {
+        self.client.check(&self.url(path), purpose)?;
+        let r = self
+            .client
+            .raw()
+            .put(self.url(path))
+            .bearer_auth(&self.info.token)
+            .json(body)
+            .send()
+            .map_err(|e| ApiError::Net(NetError::Http(e)))?;
+        Self::handle(r)
+    }
+
     pub fn healthy(&self) -> bool {
         self.get("/v1/health", "health").is_ok()
     }
 }
 
-impl DigestSink for LocalApi<'_> {
+impl DigestSink for Api<'_> {
     fn submit(&self, body: &Value) -> Result<Value, SinkError> {
         self.post("/v1/transcripts/digest", "capture.digest", body)
             .map_err(|e| {

@@ -20,6 +20,10 @@ install:
 	cp -R target/release/bundle/macos/$(APP_NAME).app "$(APP_DEST)"
 	mkdir -p $(BIN_DIR)
 	cp target/release/pama $(BIN_DIR)/pama
+	@# Stable signature so the keychain's "Always Allow" survives rebuilds (scripts/sign.sh).
+	scripts/sign.sh dev.pama.server "$(APP_RES)/MacOS/pama-server"
+	scripts/sign.sh dev.pama.desktop "$(APP_DEST)"
+	scripts/sign.sh dev.pama.cli $(BIN_DIR)/pama
 	@# The CLI starts `pama-server` next to itself; point it at the server bundled in the app.
 	printf '%s\n' '#!/bin/sh' \
 	  'R="$(APP_RES)"' \

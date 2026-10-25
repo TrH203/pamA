@@ -101,7 +101,8 @@ function DraftCard({ d, onDone }: { d: Draft; onDone: () => void }) {
           {d.project} <span className="font-normal text-stone-500">/ {d.bundle}</span>
         </h3>
         <span className="text-xs text-stone-500">
-          {d.content.source.agent.replace("_", " ")} · {new Date(d.created_at).toLocaleString()}
+          {d.content.source.agent.replace("_", " ")}
+          {d.device ? ` · from ${d.device}` : ""} · {new Date(d.created_at).toLocaleString()}
         </span>
       </header>
       {editing ? (

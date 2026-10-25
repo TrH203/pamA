@@ -1,0 +1,17 @@
+# HTTPS for pamA Cloud. Caddy gets and renews the certificates itself once DNS points here.
+# Without a domain, use sslip.io names built from the VM's IP (13.212.5.9 → 13-212-5-9.sslip.io).
+
+# Landing page: static files from landing/ in this checkout (`git pull` updates it).
+{$PAMA_LANDING_DOMAIN} {
+	encode zstd gzip
+	root * /srv/landing
+	file_server
+	header Cache-Control "public, max-age=300"
+}
+
+# Console, API, Ask Links. Caddy replaces any X-Forwarded-For sent by clients with the real
+# address, which the server uses for Ask Link lockouts.
+{$PAMA_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy server:7465
+}

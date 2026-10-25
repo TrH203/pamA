@@ -1,0 +1,5 @@
+# Keep LF everywhere: prompts, rules and test fixtures are compared byte for byte, and the
+# Rust side embeds some of them with include_str!. Windows checkouts would otherwise get CRLF.
+* text=auto eol=lf
+*.ico binary
+*.png binary

@@ -22,3 +22,7 @@ Global flags: `--json` (machine output on stdout), `--server <url>` (default: lo
 | `pama config set <key> <value>` | `provider.*`, `strict_offline`, `declared_hosts`, `hotkey.answer_source` | Secrets go to keychain |
 
 `--json` output schemas mirror the HTTP API response bodies.
+
+> Remote mode (thin client): `pama login`, `pama logout`, `pama mode`, `pama init --mode/--sync`,
+> `pama model --device` and the remote behaviour of existing commands are specified in
+> [specs/004-thin-client/contracts/cli.md](../../004-thin-client/contracts/cli.md).

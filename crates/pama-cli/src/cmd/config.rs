@@ -28,9 +28,9 @@ fn is_secret(key: &str) -> bool {
 fn validate(key: &str, value: &str) -> Result<(), String> {
     match key {
         "provider.chat.provider" | "provider.embed.provider"
-            if !["anthropic", "openai-compatible", "ollama"].contains(&value) =>
+            if !["anthropic", "openai-compatible", "openrouter", "ollama"].contains(&value) =>
         {
-            Err("provider must be anthropic, openai-compatible or ollama".into())
+            Err("provider must be anthropic, openai-compatible, openrouter or ollama".into())
         }
         "hotkey.answer_source" if !["local", "server", "auto"].contains(&value) => {
             Err("answer_source must be local, server or auto".into())
@@ -68,7 +68,7 @@ pub fn run(ctx: &Ctx, action: ConfigAction) -> anyhow::Result<Exit> {
         }
         ConfigAction::Get { key } => {
             if is_secret(&key) {
-                let set = pama_core::secrets::get(&key)?.is_some();
+                let set = pama_core::secrets::exists(&key)?;
                 ctx.print(&json!({ "key": key, "set": set }), || {
                     format!("{key} is {}", if set { "set (hidden)" } else { "not set" })
                 });

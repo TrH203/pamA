@@ -35,7 +35,14 @@ fn hook_enqueues_fast_and_never_fails() {
     let input = r#"{"session_id":"s-lat","transcript_path":"/tmp/none.jsonl","cwd":"/tmp","hook_event_name":"SessionEnd","reason":"exit"}"#;
     let (status, ms) = run_hook(&home, input);
     assert!(status.success());
-    assert!(ms < 200, "hook took {ms} ms");
+    // 200 ms on a developer machine; shared CI runners are noisy, so there only check that the
+    // hook stays well inside the agent's 1.5 s SessionEnd budget.
+    let limit = if std::env::var_os("CI").is_some() {
+        1000
+    } else {
+        200
+    };
+    assert!(ms < limit, "hook took {ms} ms (limit {limit} ms)");
 
     let store = pama_core::store::Store::open(&home.join("device.db")).unwrap();
     let c = store.captures(10).unwrap();

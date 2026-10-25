@@ -1,15 +1,15 @@
-//! `pama doctor`: check that capture, the local server, models, permissions and offline settings
-//! are in order, and say how to fix what is not.
+//! `pama doctor`: check that capture, the local (or remote) server, models, permissions and
+//! offline settings are in order, and say how to fix what is not.
 
 use std::path::Path;
 
 use pama_core::capture::{KEY_CAPTURE_ALL, KEY_CAPTURE_PROJECTS};
-use pama_core::client::{LocalApi, KEY_DECLARED_HOSTS, KEY_STRICT_OFFLINE};
+use pama_core::client::{Api, LocalApi, KEY_DECLARED_HOSTS, KEY_STRICT_OFFLINE};
 use pama_core::paths::home_dir;
 use pama_core::session::{claude, codex};
 use serde_json::json;
 
-use super::Ctx;
+use super::{scan, Ctx};
 use crate::Exit;
 
 struct Check {
@@ -35,7 +35,71 @@ fn file_contains(p: &Path, needle: &str) -> bool {
         .unwrap_or(false)
 }
 
-pub fn run(ctx: &Ctx) -> anyhow::Result<Exit> {
+/// Remote mode: default server reachable and new enough, this device still logged in, sync on
+/// for at least one project.
+fn remote_checks(ctx: &Ctx, checks: &mut Vec<Check>) {
+    use pama_core::remote;
+    pama_core::secrets::init_platform_store();
+    let store = &ctx.store;
+    let Some(server) = ctx.server.clone().or_else(|| remote::default_server(store)) else {
+        checks.push(Check {
+            name: "remote server",
+            ok: false,
+            detail: "not logged in".into(),
+            fix: Some("`pama login --server <url>`".into()),
+        });
+        return;
+    };
+    let api = Api::remote(store, "cli", &server);
+    let health = api
+        .as_ref()
+        .ok()
+        .and_then(|a| a.get("/v1/health", "doctor").ok());
+    let drafts = health
+        .as_ref()
+        .and_then(|h| h["capabilities"].as_array())
+        .is_some_and(|c| c.iter().any(|x| x == "drafts"));
+    checks.push(Check {
+        name: "remote server",
+        ok: health.is_some() && drafts,
+        detail: match &health {
+            Some(h) if drafts => format!(
+                "{server} (version {})",
+                h["version"].as_str().unwrap_or("?")
+            ),
+            Some(_) => format!("{server} is too old for remote mode"),
+            None => format!("{server} unreachable"),
+        },
+        fix: Some(if health.is_some() {
+            "ask the operator to upgrade the server".into()
+        } else {
+            "check the network or `pama config set declared_hosts` in strict offline mode".into()
+        }),
+    });
+    let me = api.as_ref().ok().map(|a| a.get("/v1/auth/me", "doctor"));
+    checks.push(Check {
+        name: "login",
+        ok: matches!(me, Some(Ok(_))),
+        detail: match &me {
+            Some(Ok(_)) => "this device is connected".into(),
+            Some(Err(pama_core::client::ApiError::Status { status: 401, .. })) => {
+                "this device was revoked".into()
+            }
+            Some(Err(e)) => e.to_string(),
+            None => "no device token in the keychain".into(),
+        },
+        fix: Some(format!("`pama login --server {server}`")),
+    });
+    let synced = remote::sync_projects(store);
+    checks.push(Check {
+        name: "sync projects",
+        ok: !synced.is_empty(),
+        detail: format!("{} project(s) send drafts", synced.len()),
+        fix: Some("`pama init --sync` in a project".into()),
+    });
+}
+
+pub fn run(ctx: &Ctx, report: bool) -> anyhow::Result<Exit> {
     let mut checks = Vec::new();
     let store = &ctx.store;
 
@@ -95,18 +159,33 @@ pub fn run(ctx: &Ctx) -> anyhow::Result<Exit> {
         fix: Some("see ~/.pama/pama.log for reasons".into()),
     });
 
-    // Local server and models.
-    let api = LocalApi::connect(store, "cli").ok().filter(|a| a.healthy());
+    // Where this machine works: the local server, or a remote one (thin client, spec 004).
+    let remote_mode = pama_core::remote::mode(store) == pama_core::remote::Mode::Remote;
     checks.push(Check {
-        name: "local server",
-        ok: api.is_some(),
-        detail: if api.is_some() {
-            "running".into()
+        name: "mode",
+        ok: true,
+        detail: if remote_mode {
+            "remote".into()
         } else {
-            "not running".into()
+            "local".into()
         },
-        fix: Some("`pama server start` (or open the desktop app)".into()),
+        fix: None,
     });
+    if remote_mode {
+        remote_checks(ctx, &mut checks);
+    } else {
+        let api = LocalApi::connect(store, "cli").ok().filter(|a| a.healthy());
+        checks.push(Check {
+            name: "local server",
+            ok: api.is_some(),
+            detail: if api.is_some() {
+                "running".into()
+            } else {
+                "not running".into()
+            },
+            fix: Some("`pama server start` (or open the desktop app)".into()),
+        });
+    }
     let provider = store
         .setting("provider.chat.provider")?
         .unwrap_or_else(|| "ollama".into());
@@ -123,14 +202,15 @@ pub fn run(ctx: &Ctx) -> anyhow::Result<Exit> {
         }
         p => {
             pama_core::secrets::init_platform_store();
-            pama_core::secrets::get(&format!("provider.{p}.key"))
-                .ok()
-                .flatten()
-                .is_some()
+            pama_core::secrets::exists(&format!("provider.{p}.key")).unwrap_or(false)
         }
     };
     checks.push(Check {
-        name: "models",
+        name: if remote_mode {
+            "drafting model"
+        } else {
+            "models"
+        },
         ok: models_ok,
         detail: format!("chat provider: {provider}"),
         fix: Some(if provider == "ollama" {
@@ -178,6 +258,43 @@ pub fn run(ctx: &Ctx) -> anyhow::Result<Exit> {
         .iter()
         .map(|c| json!({ "check": c.name, "ok": c.ok, "detail": c.detail, "fix": if c.ok { None } else { c.fix.clone() } }))
         .collect::<Vec<_>>());
+    if report {
+        // The console's Doctor page (server `GET /v1/doctor`): the checks plus scan and capture state.
+        let mut by_status = serde_json::Map::new();
+        for c in &counts {
+            let n = by_status.entry(c.status.as_str()).or_insert(json!(0));
+            *n = json!(n.as_i64().unwrap_or(0) + 1);
+        }
+        let recent: Vec<_> = counts
+            .iter()
+            .take(50)
+            .map(|c| {
+                json!({
+                    "id": c.id,
+                    "agent": c.agent,
+                    "cwd": c.cwd,
+                    "status": c.status,
+                    "error": c.error,
+                    "attempts": c.attempts,
+                    "endedAt": c.ended_at,
+                })
+            })
+            .collect();
+        let scan: Option<serde_json::Value> = store
+            .setting(scan::KEY_LAST_SCAN)?
+            .and_then(|s| serde_json::from_str(&s).ok());
+        println!(
+            "{}",
+            json!({
+                "ok": all_ok,
+                "checks": value,
+                "captures": { "total": counts.len(), "byStatus": by_status, "recent": recent },
+                "scan": scan,
+                "outbox": { "pending": outbox.pending, "failed": outbox.dead },
+            })
+        );
+        return Ok(if all_ok { Exit::Ok } else { Exit::Config });
+    }
     ctx.print(&value, || {
         checks
             .iter()

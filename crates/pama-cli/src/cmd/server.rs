@@ -75,6 +75,10 @@ pub fn ensure_started(store: &Store, lan: bool) -> anyhow::Result<ServerInfo> {
         .stdout(log.try_clone()?)
         .stderr(log);
     cmd.envs(server_env(store));
+    // The console's Doctor page runs `pama doctor --report` through this binary.
+    if let Ok(exe) = std::env::current_exe() {
+        cmd.env("PAMA_BIN", exe);
+    }
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -122,6 +126,60 @@ fn stop() -> bool {
     .unwrap_or(false);
     ServerInfo::remove();
     ok
+}
+
+pub fn open_url(url: &str) {
+    let _ = if cfg!(target_os = "macos") {
+        Command::new("open").arg(url).spawn()
+    } else if cfg!(windows) {
+        Command::new("cmd").args(["/C", "start", "", url]).spawn()
+    } else {
+        Command::new("xdg-open").arg(url).spawn()
+    };
+}
+
+/// `pama console`: the link carries this launch's token in the fragment (never sent to the
+/// server); the console trades it for a cookie, so later tabs need nothing.
+pub fn console(ctx: &Ctx, print: bool) -> anyhow::Result<Exit> {
+    // Remote mode (spec 004): a one-time sign-in link to the remote console.
+    if ctx.server.is_some()
+        || pama_core::remote::mode(&ctx.store) == pama_core::remote::Mode::Remote
+    {
+        let api = match ctx.api() {
+            Ok(a) => a,
+            Err(e) => return Ok(super::api_exit(&e)),
+        };
+        let link = match api.post("/v1/auth/device/console-link", "console", &json!({})) {
+            Ok(v) => v["url"].as_str().unwrap_or_default().to_string(),
+            Err(e) => {
+                // No owner email (self-host with an owner token only): plain console URL.
+                if !matches!(e, pama_core::client::ApiError::Status { status: 409, .. }) {
+                    return Ok(super::api_exit(&e));
+                }
+                format!("{}/", api.base_url())
+            }
+        };
+        if print {
+            ctx.print(&json!({ "url": link }), || link.clone());
+        } else {
+            open_url(&link);
+            ctx.print(&json!({ "url": api.base_url() }), || {
+                format!("opened {} in your browser", api.base_url())
+            });
+        }
+        return Ok(Exit::Ok);
+    }
+    let info = ensure_started(&ctx.store, false)?;
+    let link = format!("{}/#token={}", info.url, info.token);
+    if print {
+        ctx.print(&json!({ "url": link }), || link.clone());
+    } else {
+        open_url(&link);
+        ctx.print(&json!({ "url": info.url }), || {
+            format!("opened {} in your browser", info.url)
+        });
+    }
+    Ok(Exit::Ok)
 }
 
 pub fn run(ctx: &Ctx, action: ServerAction) -> anyhow::Result<Exit> {

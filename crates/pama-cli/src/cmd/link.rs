@@ -1,6 +1,6 @@
 //! `pama link create|list|revoke` (contracts/cli.md).
 
-use pama_core::client::LocalApi;
+use pama_core::client::Api;
 use serde_json::{json, Value};
 
 use super::{api_exit, Ctx};
@@ -14,7 +14,7 @@ fn source_ref(s: &str) -> Value {
     }
 }
 
-fn create(api: &LocalApi, a: &LinkCreate) -> Result<(Value, String), pama_core::client::ApiError> {
+fn create(api: &Api, a: &LinkCreate) -> Result<(Value, String), pama_core::client::ApiError> {
     let mut sources: Vec<Value> = a.sources.iter().map(|s| source_ref(s)).collect();
     let mut picked = String::new();
     if let Some(q) = &a.suggest {
@@ -74,7 +74,7 @@ fn create(api: &LocalApi, a: &LinkCreate) -> Result<(Value, String), pama_core::
 }
 
 pub fn run(ctx: &Ctx, action: LinkAction) -> anyhow::Result<Exit> {
-    let api = match LocalApi::connect(&ctx.store, "cli") {
+    let api = match ctx.api() {
         Ok(a) => a,
         Err(e) => return Ok(api_exit(&e)),
     };

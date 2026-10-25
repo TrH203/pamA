@@ -23,9 +23,12 @@ pub enum SinkError {
     Retryable(String),
     /// Rejected input: retrying will not help.
     Fatal(String),
+    /// Not for this sink (e.g. sync is off for the project in remote mode): nothing was sent.
+    Skipped(String),
 }
 
-/// Where redacted sessions go: the local server's `POST /v1/transcripts/digest`.
+/// Where redacted sessions go: the local server's `POST /v1/transcripts/digest`, or in remote
+/// mode the on-device drafter (`remote::RemoteSink`).
 pub trait DigestSink {
     fn submit(&self, body: &Value) -> Result<Value, SinkError>;
 }
@@ -203,6 +206,10 @@ impl<'a, S: DigestSink> Worker<'a, S> {
             Err(SinkError::Fatal(m)) => {
                 st.fail_capture(&c.id, &m, false)?;
                 Ok(CaptureOutcome::Failed(m))
+            }
+            Err(SinkError::Skipped(_)) => {
+                st.set_capture_status(&c.id, CaptureStatus::Skipped)?;
+                Ok(CaptureOutcome::Skipped)
             }
         }
     }

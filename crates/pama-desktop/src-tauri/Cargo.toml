@@ -36,4 +36,4 @@ ulid = "3"
 core-foundation = "0.10"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-uiautomation = "0.22"
+uiautomation = "0.25"

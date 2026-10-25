@@ -24,7 +24,9 @@ pub struct Prompt {
 }
 
 pub fn prompt() -> Prompt {
-    let rest = PROMPT_FILE
+    // A Windows checkout may turn the file's line endings into CRLF.
+    let text = PROMPT_FILE.replace("\r\n", "\n");
+    let rest = text
         .strip_prefix("---\n")
         .expect("prompts/digest.md starts with front matter");
     let (front, body) = rest.split_once("\n---\n").expect("front matter end");

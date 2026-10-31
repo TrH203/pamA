@@ -1,7 +1,7 @@
 //! `pama model show|set|switch|check|revert|setup` (specs/003-model-settings/contracts/cli.md).
 //! Thin client of the server's `/v1/models/*` endpoints, so CLI and web console always agree.
 
-use std::io::{BufRead, IsTerminal, Read, Write};
+use std::io::{BufRead, IsTerminal, Write};
 
 use pama_core::client::{Api, ApiError};
 use serde_json::{json, Value};
@@ -49,9 +49,9 @@ fn body_of(e: &ApiError) -> Option<Value> {
 }
 
 fn read_key() -> anyhow::Result<String> {
-    let mut k = String::new();
-    std::io::stdin().read_to_string(&mut k)?;
-    Ok(k.trim().to_string())
+    let k = super::read_secret("API key")?;
+    anyhow::ensure!(!k.is_empty(), "empty key on stdin");
+    Ok(k)
 }
 
 fn ask(prompt: &str, default: &str) -> anyhow::Result<String> {

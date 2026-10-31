@@ -47,7 +47,10 @@ impl ApiError {
     pub fn retryable(&self) -> bool {
         match self {
             ApiError::NotRunning | ApiError::Net(_) => true,
-            ApiError::Status { status, .. } => *status >= 500 || *status == 429,
+            // Configuration errors (a rejected key) wait for the user, not for a retry.
+            ApiError::Status { status, body } => {
+                (*status >= 500 || *status == 429) && !body.contains("\"provider_auth\"")
+            }
             ApiError::NotLoggedIn(_) => false,
         }
     }
@@ -163,6 +166,21 @@ impl<'s> Api<'s> {
         Self::handle(r)
     }
 
+    /// POST for model-heavy routes: the server may spend up to ~3 minutes drafting and embedding.
+    pub fn post_slow(&self, path: &str, purpose: &str, body: &Value) -> Result<Value, ApiError> {
+        self.client.check(&self.url(path), purpose)?;
+        let r = self
+            .client
+            .raw()
+            .post(self.url(path))
+            .bearer_auth(&self.info.token)
+            .json(body)
+            .timeout(std::time::Duration::from_secs(180))
+            .send()
+            .map_err(|e| self.not_running(NetError::Http(e)))?;
+        Self::handle(r)
+    }
+
     pub fn patch(&self, path: &str, purpose: &str, body: &Value) -> Result<Value, ApiError> {
         self.client.check(&self.url(path), purpose)?;
         let r = self
@@ -196,7 +214,7 @@ impl<'s> Api<'s> {
 
 impl DigestSink for Api<'_> {
     fn submit(&self, body: &Value) -> Result<Value, SinkError> {
-        self.post("/v1/transcripts/digest", "capture.digest", body)
+        self.post_slow("/v1/transcripts/digest", "capture.digest", body)
             .map_err(|e| {
                 if e.retryable() {
                     SinkError::Retryable(e.to_string())

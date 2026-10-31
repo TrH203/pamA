@@ -220,19 +220,20 @@ pub fn set_sync<R: Runtime>(
     app: AppHandle<R>,
     scope: String,
     id: String,
-    enabled: bool,
+    enabled: Option<bool>,
     target: Option<String>,
 ) -> CmdResult<Ok> {
     let state = app.state::<AppState>();
     let store = state.store.lock().unwrap();
     let path = match scope.as_str() {
+        "project" if enabled.is_none() => return Err("a project is either synced or not".into()),
         "project" => format!("/v1/projects/{id}"),
         "bundle" => format!("/v1/bundles/{id}"),
         _ => return Err("scope must be project or bundle".into()),
     };
     let target = target.or(store.setting("sync.default_target").ok().flatten());
     let mut body = serde_json::json!({ "sync_enabled": enabled });
-    if enabled {
+    if enabled == Some(true) {
         body["sync_target"] = serde_json::json!(target);
     }
     let api = pama_core::client::LocalApi::connect(&store, "desktop").map_err(|e| e.to_string())?;

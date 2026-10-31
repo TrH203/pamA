@@ -47,6 +47,16 @@ pub fn run(ctx: &Ctx, action: ConfigAction) -> anyhow::Result<Exit> {
     match action {
         ConfigAction::Set { key, value } => {
             if is_secret(&key) {
+                let value = if value == "-" {
+                    super::read_secret(&key)?
+                } else {
+                    eprintln!("warning: keys passed as arguments end up in shell history; prefer `pama config set {key} -`");
+                    value
+                };
+                if value.is_empty() {
+                    eprintln!("error: empty key; nothing saved");
+                    return Ok(Exit::User);
+                }
                 pama_core::secrets::set(&key, &value)?;
                 ctx.print(&json!({ "key": key, "stored": "keychain" }), || {
                     format!("{key} saved to the OS keychain")

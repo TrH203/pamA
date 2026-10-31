@@ -163,7 +163,7 @@ describe("owner's machine: what to sync", () => {
     };
 
   it("is off by default", async () => {
-    expect(await pending()).toEqual({ digests: [], tombstones: [] });
+    expect(await pending()).toEqual({ digests: [], tombstones: [], bundle_changes: [] });
     const status = (await (await t.req("/v1/sync/status")).json()) as {
       projects: { sync_enabled: boolean }[];
     };

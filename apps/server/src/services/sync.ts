@@ -7,7 +7,14 @@ import type { Deps } from "../app.ts";
 import type { Queryable } from "../db/client.ts";
 import { HttpError } from "../http.ts";
 import { SessionDigestSchema } from "../schema/digest.ts";
-import { assignBundle, branchList, recordBranches, reevaluateSession } from "./bundles.ts";
+import {
+  applySuggestedName,
+  assignBundle,
+  branchList,
+  moveSessions,
+  recordBranches,
+  reevaluateSession,
+} from "./bundles.ts";
 import { approveDigest, cleanAndLabel, digestHash, storeVersion } from "./digests.ts";
 import { autoApproveFor, upsertProject } from "./projects.ts";
 
@@ -30,6 +37,28 @@ export const SyncTombstoneSchema = z.strictObject({
   source_type: z.enum(["project", "bundle", "session"]),
   source_key: z.string().min(1).max(600),
 });
+
+const SessionRefSchema = z.strictObject({
+  agent: z.string().min(1).max(40),
+  agent_session_id: z.string().min(1).max(300),
+});
+
+/**
+ * A task (bundle) change made on the owner's machine (spec 007): rename, split or merge, sent as
+ * the task's resulting state. `bundle_ref` is the portable task key: the bundle key for tasks
+ * filed by branch, `id:<local bundle id>` for tasks the owner made by splitting.
+ */
+export const SyncBundleChangeSchema = z.strictObject({
+  outbox_id: z.string().min(1).max(64),
+  project_key: z.string().min(1).max(600),
+  bundle_ref: z.string().min(1).max(300),
+  name: z.string().min(1).max(200),
+  name_source: z.enum(["key", "suggested", "owner"]),
+  sessions: z.array(SessionRefSchema).max(2000),
+});
+
+/** The portable key of a local bundle (tombstones and task changes use the same one). */
+export const bundleRef = (b: { id: string; key: string | null }) => b.key ?? `id:${b.id}`;
 
 type SyncDeps = Pick<Deps, "db" | "models" | "rules" | "workspaceId">;
 
@@ -94,7 +123,12 @@ export async function ingestDigest(
     body.project_name,
   );
   const bundleId = await assignBundle(deps.db, deps.workspaceId, project.id, bundle);
-  if (body.bundle_name) {
+  if (body.bundle_name && status === "draft") {
+    // Thin-client drafts carry a name suggested on the device from the goal; like names suggested
+    // on the server it only replaces the key fallback (the first suggestion wins).
+    if ((body.bundle_name_source ?? "key") === "suggested")
+      await applySuggestedName(deps.db, bundleId, body.bundle_name);
+  } else if (body.bundle_name) {
     // The device is the source of truth: its owner name always wins, its suggestion wins unless
     // the replica owner renamed the bundle, and a legacy name only replaces the key fallback.
     const source = body.bundle_name_source ?? "key";
@@ -172,6 +206,162 @@ export async function ingestDigest(
   return result;
 }
 
+type SourceSession = { id: string; bundle_id: string; project_id: string };
+
+/** The sessions a portable source key covers in a workspace (tombstones, affected links). */
+export async function sessionsForSource(
+  q: Queryable,
+  ws: string,
+  type: "project" | "bundle" | "session",
+  key: string,
+): Promise<SourceSession[]> {
+  if (type === "project") {
+    return q.query(
+      "SELECT s.id, s.bundle_id, s.project_id FROM sessions s JOIN projects p ON p.id = s.project_id WHERE s.workspace_id = $1 AND p.repo_key = $2",
+      [ws, key],
+    );
+  }
+  if (type === "bundle") {
+    const i = key.lastIndexOf("#");
+    return q.query(
+      `SELECT s.id, s.bundle_id, s.project_id FROM sessions s JOIN bundles b ON b.id = s.bundle_id JOIN projects p ON p.id = s.project_id
+       WHERE s.workspace_id = $1 AND p.repo_key = $2 AND b.key = $3`,
+      [ws, key.slice(0, i), key.slice(i + 1)],
+    );
+  }
+  const i = key.indexOf(":");
+  return q.query(
+    "SELECT id, bundle_id, project_id FROM sessions WHERE workspace_id = $1 AND agent = $2 AND agent_session_id = $3",
+    [ws, key.slice(0, i), key.slice(i + 1)],
+  );
+}
+
+export interface AffectedLink {
+  slug: string;
+  title: string;
+  expires_at: Date;
+  /** The link's sources that would disappear. */
+  lost: { type: string; id: string }[];
+  /** True when nothing would be left in the link's scope (it stops answering). */
+  empty: boolean;
+}
+
+/**
+ * Ask Links on this server whose scope would lose sources if `type`/`key` were deleted (sync
+ * turned off): asked by the device before it sends the tombstone (spec 007).
+ */
+export async function affectedLinks(
+  deps: Pick<Deps, "db" | "workspaceId">,
+  type: "project" | "bundle" | "session",
+  key: string,
+): Promise<AffectedLink[]> {
+  const ws = deps.workspaceId;
+  return affectedLinksFor(deps.db, ws, await sessionsForSource(deps.db, ws, type, key), {
+    project: type === "project",
+  });
+}
+
+/** Links losing sources when `sessions` are deleted (with their projects too when `project`). */
+export async function affectedLinksFor(
+  q: Queryable,
+  ws: string,
+  sessions: SourceSession[],
+  opts: { project: boolean },
+): Promise<AffectedLink[]> {
+  if (!sessions.length) return [];
+  const gone = new Set(sessions.map((s) => s.id));
+  const bundleIds = [...new Set(sessions.map((s) => s.bundle_id))];
+  // Bundles with no session left after the deletion disappear too.
+  const left = await q.query<{ bundle_id: string }>(
+    "SELECT DISTINCT bundle_id FROM sessions WHERE bundle_id = ANY($1) AND NOT (id = ANY($2))",
+    [bundleIds, sessions.map((s) => s.id)],
+  );
+  const kept = new Set(left.map((r) => r.bundle_id));
+  for (const b of bundleIds) if (!kept.has(b)) gone.add(b);
+  if (opts.project) for (const s of sessions) gone.add(s.project_id);
+  const links = await q.query<{
+    slug: string;
+    title: string;
+    expires_at: Date;
+    source_refs: { type: string; id: string }[];
+  }>(
+    `SELECT slug, title, expires_at, source_refs FROM ask_links
+     WHERE workspace_id = $1 AND revoked_at IS NULL AND expires_at > now()
+       AND EXISTS (SELECT 1 FROM jsonb_array_elements(source_refs) r WHERE r->>'id' = ANY($2))
+     ORDER BY created_at, slug`,
+    [ws, [...gone]],
+  );
+  return links.map((l) => {
+    const lost = l.source_refs.filter((r) => gone.has(r.id));
+    return {
+      slug: l.slug,
+      title: l.title,
+      expires_at: l.expires_at,
+      lost,
+      empty: lost.length === l.source_refs.length,
+    };
+  });
+}
+
+/**
+ * Receiving server: apply a task change from the owner's machine. Only sessions this server
+ * already has are moved (and pinned, so later deliveries do not re-file them); tasks left empty
+ * are removed. Idempotent by outbox id.
+ */
+export async function applyBundleChange(
+  deps: SyncDeps,
+  deviceId: string,
+  ch: z.infer<typeof SyncBundleChangeSchema>,
+) {
+  const done = await receipt(deps.db, ch.outbox_id);
+  if (done) return done as { bundle_id: string | null; moved: number };
+  const ws = deps.workspaceId;
+  const result = await deps.db.tx(async (q) => {
+    const [project] = await q.query<{ id: string }>(
+      "SELECT id FROM projects WHERE workspace_id = $1 AND repo_key = $2",
+      [ws, ch.project_key],
+    );
+    if (!project) return { bundle_id: null, moved: 0 };
+    const all = await q.query<{ id: string; bundle_id: string; agent: string; sid: string }>(
+      `SELECT id, bundle_id, agent, agent_session_id AS sid FROM sessions
+       WHERE workspace_id = $1 AND project_id = $2 AND agent_session_id = ANY($3)`,
+      [ws, project.id, ch.sessions.map((x) => x.agent_session_id)],
+    );
+    const wanted = new Set(ch.sessions.map((x) => `${x.agent}:${x.agent_session_id}`));
+    const sessions = all.filter((x) => wanted.has(`${x.agent}:${x.sid}`));
+    const [existing] = await q.query<{ id: string }>(
+      "SELECT id FROM bundles WHERE project_id = $1 AND key = $2",
+      [project.id, ch.bundle_ref],
+    );
+    // Nothing published in this task yet: do not create an empty one.
+    if (!existing && !sessions.length) return { bundle_id: null, moved: 0 };
+    const bundleId = existing?.id ?? (await assignBundle(q, ws, project.id, ch.bundle_ref));
+    // Same precedence as names on digests: owner names always win, a suggestion wins unless the
+    // replica owner renamed the task, a key name only replaces the key fallback.
+    await q.query(
+      `UPDATE bundles SET name = $2, name_source = $3, name_updated_at = now()
+       WHERE id = $1 AND name <> $2 AND (
+         $3 = 'owner' OR (name_source <> 'owner' AND ($3 = 'suggested' OR name_source = 'key')))`,
+      [bundleId, ch.name, ch.name_source],
+    );
+    const moving = sessions.filter((x) => x.bundle_id !== bundleId);
+    if (moving.length) {
+      await moveSessions(
+        q,
+        moving.map((x) => x.id),
+        bundleId,
+      );
+    }
+    await q.query(
+      "DELETE FROM bundles b WHERE b.id = ANY($1) AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.bundle_id = b.id)",
+      [[...new Set(moving.map((x) => x.bundle_id))]],
+    );
+    return { bundle_id: bundleId, moved: moving.length };
+  });
+  await remember(deps.db, ch.outbox_id, deviceId, result);
+  return result;
+}
+
 export async function applyTombstone(
   deps: SyncDeps,
   deviceId: string,
@@ -185,26 +375,7 @@ export async function applyTombstone(
       "INSERT INTO sync_tombstones (id, workspace_id, source_type, source_key) VALUES ($1, $2, $3, $4)",
       [ulid(), ws, t.source_type, t.source_key],
     );
-    let sessions: { id: string; bundle_id: string; project_id: string }[] = [];
-    if (t.source_type === "project") {
-      sessions = await q.query(
-        "SELECT s.id, s.bundle_id, s.project_id FROM sessions s JOIN projects p ON p.id = s.project_id WHERE s.workspace_id = $1 AND p.repo_key = $2",
-        [ws, t.source_key],
-      );
-    } else if (t.source_type === "bundle") {
-      const i = t.source_key.lastIndexOf("#");
-      sessions = await q.query(
-        `SELECT s.id, s.bundle_id, s.project_id FROM sessions s JOIN bundles b ON b.id = s.bundle_id JOIN projects p ON p.id = s.project_id
-         WHERE s.workspace_id = $1 AND p.repo_key = $2 AND b.key = $3`,
-        [ws, t.source_key.slice(0, i), t.source_key.slice(i + 1)],
-      );
-    } else {
-      const i = t.source_key.indexOf(":");
-      sessions = await q.query(
-        "SELECT id, bundle_id, project_id FROM sessions WHERE workspace_id = $1 AND agent = $2 AND agent_session_id = $3",
-        [ws, t.source_key.slice(0, i), t.source_key.slice(i + 1)],
-      );
-    }
+    const sessions = await sessionsForSource(q, ws, t.source_type, t.source_key);
     const ids = sessions.map((s) => s.id);
     const refIds = [...new Set(sessions.flatMap((s) => [s.id, s.bundle_id, s.project_id]))];
     const [links] = await q.query<{ n: number }>(
@@ -344,7 +515,10 @@ export async function pending(deps: Pick<Deps, "db" | "rules" | "workspaceId">) 
     source_type: string;
     source_key: string;
   }>(
-    "SELECT id, target, source_type, source_key FROM sync_outgoing WHERE handed_at IS NULL ORDER BY created_at, id",
+    "SELECT id, target, source_type, source_key FROM sync_outgoing WHERE handed_at IS NULL AND source_type <> 'bundle_change' ORDER BY created_at, id",
+  );
+  const changes = await deps.db.query<{ id: string; target: string; payload: BundleChangeBody }>(
+    "SELECT id, target, payload FROM sync_outgoing WHERE handed_at IS NULL AND source_type = 'bundle_change' ORDER BY created_at, id",
   );
   // Names leave the machine here: mask them like every other digest string (Constitution II). A
   // bundle's replica key is the masked key from its digests, so the tombstone key is masked too.
@@ -354,12 +528,65 @@ export async function pending(deps: Pick<Deps, "db" | "rules" | "workspaceId">) 
     tombstones: tombstones.map((t) =>
       t.source_type === "bundle" ? { ...t, source_key: mask(t.source_key) } : t,
     ),
+    bundle_changes: changes.map((c) => ({
+      id: c.id,
+      target: c.target,
+      change: { ...c.payload, bundle_ref: mask(c.payload.bundle_ref), name: mask(c.payload.name) },
+    })),
   };
+}
+
+type BundleChangeBody = Omit<z.infer<typeof SyncBundleChangeSchema>, "outbox_id">;
+
+/**
+ * Owner's machine: queue the resulting state of a renamed, split or merged task for its publish
+ * target (spec 007). Pending changes of one task coalesce into the latest state. Only sessions
+ * with an approved digest are listed: nothing else can be on the target.
+ */
+export async function queueBundleChange(q: Queryable, workspaceId: string, bundleId: string) {
+  const [b] = await q.query<{
+    id: string;
+    key: string | null;
+    name: string;
+    name_source: "key" | "suggested" | "owner";
+    repo_key: string;
+    target: string | null;
+    enabled: boolean;
+  }>(
+    `SELECT b.id, b.key, b.name, b.name_source, p.repo_key, p.sync_target AS target,
+            COALESCE(b.sync_enabled, p.sync_enabled) AS enabled
+     FROM bundles b JOIN projects p ON p.id = b.project_id WHERE b.id = $1 AND b.workspace_id = $2`,
+    [bundleId, workspaceId],
+  );
+  if (!b?.enabled || !b.target) return false;
+  const sessions = await q.query<{ agent: string; agent_session_id: string }>(
+    `SELECT s.agent, s.agent_session_id FROM sessions s WHERE s.bundle_id = $1
+       AND EXISTS (SELECT 1 FROM digests d WHERE d.session_id = s.id AND d.status = 'approved')
+     ORDER BY s.ended_at, s.id`,
+    [bundleId],
+  );
+  const payload: BundleChangeBody = {
+    project_key: b.repo_key,
+    bundle_ref: bundleRef(b),
+    name: b.name,
+    name_source: b.name_source,
+    sessions,
+  };
+  await q.query(
+    `INSERT INTO sync_outgoing (id, target, source_type, source_key, payload) VALUES ($1, $2, 'bundle_change', $3, $4)
+     ON CONFLICT (target, source_type, source_key) WHERE handed_at IS NULL DO UPDATE SET payload = excluded.payload`,
+    [ulid(), b.target, b.id, JSON.stringify(payload)],
+  );
+  return true;
 }
 
 export async function ack(
   deps: Pick<Deps, "db">,
-  a: { digests: { digest_id: string; target: string }[]; tombstones: string[] },
+  a: {
+    digests: { digest_id: string; target: string }[];
+    tombstones: string[];
+    bundle_changes?: string[] | undefined;
+  },
 ) {
   await deps.db.tx(async (q) => {
     for (const d of a.digests) {
@@ -368,10 +595,9 @@ export async function ack(
         [d.digest_id, d.target],
       );
     }
-    if (a.tombstones.length) {
-      await q.query("UPDATE sync_outgoing SET handed_at = now() WHERE id = ANY($1)", [
-        a.tombstones,
-      ]);
+    const handed = [...a.tombstones, ...(a.bundle_changes ?? [])];
+    if (handed.length) {
+      await q.query("UPDATE sync_outgoing SET handed_at = now() WHERE id = ANY($1)", [handed]);
     }
   });
 }
@@ -449,7 +675,12 @@ export async function setBundleSync(
       [id, enabled, Boolean(now && !was)],
     );
     if (was && !now && syncTarget) {
-      await queueTombstone(q, syncTarget, "bundle", bundleKey(b.repo_key, b.key ?? b.name));
+      await queueTombstone(
+        q,
+        syncTarget,
+        "bundle",
+        bundleKey(b.repo_key, bundleRef({ id, key: b.key })),
+      );
       await resetDeliveries(q, "s.bundle_id = $1", id);
     }
   });

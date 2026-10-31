@@ -16,11 +16,13 @@ export const inboxRoutes = new Hono<Env>()
   .get("/inbox", async (c) => {
     const { db, workspaceId } = c.get("deps");
     const items = await db.query(
-      `SELECT a.id, a.question, a.language, a.status, a.reason, a.created_at, a.link_slug, l.title AS link_title,
+      `SELECT a.id, a.conversation_id, a.question, a.language, a.status, a.reason, a.created_at, a.link_slug, l.title AS link_title,
               a.draft_answer AS suggestion,
               v.email AS asker_email, v.verified_at IS NOT NULL AS asker_verified
        FROM asks a LEFT JOIN ask_links l ON l.slug = a.link_slug LEFT JOIN visitors v ON v.id = a.visitor_id
-       WHERE a.workspace_id = $1 AND a.status = 'forwarded' ORDER BY a.created_at DESC`,
+       WHERE a.workspace_id = $1 AND a.status = 'forwarded'
+         AND NOT EXISTS (SELECT 1 FROM conversations c WHERE c.id = a.conversation_id AND c.deleted_at IS NOT NULL)
+       ORDER BY a.created_at DESC`,
       [workspaceId],
     );
     return c.json({ items });

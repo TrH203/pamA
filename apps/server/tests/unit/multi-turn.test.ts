@@ -31,7 +31,10 @@ describe("historyBlock", () => {
 
   it("drops the oldest turns to fit the token budget", () => {
     const long = "word ".repeat(400);
-    const turns = Array.from({ length: 6 }, (_, i) => ({ question: `q${i} ${long}`, answer: long }));
+    const turns = Array.from({ length: 6 }, (_, i) => ({
+      question: `q${i} ${long}`,
+      answer: long,
+    }));
     const h = historyBlock(turns);
     expect(h.length).toBeLessThanOrEqual(HISTORY_TOKEN_BUDGET * 4 + 40);
     expect(h).toContain("q5");
@@ -157,9 +160,7 @@ describe("answerQuestion with history", () => {
             confidence: 0.9,
           })
         : heuristicHandler(p);
-    const r = await ask("Do refunds include the shipping fee?", [
-      { question: "Hi", answer: null },
-    ]);
+    const r = await ask("Do refunds include the shipping fee?", [{ question: "Hi", answer: null }]);
     expect(r.status).toBe("answered");
     expect(r.citations).toHaveLength(1);
     expect(r.retrieved.map((i) => i.id)).toContain(r.citations[0]?.item_id);

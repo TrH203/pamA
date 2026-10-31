@@ -9,8 +9,8 @@ export function BundleSummary({ bundle, now }: { bundle: BundleLike; now?: Date 
   return (
     <div className="min-w-0">
       <div className="flex flex-wrap items-baseline gap-x-2">
-        <h3 className="font-semibold">{v.title}</h3>
-        <span className="text-xs text-stone-500">
+        <h3 className="text-sm font-semibold text-fg">{v.title}</h3>
+        <span className="text-xs text-muted">
           {v.sessionsLabel}
           {v.lastActivityLabel ? ` · ${v.lastActivityLabel}` : ""}
         </span>
@@ -20,7 +20,7 @@ export function BundleSummary({ bundle, now }: { bundle: BundleLike; now?: Date 
           {chips.map((b) => (
             <li
               key={b}
-              className="rounded bg-stone-100 px-2 py-0.5 font-mono text-xs text-stone-700"
+              className="rounded-full bg-subtle px-2 py-0.5 font-mono text-xs text-muted"
               title={b}
             >
               {b}
@@ -30,7 +30,7 @@ export function BundleSummary({ bundle, now }: { bundle: BundleLike; now?: Date 
             <li>
               <button
                 type="button"
-                className="px-1 text-xs text-stone-600 underline"
+                className="px-1 text-xs text-muted underline-offset-2 hover:text-fg hover:underline"
                 onClick={() => setOpen(!open)}
               >
                 {open ? "show less" : `+${v.overflow} more`}

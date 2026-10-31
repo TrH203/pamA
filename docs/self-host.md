@@ -48,7 +48,7 @@ pama.example.com {
 2. With email set up, the quickest way is `pama login --server https://pama.example.com` on your
    machine (approve in the browser). It also lets the machine work in remote mode: only `pama`
    installed, review and links on this server (see [cloud server](deploy-cloud.md#3-owners-connect)).
-   Otherwise create a pairing code: console › Devices, or
+   Otherwise create a pairing code (the console has no Devices page yet):
    `curl -X POST -H "Authorization: Bearer $PAMA_OWNER_TOKEN" https://pama.example.com/v1/devices/pairing-code`
 3. On your machine: `pama pair <CODE> --server https://pama.example.com`
 4. Choose what to share: `pama sync status`, then `pama sync enable --project <id>`.

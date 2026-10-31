@@ -5,6 +5,7 @@ import type { Deps } from "../app.ts";
 import type { ProviderConfig } from "../config.ts";
 import { HttpError } from "../http.ts";
 import { type CheckResult, checkProvider } from "./check.ts";
+import { tagModel } from "./errors.ts";
 import { isLocal, language, type Models } from "./providers.ts";
 import { type ApplyInput, decryptKey, encryptKey } from "./settings.ts";
 
@@ -70,7 +71,11 @@ export async function modelsFor(deps: Deps, workspaceId: string): Promise<Models
   if (!p) return deps.models;
   return {
     ...deps.models,
-    chat: language(p, deps.guard, deps.models.fake, "llm.chat"),
+    chat: tagModel(language(p, deps.guard, deps.models.fake, "llm.chat"), {
+      role: "chat",
+      provider: p.provider,
+      model: p.model,
+    }),
     local: false,
   };
 }

@@ -171,6 +171,8 @@ pub fn run(ctx: &Ctx, report: bool) -> anyhow::Result<Exit> {
         },
         fix: None,
     });
+    // The local server's three model roles, checked live; otherwise the device drafting model.
+    let mut server_checked = false;
     if remote_mode {
         remote_checks(ctx, &mut checks);
     } else {
@@ -185,40 +187,14 @@ pub fn run(ctx: &Ctx, report: bool) -> anyhow::Result<Exit> {
             },
             fix: Some("`pama server start` (or open the desktop app)".into()),
         });
+        if let Some(api) = &api {
+            server_model_checks(api, &mut checks);
+            server_checked = true;
+        }
     }
-    let provider = store
-        .setting("provider.chat.provider")?
-        .unwrap_or_else(|| "ollama".into());
-    let models_ok = match provider.as_str() {
-        "ollama" => {
-            let base = store
-                .setting("provider.chat.base_url")?
-                .unwrap_or_else(|| "http://127.0.0.1:11434".into());
-            reqwest::blocking::Client::new()
-                .get(format!("{base}/api/tags"))
-                .timeout(std::time::Duration::from_secs(3))
-                .send()
-                .is_ok_and(|r| r.status().is_success())
-        }
-        p => {
-            pama_core::secrets::init_platform_store();
-            pama_core::secrets::exists(&format!("provider.{p}.key")).unwrap_or(false)
-        }
-    };
-    checks.push(Check {
-        name: if remote_mode {
-            "drafting model"
-        } else {
-            "models"
-        },
-        ok: models_ok,
-        detail: format!("chat provider: {provider}"),
-        fix: Some(if provider == "ollama" {
-            "start Ollama and `ollama pull bge-m3` plus a chat model".into()
-        } else {
-            format!("`pama config set provider.{provider}.key <key>`")
-        }),
-    });
+    if !server_checked {
+        device_model_check(store, remote_mode, &mut checks)?;
+    }
 
     // Permissions and offline settings.
     #[cfg(target_os = "macos")]
@@ -230,6 +206,9 @@ pub fn run(ctx: &Ctx, report: bool) -> anyhow::Result<Exit> {
     });
     let strict = store.setting(KEY_STRICT_OFFLINE)?.as_deref() == Some("true");
     let hosts = store.setting(KEY_DECLARED_HOSTS)?.unwrap_or_default();
+    let provider = store
+        .setting("provider.chat.provider")?
+        .unwrap_or_else(|| "ollama".into());
     checks.push(Check {
         name: "strict offline",
         ok: !strict || !hosts.is_empty() || provider == "ollama",
@@ -314,4 +293,92 @@ pub fn run(ctx: &Ctx, report: bool) -> anyhow::Result<Exit> {
             .join("\n")
     });
     Ok(if all_ok { Exit::Ok } else { Exit::Config })
+}
+
+/// Live check of the server's chat, small and embedding models (`POST /v1/models/check`).
+fn server_model_checks(api: &LocalApi, checks: &mut Vec<Check>) {
+    for (role, name) in [
+        ("chat", "chat model"),
+        ("small", "small model"),
+        ("embed", "embedding model"),
+    ] {
+        let check = match api.post(
+            "/v1/models/check",
+            "doctor.models",
+            &json!({ "role": role }),
+        ) {
+            Ok(r) => {
+                let ok = r["ok"].as_bool().unwrap_or(false);
+                let failed = r["items"]
+                    .as_array()
+                    .and_then(|items| items.iter().find(|i| i["ok"] == false));
+                Check {
+                    name,
+                    ok,
+                    detail: failed
+                        .and_then(|i| i["detail"].as_str())
+                        .map(str::to_string)
+                        .unwrap_or_else(|| match r["latencyMs"].as_u64() {
+                            Some(ms) => format!("ok ({ms} ms)"),
+                            None => "ok".into(),
+                        }),
+                    fix: Some(
+                        failed
+                            .and_then(|i| i["fix"].as_str())
+                            .map(str::to_string)
+                            .unwrap_or_else(|| format!("`pama model check {role}`")),
+                    ),
+                }
+            }
+            Err(e) => Check {
+                name,
+                ok: false,
+                detail: format!("check failed: {e}"),
+                fix: Some(format!("`pama model check {role}`")),
+            },
+        };
+        checks.push(check);
+    }
+}
+
+/// Without a reachable server: is the device's own drafting model usable?
+fn device_model_check(
+    store: &pama_core::store::Store,
+    remote_mode: bool,
+    checks: &mut Vec<Check>,
+) -> anyhow::Result<()> {
+    let provider = store
+        .setting("provider.chat.provider")?
+        .unwrap_or_else(|| "ollama".into());
+    let models_ok = match provider.as_str() {
+        "ollama" => {
+            let base = store
+                .setting("provider.chat.base_url")?
+                .unwrap_or_else(|| "http://127.0.0.1:11434".into());
+            reqwest::blocking::Client::new()
+                .get(format!("{base}/api/tags"))
+                .timeout(std::time::Duration::from_secs(3))
+                .send()
+                .is_ok_and(|r| r.status().is_success())
+        }
+        p => {
+            pama_core::secrets::init_platform_store();
+            pama_core::secrets::exists(&format!("provider.{p}.key")).unwrap_or(false)
+        }
+    };
+    checks.push(Check {
+        name: if remote_mode {
+            "drafting model"
+        } else {
+            "models"
+        },
+        ok: models_ok,
+        detail: format!("chat provider: {provider}"),
+        fix: Some(if provider == "ollama" {
+            "start Ollama and `ollama pull bge-m3` plus a chat model".into()
+        } else {
+            format!("`pama config set provider.{provider}.key -` (reads the key from stdin)")
+        }),
+    });
+    Ok(())
 }

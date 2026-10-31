@@ -66,6 +66,11 @@ impl ModelConfig {
             || host.starts_with("127.")
             || host.starts_with("10.")
             || host.starts_with("192.168.")
+            || host
+                .strip_prefix("172.")
+                .and_then(|r| r.split('.').next())
+                .and_then(|o| o.parse::<u8>().ok())
+                .is_some_and(|o| (16..=31).contains(&o))
             || host.ends_with(".local")
             || host.ends_with(".lan")
     }

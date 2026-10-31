@@ -124,3 +124,46 @@ pub fn parse_duration(s: &str) -> Option<u64> {
         _ => return None,
     })
 }
+
+/// Read a secret from stdin: a prompt without echo on a terminal, otherwise the first line.
+pub fn read_secret(key: &str) -> anyhow::Result<String> {
+    use std::io::{BufRead, IsTerminal};
+    let stdin = std::io::stdin();
+    if stdin.is_terminal() {
+        eprint!("{key} (input hidden): ");
+        let _ = std::io::Write::flush(&mut std::io::stderr());
+        let line = rpassword_line()?;
+        eprintln!();
+        return Ok(line.trim().to_string());
+    }
+    let mut line = String::new();
+    stdin.lock().read_line(&mut line)?;
+    Ok(line.trim().to_string())
+}
+
+/// Read one line from the terminal with echo turned off.
+#[cfg(unix)]
+fn rpassword_line() -> anyhow::Result<String> {
+    use std::process::Command;
+    let off = Command::new("stty")
+        .arg("-echo")
+        .stdin(std::process::Stdio::inherit())
+        .status();
+    let mut line = String::new();
+    let res = std::io::stdin().read_line(&mut line);
+    if off.is_ok() {
+        let _ = Command::new("stty")
+            .arg("echo")
+            .stdin(std::process::Stdio::inherit())
+            .status();
+    }
+    res?;
+    Ok(line)
+}
+
+#[cfg(not(unix))]
+fn rpassword_line() -> anyhow::Result<String> {
+    let mut line = String::new();
+    std::io::stdin().read_line(&mut line)?;
+    Ok(line)
+}

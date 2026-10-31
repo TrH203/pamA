@@ -36,21 +36,27 @@ pub fn start<R: Runtime>(app: AppHandle<R>) {
         };
         loop {
             {
-                let _ = scan(
+                if let Err(e) = scan(
                     &store,
                     claude.as_deref(),
                     codex.as_deref(),
                     Duration::from_secs(86_400),
                     IDLE,
-                );
-                let _ = pama_core::sync::sync_once(&store);
+                ) {
+                    log_error("scan", &e);
+                }
+                if let Err(e) = pama_core::sync::sync_once(&store) {
+                    log_error("sync", &e);
+                }
                 if let Ok(api) = LocalApi::connect(&store, "desktop") {
                     let worker = Worker {
                         store: &store,
                         rules: &rules,
                         sink: api,
                     };
-                    let _ = drain(&worker, &pama_core::paths::drain_lock());
+                    if let Err(e) = drain(&worker, &pama_core::paths::drain_lock()) {
+                        log_error("drain", &e);
+                    }
                 }
                 if let Ok(api) = LocalApi::connect(&store, "desktop") {
                     let count = |path: &str| {
@@ -87,4 +93,24 @@ pub fn start<R: Runtime>(app: AppHandle<R>) {
             std::thread::sleep(INTERVAL);
         }
     });
+}
+
+/// Background failures go to ~/.pama/pama.log (the desktop app has no visible stderr).
+fn log_error(stage: &str, e: &dyn std::fmt::Display) {
+    use std::io::Write;
+    let path = pama_core::paths::log_file();
+    if let Some(d) = path.parent() {
+        let _ = std::fs::create_dir_all(d);
+    }
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let _ = writeln!(f, "{now} desktop {stage} failed: {e}");
+    }
 }

@@ -11,6 +11,7 @@ import {
 import { createOllama } from "ollama-ai-provider-v2";
 import type { Config, ProviderConfig } from "../config.ts";
 import type { EgressGuard } from "../net/egress.ts";
+import { tagModel } from "./errors.ts";
 import { FakeModels } from "./fake.ts";
 
 export interface Models {
@@ -129,10 +130,21 @@ export function createModels(
   const usesFake = [config.chat, config.small, config.embed].some((p) => p.provider === "fake");
   const fake = usesFake ? new FakeModels() : undefined;
   return {
-    chat: language(config.chat, guard, fake, "llm.chat"),
-    small: language(config.small, guard, fake, "llm.small"),
-    embed: embedding(config.embed, guard, fake),
+    chat: tag(language(config.chat, guard, fake, "llm.chat"), "chat", config.chat),
+    small: tag(language(config.small, guard, fake, "llm.small"), "small", config.small),
+    embed: tag(embedding(config.embed, guard, fake), "embed", config.embed),
     local: [config.chat, config.small, config.embed].every(isLocal),
     fake,
   };
+}
+
+/** Fake models stay unwrapped so tests see their raw behaviour. */
+function tag<M extends LanguageModel | EmbeddingModel>(
+  model: M,
+  role: "chat" | "small" | "embed",
+  p: ProviderConfig,
+): M {
+  return p.provider === "fake"
+    ? model
+    : tagModel(model, { role, provider: p.provider, model: p.model });
 }

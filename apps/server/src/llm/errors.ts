@@ -132,3 +132,8 @@ export function modelHttpError(err: unknown): HttpError | null {
     `${who} failed${status ? ` (HTTP ${status})` : ""}: ${detail.slice(0, 300)}`,
   );
 }
+
+/** The role, provider and model a failing call was tagged with, if any (spec 006 run records). */
+export function modelTagOf(err: unknown): ModelTag | null {
+  return chain(err).find((e) => e[TAG])?.[TAG] ?? null;
+}

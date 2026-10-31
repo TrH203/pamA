@@ -61,12 +61,15 @@ interface StoreArgs {
   status: "draft" | "approved";
   /** Override the content hash (sync stores the sender's hash for idempotency). */
   hash?: string;
+  /** Called after the items were embedded, before they are written (run stages, spec 006). */
+  onEmbedded?: () => Promise<void>;
 }
 
 /** Insert a new digest version with its items (inactive). Returns id and version. */
 export async function storeVersion(deps: PipelineDeps, a: StoreArgs) {
   const items = itemsOf(a.digest);
   const vectors = await embedTexts(deps.models.embed, items.map(itemSearchText));
+  await a.onEmbedded?.();
   return deps.db.tx(async (q) => {
     const [{ v } = { v: 0 }] = await q.query<{ v: number }>(
       "SELECT COALESCE(max(version), 0)::int AS v FROM digests WHERE session_id = $1",

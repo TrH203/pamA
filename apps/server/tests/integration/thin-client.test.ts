@@ -255,6 +255,28 @@ describeEachDb("device token as owner", (f) => {
     expect(review.items[0]?.device).toBe("a-laptop");
   });
 
+  it("records each draft as a run in the device's workspace (spec 006)", async () => {
+    const res = await draft(a.token, "ob-run");
+    expect(res.status).toBe(200);
+    const d = (await res.json()) as { digest_id: string; run_id: string };
+    const list = (await (await t.app.request("/v1/activity", get(a.token))).json()) as {
+      runs: { id: string; kind: string; status: string; stage: string; digest_id: string }[];
+    };
+    expect(list.runs).toHaveLength(1);
+    expect(list.runs[0]).toMatchObject({
+      id: d.run_id,
+      kind: "draft",
+      status: "succeeded",
+      stage: "stored",
+      digest_id: d.digest_id,
+    });
+    const other = (await (await t.app.request("/v1/activity", get(b.token))).json()) as {
+      runs: unknown[];
+    };
+    expect(other.runs).toHaveLength(0);
+    expect((await t.app.request(`/v1/activity/${d.run_id}`, get(b.token))).status).toBe(404);
+  });
+
   it("workspaces never see each other", async () => {
     const d = (await (await draft(a.token, "ob-2")).json()) as { digest_id: string };
     const reviewB = (await (await t.app.request("/v1/review", get(b.token))).json()) as {

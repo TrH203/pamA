@@ -11,14 +11,11 @@ import {
   recordBranches,
   reevaluateSession,
 } from "../services/bundles.ts";
-import {
-  approveDigest,
-  cleanAndLabel,
-  type PipelineDeps,
-  storeVersion,
-} from "../services/digests.ts";
-import { autoApproveFor, upsertProject } from "../services/projects.ts";
+import { cleanAndLabel, type PipelineDeps } from "../services/digests.ts";
+import { upsertProject } from "../services/projects.ts";
+import { type RunTracker, resumableFor } from "../services/runs.ts";
 import { sanitizeDeep } from "./classify.ts";
+import { completeDigest, type ResumeState } from "./complete.ts";
 import {
   formatTranscript,
   inputHash,
@@ -95,6 +92,7 @@ export interface DigestResult {
 export async function digestTranscript(
   deps: PipelineDeps,
   input: TranscriptInput,
+  run?: RunTracker,
 ): Promise<DigestResult> {
   const ws = deps.workspaceId;
   const hash = inputHash(input);
@@ -151,48 +149,48 @@ export async function digestTranscript(
     }
   }
 
-  // Layer 1 re-check on the server side of the device boundary.
-  const recheck = deps.rules.redact(formatTranscript(input.events));
-  const prompt = loadPrompt("digest");
-  const { output } = await generateText({
-    model: deps.models.small,
-    system: prompt.body,
-    prompt: `<transcript>\n${recheck.text}\n</transcript>`,
-    output: Output.object({ schema: DraftSchema }),
-    temperature: 0,
-  });
-
-  const raw = shapeDraft(input, output, recheck.counts, {
-    prompt_version: prompt.version,
-    model: String((deps.models.small as { modelId?: string }).modelId ?? "unknown"),
-    produced_at: new Date().toISOString(),
-  });
-  const { digest, labels } = await cleanAndLabel(deps, raw);
-
-  const stored = await storeVersion(deps, {
-    sessionId: session.id,
-    bundleId: session.bundle_id,
-    projectId: project.id,
-    digest,
-    labels,
-    status: "draft",
-  });
-  await deps.db.query("UPDATE sessions SET input_hash = $2, redaction_counts = $3 WHERE id = $1", [
-    session.id,
-    hash,
-    JSON.stringify({ secret: digest.redactions.secret, pii: digest.redactions.pii }),
-  ]);
-
-  let status: DigestResult["status"] = "draft";
-  if (await autoApproveFor(deps.db, project.id)) {
-    await approveDigest(deps, stored.id, undefined, "auto");
-    status = "approved";
-  }
-  return {
-    digest_id: stored.id,
-    version: stored.version,
-    status,
+  const resumeBase = {
+    input_hash: hash,
     session_id: session.id,
     bundle_id: session.bundle_id,
+    project_id: project.id,
   };
+  // A previous run of this exact request failed after drafting: resume from embed (spec 006).
+  const kept = await resumableFor<ResumeState>(
+    deps.db,
+    ws,
+    input.agent,
+    input.agent_session_id,
+    hash,
+  );
+  let state: ResumeState;
+  if (kept) {
+    state = { ...kept.resume, ...resumeBase };
+    await run?.stage("classified", state);
+  } else {
+    // Layer 1 re-check on the server side of the device boundary.
+    const recheck = deps.rules.redact(formatTranscript(input.events));
+    const prompt = loadPrompt("digest");
+    const { output } = await generateText({
+      model: deps.models.small,
+      system: prompt.body,
+      prompt: `<transcript>\n${recheck.text}\n</transcript>`,
+      output: Output.object({ schema: DraftSchema }),
+      temperature: 0,
+    });
+    await run?.stage("drafted");
+
+    const raw = shapeDraft(input, output, recheck.counts, {
+      prompt_version: prompt.version,
+      model: String((deps.models.small as { modelId?: string }).modelId ?? "unknown"),
+      produced_at: new Date().toISOString(),
+    });
+    const { digest, labels } = await cleanAndLabel(deps, raw);
+    state = { ...resumeBase, digest, labels };
+    await run?.stage("classified", state);
+  }
+
+  const done = await completeDigest(deps, state, run);
+  if (kept) await deps.db.query("UPDATE digest_runs SET resume = NULL WHERE id = $1", [kept.id]);
+  return { ...done, session_id: session.id, bundle_id: session.bundle_id };
 }

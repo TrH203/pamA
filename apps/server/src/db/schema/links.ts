@@ -115,7 +115,9 @@ export const asks = pgTable(
   {
     id: text("id").primaryKey(),
     workspaceId: text("workspace_id").notNull(),
-    origin: text("origin", { enum: ["link", "hotkey"] }).notNull(),
+    origin: text("origin", { enum: ["link", "hotkey", "owner_chat"] }).notNull(),
+    /** Conversation (migration 0013); null only for orphans awaiting retention. */
+    conversationId: text("conversation_id"),
     linkSlug: text("link_slug"),
     visitorId: text("visitor_id"),
     question: text("question").notNull(),
@@ -149,7 +151,8 @@ export const asks = pgTable(
       "asks_status",
       sql`${t.status} IN ('received','answered','refused','forwarded','owner_answered','dismissed','drafted')`,
     ),
-    check("asks_origin", sql`${t.origin} IN ('link','hotkey')`),
+    check("asks_origin", sql`${t.origin} IN ('link','hotkey','owner_chat')`),
+    index("asks_conversation_time").on(t.conversationId, t.createdAt),
     index("asks_link_time").on(t.linkSlug, t.createdAt),
     index("asks_workspace_status").on(t.workspaceId, t.status),
   ],

@@ -88,28 +88,7 @@ impl CaptureStatus {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Agent {
-    ClaudeCode,
-    Codex,
-}
-
-impl Agent {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Agent::ClaudeCode => "claude_code",
-            Agent::Codex => "codex",
-        }
-    }
-    fn parse(s: &str) -> Self {
-        if s == "codex" {
-            Agent::Codex
-        } else {
-            Agent::ClaudeCode
-        }
-    }
-}
+pub use crate::digest::Agent;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewCapture {
@@ -245,8 +224,40 @@ impl Store {
     fn init(conn: Connection) -> Result<Self> {
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "busy_timeout", 5_000)?;
+        Self::widen_agent_check(&conn)?;
         conn.execute_batch(include_str!("schema.sql"))?;
         Ok(Self { conn })
+    }
+
+    /// Device stores created before spec 005 only allowed `claude_code` and `codex`: rebuild
+    /// `captured_session` with the wider CHECK (SQLite cannot alter a constraint in place).
+    fn widen_agent_check(conn: &Connection) -> Result<()> {
+        let sql: Option<String> = conn
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'captured_session'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if !sql.is_some_and(|s| s.contains("('claude_code', 'codex')")) {
+            return Ok(());
+        }
+        conn.execute_batch(
+            "BEGIN;
+             ALTER TABLE captured_session RENAME TO captured_session_old;",
+        )?;
+        let create = include_str!("schema.sql")
+            .split(';')
+            .find(|s| s.contains("CREATE TABLE IF NOT EXISTS captured_session"))
+            .expect("schema has captured_session")
+            .to_string();
+        conn.execute_batch(&format!(
+            "{create};
+             INSERT INTO captured_session SELECT * FROM captured_session_old;
+             DROP TABLE captured_session_old;
+             COMMIT;"
+        ))?;
+        Ok(())
     }
 
     // --- captures -----------------------------------------------------------------------

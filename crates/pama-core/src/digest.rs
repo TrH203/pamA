@@ -14,6 +14,39 @@ use typeshare::typeshare;
 pub enum Agent {
     ClaudeCode,
     Codex,
+    Cursor,
+    #[serde(rename = "opencode")]
+    OpenCode,
+}
+
+impl Agent {
+    /// Every agent pamA has an adapter for (same order as `packages/types/agents.json`).
+    pub const ALL: [Agent; 4] = [Agent::ClaudeCode, Agent::Codex, Agent::Cursor, Agent::OpenCode];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Agent::ClaudeCode => "claude_code",
+            Agent::Codex => "codex",
+            Agent::Cursor => "cursor",
+            Agent::OpenCode => "opencode",
+        }
+    }
+
+    /// Parse a stored id; unknown ids (older rows) fall back to Claude Code as before.
+    pub fn parse(s: &str) -> Self {
+        Self::from_id(s).unwrap_or(Agent::ClaudeCode)
+    }
+
+    /// Strict parse of a stored id or a short CLI name (`claude`, `codex`, `cursor`, `opencode`).
+    pub fn from_id(s: &str) -> Option<Self> {
+        Some(match s {
+            "claude_code" | "claude" | "claude-code" => Agent::ClaudeCode,
+            "codex" => Agent::Codex,
+            "cursor" => Agent::Cursor,
+            "opencode" | "open_code" => Agent::OpenCode,
+            _ => return None,
+        })
+    }
 }
 
 #[typeshare]

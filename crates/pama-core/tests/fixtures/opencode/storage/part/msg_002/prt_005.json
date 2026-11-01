@@ -1,0 +1,1 @@
+{"id": "prt_005", "sessionID": "ses_abc123", "messageID": "msg_002", "type": "tool", "tool": "edit", "callID": "call_2", "state": {"status": "completed", "input": {"filePath": "/Users/dev/work/shop/src/cache.ts", "oldString": "invalidate(key)", "newString": "invalidate(key); invalidate(`price:${key}`)"}, "output": "", "title": "edit"}}

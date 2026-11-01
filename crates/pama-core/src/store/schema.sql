@@ -1,7 +1,7 @@
 -- Device store (data-model.md). Raw transcripts are never copied: only path and hash.
 CREATE TABLE IF NOT EXISTS captured_session (
   id                TEXT PRIMARY KEY,
-  agent             TEXT NOT NULL CHECK (agent IN ('claude_code', 'codex')),
+  agent             TEXT NOT NULL CHECK (agent IN ('claude_code', 'codex', 'cursor', 'opencode')),
   agent_session_id  TEXT NOT NULL,
   transcript_path   TEXT NOT NULL,
   transcript_sha256 TEXT,

@@ -8,11 +8,11 @@ use std::time::{Duration, SystemTime};
 use serde_json::{json, Value};
 
 use super::enabled_for;
-use crate::digest::{Agent as DigestAgent, MAX_BRANCHES};
+use crate::digest::MAX_BRANCHES;
 use crate::project;
 use crate::redact::RuleSet;
 use crate::session::{self, NormalizedSession};
-use crate::store::{Agent, CaptureStatus, CapturedSession, Store};
+use crate::store::{CaptureStatus, CapturedSession, Store};
 
 /// Most events sent for one session (the server accepts up to 20,000).
 const MAX_EVENTS: usize = 20_000;
@@ -109,10 +109,7 @@ pub fn request_body(
             v
         })
         .collect();
-    let agent = match s.meta.agent {
-        DigestAgent::ClaudeCode => "claude_code",
-        DigestAgent::Codex => "codex",
-    };
+    let agent = s.meta.agent.as_str();
     let sid = if s.meta.session_id.is_empty() {
         fallback_session_id
     } else {
@@ -161,10 +158,7 @@ impl<'a, S: DigestSink> Worker<'a, S> {
         let st = self.store;
         st.set_capture_status(&c.id, CaptureStatus::Redacting)?;
         let path = Path::new(&c.transcript_path);
-        let parsed = match c.agent {
-            Agent::ClaudeCode => session::claude::parse(path),
-            Agent::Codex => session::codex::parse(path),
-        };
+        let parsed = crate::agents::adapter(c.agent).parse(&c.transcript_path);
         let mut s = match parsed {
             Ok(s) => s,
             Err(e) => {

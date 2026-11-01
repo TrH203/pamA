@@ -1,8 +1,10 @@
-//! Agent session adapters (Claude Code, Codex) and Layer-1 redaction over their events.
+//! Agent session parsers (Claude Code, Codex, Cursor, OpenCode) and Layer-1 redaction over their events.
 
 pub mod claude;
 pub mod codex;
+pub mod cursor;
 mod event;
+pub mod opencode;
 pub mod reader;
 mod redact;
 

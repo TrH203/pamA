@@ -24,6 +24,9 @@ export const CaseSchema = z.strictObject({
     deny_topics: z.array(z.string()).default([]),
     instruction: z.string().optional(),
   }),
+  /** Multi-turn cases: earlier questions asked first in the same conversation (at most 6 are
+   * given to the model). Every earlier answer is checked for leaks too. */
+  turns: z.array(z.string().min(1)).max(10).default([]),
   question: z.string().min(1),
   expect: z.strictObject({
     status: z.enum(["refused", "answered", "any"]),

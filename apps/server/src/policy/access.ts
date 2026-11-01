@@ -181,7 +181,11 @@ export async function grantAccess(
       if (!req.otp) {
         const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
         await db.query(
-          `UPDATE visitors SET email = $2, otp_hash = $3, otp_expires_at = now() + make_interval(mins => $4) WHERE id = $1`,
+          // A new address is unproven until its code is entered: drop the old verification so the
+          // visitor cannot borrow it (askerIds would otherwise resume that address's conversations).
+          `UPDATE visitors SET email = $2, otp_hash = $3, otp_expires_at = now() + make_interval(mins => $4),
+             verified_at = CASE WHEN email IS DISTINCT FROM $2 THEN NULL ELSE verified_at END
+           WHERE id = $1`,
           [v.id, email, hashSecret(code), OTP_MINUTES],
         );
         await mailer.send({

@@ -13,6 +13,7 @@ import type { Models } from "./llm/providers.ts";
 import type { Mailer } from "./mail/index.ts";
 import type { EgressGuard } from "./net/egress.ts";
 import { activityRoutes } from "./routes/activity.ts";
+import { conversationRoutes } from "./routes/conversations.ts";
 import { deviceRoutes } from "./routes/device.ts";
 import { devicesRoutes } from "./routes/devices.ts";
 import { doctorRoutes } from "./routes/doctor.ts";
@@ -99,6 +100,7 @@ export function createApp(deps: Deps) {
     doctorRoutes,
     activityRoutes,
     libraryRoutes,
+    conversationRoutes,
   ]) {
     app.route("/v1", r);
   }

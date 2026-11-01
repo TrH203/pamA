@@ -269,7 +269,10 @@ fn a_task_can_be_kept_back_while_its_project_is_shared() {
             target: "https://pama.example".into(),
         },
     };
-    assert_eq!(w.run_due().unwrap()[0].1, CaptureOutcome::Skipped);
+    assert_eq!(
+        w.run_due().unwrap()[0].1,
+        CaptureOutcome::Skipped(pama_core::capture::errors::ErrorCode::SyncNotEnabled)
+    );
     assert_eq!(store.outbox_counts().unwrap().pending, 0);
 }
 

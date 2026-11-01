@@ -6,6 +6,7 @@ mod bundle_fmt;
 mod capture;
 mod config;
 mod connect;
+mod conversations;
 mod doctor;
 mod hook;
 mod inbox;
@@ -145,6 +146,8 @@ pub fn run(cli: Cli) -> anyhow::Result<Exit> {
             eprintln!("note: `pama pair` is deprecated; use `pama connect {server} --code <code>`");
             sync::pair(&ctx, &code, &server)
         }
+        Command::Conversations { action } => conversations::run(&ctx, action),
+        Command::Chat(args) => conversations::chat(&ctx, args),
         Command::Sync { action } => sync::run(&ctx, action),
         Command::Tasks { action } => library::tasks(&ctx, action),
         Command::Sessions { action } => library::sessions(&ctx, action),

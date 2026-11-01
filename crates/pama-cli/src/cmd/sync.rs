@@ -232,7 +232,9 @@ fn affected(ctx: &Ctx, target: &str, source_type: &str, key: &str) -> Vec<Value>
 fn set(ctx: &Ctx, api: &Api, t: &SyncTarget, enabled: bool) -> anyhow::Result<Exit> {
     let target = t.target.clone().or(ctx.store.setting(KEY_DEFAULT_TARGET)?);
     if enabled && target.is_none() {
-        eprintln!("error: no server to publish to; connect first (`pama connect <url>`) or pass --target");
+        eprintln!(
+            "error: no server to publish to; connect first (`pama connect <url>`) or pass --target"
+        );
         return Ok(Exit::Config);
     }
     let (query, kind) = match (&t.project, &t.bundle) {

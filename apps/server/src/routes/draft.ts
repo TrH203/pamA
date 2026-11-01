@@ -4,8 +4,9 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import type { Deps, Env } from "../app.ts";
-import { type AnswerResult, answerQuestion } from "../pipeline/answer.ts";
+import { type AnswerResult, answerQuestion, type PriorTurn } from "../pipeline/answer.ts";
 import { recordAsk } from "../services/asks.ts";
+import { createConversation } from "../services/conversations.ts";
 import { SourceRefSchema } from "../services/links.ts";
 import { body } from "./util.ts";
 
@@ -18,7 +19,13 @@ const DraftSchema = z.strictObject({
 /** Answer as the owner would see it: from all of their approved work, or the hinted part of it. */
 export async function draftForOwner(
   deps: Pick<Deps, "db" | "models" | "rules" | "workspaceId">,
-  input: { question: string; scope_hint?: z.infer<typeof SourceRefSchema>[]; shorter?: boolean },
+  input: {
+    question: string;
+    scope_hint?: z.infer<typeof SourceRefSchema>[];
+    shorter?: boolean;
+    /** Earlier turns of an owner chat (spec 008b); context only. */
+    history?: PriorTurn[];
+  },
 ): Promise<AnswerResult> {
   const hint = input.scope_hint ?? [];
   const ids = (t: string) => hint.filter((r) => r.type === t).map((r) => r.id);
@@ -44,25 +51,65 @@ export async function draftForOwner(
     ownerName: ws?.name ?? "the owner",
     threshold: ws?.t ?? 0.7,
     shorter: input.shorter,
+    history: input.history,
   });
 }
 
-export const draftRoutes = new Hono<Env>().post("/draft", async (c) => {
-  const deps = c.get("deps");
-  const input = await body(c, DraftSchema);
-  const result = await draftForOwner(deps, input);
-  const askId = await recordAsk(deps, { origin: "hotkey", question: input.question, result });
+/** Hotkey drafts are grouped in one conversation per workspace and UTC day (spec 008b). */
+async function hotkeyConversation(deps: Pick<Deps, "db" | "workspaceId">): Promise<string> {
+  const day = new Date().toISOString().slice(0, 10);
+  const [c] = await deps.db.query<{ id: string }>(
+    `SELECT id FROM conversations
+     WHERE workspace_id = $1 AND origin = 'hotkey' AND deleted_at IS NULL
+       AND to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') = $2
+     ORDER BY created_at LIMIT 1`,
+    [deps.workspaceId, day],
+  );
+  return (
+    c?.id ??
+    createConversation(deps.db, {
+      workspaceId: deps.workspaceId,
+      origin: "hotkey",
+      title: `Drafts ${day}`,
+    })
+  );
+}
 
-  // Suggested scope for "Create Ask Link": bundles of the retrieved items, best first.
-  const seen = new Map<string, string>();
-  for (const i of result.retrieved) if (!seen.has(i.bundle_id)) seen.set(i.bundle_id, i.bundle);
-  return c.json({
-    ask_id: askId,
-    status: result.status,
-    ...(result.status === "answered" ? { answer: result.answer } : { reason: result.reason }),
-    citations: result.citations.map((x) => ({ item_id: x.item_id, label: x.label })),
-    confidence: result.confidence,
-    language: result.language,
-    suggested_scope: [...seen].slice(0, 5).map(([id, title]) => ({ type: "bundle", id, title })),
+export const draftRoutes = new Hono<Env>()
+  // Recent hotkey drafts, newest first, so the desktop popup can show and reopen them.
+  .get("/draft/recent", async (c) => {
+    const { db, workspaceId } = c.get("deps");
+    const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 20) || 20, 1), 100);
+    const items = await db.query(
+      `SELECT a.id AS ask_id, a.conversation_id, a.question, a.answer, a.reason, a.citations, a.language, a.created_at
+       FROM asks a LEFT JOIN conversations c ON c.id = a.conversation_id
+       WHERE a.workspace_id = $1 AND a.origin = 'hotkey' AND c.deleted_at IS NULL
+       ORDER BY a.created_at DESC, a.id DESC LIMIT $2`,
+      [workspaceId, limit],
+    );
+    return c.json({ items });
+  })
+  .post("/draft", async (c) => {
+    const deps = c.get("deps");
+    const input = await body(c, DraftSchema);
+    const result = await draftForOwner(deps, input);
+    const askId = await recordAsk(deps, {
+      origin: "hotkey",
+      conversationId: await hotkeyConversation(deps),
+      question: input.question,
+      result,
+    });
+
+    // Suggested scope for "Create Ask Link": bundles of the retrieved items, best first.
+    const seen = new Map<string, string>();
+    for (const i of result.retrieved) if (!seen.has(i.bundle_id)) seen.set(i.bundle_id, i.bundle);
+    return c.json({
+      ask_id: askId,
+      status: result.status,
+      ...(result.status === "answered" ? { answer: result.answer } : { reason: result.reason }),
+      citations: result.citations.map((x) => ({ item_id: x.item_id, label: x.label })),
+      confidence: result.confidence,
+      language: result.language,
+      suggested_scope: [...seen].slice(0, 5).map(([id, title]) => ({ type: "bundle", id, title })),
+    });
   });
-});

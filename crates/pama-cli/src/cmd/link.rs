@@ -7,7 +7,7 @@ use super::{api_exit, Ctx};
 use crate::{Exit, LinkAction, LinkCreate};
 
 /// `task:<id>` (or `bundle:<id>`), `project:<id>`, `session:<id>`, or a bare id (task).
-fn source_ref(s: &str) -> Value {
+pub(super) fn source_ref(s: &str) -> Value {
     match s.split_once(':') {
         Some(("task", id)) => json!({ "type": "bundle", "id": id }),
         Some((t @ ("bundle" | "project" | "session"), id)) => json!({ "type": t, "id": id }),

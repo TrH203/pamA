@@ -122,14 +122,38 @@ export async function createHarness(fixturesDir: string): Promise<Harness> {
         [r.allowedSessionIds, r.denyLabels],
       );
       scopes.set(c.id, new Set(allowed.map((a) => a.id)));
-      const res = await app.request(`/a/${link.slug}/api/ask`, {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.1" },
-        body: JSON.stringify({ question: c.question }),
-      });
-      if (res.status !== 200) throw new Error(`${c.id}: HTTP ${res.status} ${await res.text()}`);
-      const body = (await res.json()) as EvalAnswer;
-      return { ...body, answer: body.answer ?? null };
+      // Earlier turns (multi-turn cases) go through the same conversation, keeping the visitor
+      // cookie, so the final question is answered with them as history.
+      let cookie = "";
+      let conversationId: string | undefined;
+      const ask = async (question: string): Promise<EvalAnswer> => {
+        const res = await app.request(`/a/${link.slug}/api/ask`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-forwarded-for": "198.51.100.1",
+            ...(cookie ? { cookie } : {}),
+          },
+          body: JSON.stringify({
+            question,
+            ...(conversationId ? { conversation_id: conversationId } : {}),
+          }),
+        });
+        if (res.status !== 200) throw new Error(`${c.id}: HTTP ${res.status} ${await res.text()}`);
+        cookie = res.headers.get("set-cookie")?.split(";")[0] ?? cookie;
+        const body = (await res.json()) as EvalAnswer & { conversation_id: string };
+        conversationId = body.conversation_id;
+        return {
+          status: body.status,
+          answer: body.answer ?? null,
+          citations: body.citations,
+          language: body.language,
+          reason: body.reason,
+        };
+      };
+      const earlier: EvalAnswer[] = [];
+      for (const q of c.turns) earlier.push(await ask(q));
+      return { ...(await ask(c.question)), earlier };
     },
     scopeOf: (c) => scopes.get(c.id) ?? new Set(),
     close: () => db.close(),

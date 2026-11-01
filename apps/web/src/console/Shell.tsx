@@ -99,7 +99,10 @@ function NavList({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: (
             to={to}
             onClick={onNavigate}
             aria-current={active ? "page" : undefined}
-            aria-label={collapsed ? label : undefined}
+            // Collapsed, the link shows only an icon: its name carries the label and the count.
+            aria-label={
+              collapsed ? (count ? `${label}, ${t.nav.waiting(count)}` : label) : undefined
+            }
             className={cn(
               "flex h-8 items-center gap-2.5 rounded-control px-2.5 text-ui font-medium transition-colors duration-150",
               active ? "bg-accent-soft text-accent-ink" : "text-muted hover:bg-hover hover:text-fg",
@@ -115,7 +118,6 @@ function NavList({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: (
                 label={t.nav.waiting(count ?? 0)}
               />
             )}
-            {collapsed && !!count && <span className="sr-only">{t.nav.waiting(count)}</span>}
           </Link>
         );
         return (
@@ -274,7 +276,7 @@ export function Shell({ dev = false, children }: { dev?: boolean; children?: Rea
   return (
     <div className="flex min-h-screen bg-bg text-fg">
       <aside
-        aria-label={t.nav.main}
+        aria-label={t.nav.sidebar}
         className={cn(
           "sticky top-0 hidden h-screen shrink-0 flex-col gap-4 border-r border-line bg-bg p-3 transition-[width] duration-200 ease-out md:flex",
           collapsed ? "w-16" : "w-60",
@@ -357,9 +359,16 @@ export function Shell({ dev = false, children }: { dev?: boolean; children?: Rea
 }
 
 /** Tabs that are links, for sections with sub-pages (Library, Activity). */
-export function SubNav({ items }: { items: { to: string; label: string; exact?: boolean }[] }) {
+export function SubNav({
+  label,
+  items,
+}: {
+  /** Accessible name, so this nav landmark is distinct from the main one. */
+  label: string;
+  items: { to: string; label: string; exact?: boolean }[];
+}) {
   return (
-    <nav className="-mt-2 mb-6 flex gap-1 overflow-x-auto border-b border-line">
+    <nav aria-label={label} className="-mt-2 mb-6 flex gap-1 overflow-x-auto border-b border-line">
       {items.map((i) => (
         <Link
           key={i.to}

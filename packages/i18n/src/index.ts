@@ -68,6 +68,17 @@ export function I18nProvider({ children, initial }: { children: ReactNode; initi
   useEffect(() => {
     if (typeof document !== "undefined") document.documentElement.lang = locale;
   }, [locale]);
+  // Other windows (the desktop popup and settings) and tabs share the saved choice.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== KEY && e.key !== null) return;
+      const saved = e.key === null ? null : e.newValue;
+      if (isLocale(saved)) set(saved);
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
   const setLocale = useCallback((l: Locale) => {
     persist(l);
     set(l);

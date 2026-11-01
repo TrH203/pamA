@@ -22,6 +22,7 @@ export const en = {
   },
   nav: {
     main: "Main",
+    sidebar: "Sidebar",
     home: "Home",
     review: "Review",
     conversations: "Conversations",
@@ -107,6 +108,7 @@ export const en = {
     doctor: {
       title: "Doctor",
       description: "The same checks as `pama doctor`, plus capture state.",
+      rerunFailed: "Couldn't re-run the checks",
     },
     settings: {
       title: "Settings",

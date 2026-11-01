@@ -15,9 +15,11 @@ import {
   THead,
   type Tone,
   TR,
+  useToast,
 } from "@pama/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CircleAlert, CircleCheck, RotateCw } from "lucide-react";
+import { useState } from "react";
 import { api, errorMessage } from "../lib/api.ts";
 
 interface DoctorCheck {
@@ -77,8 +79,20 @@ export function Doctor() {
     queryFn: () => api<Report>("/v1/doctor"),
     refetchInterval: () => (document.hidden ? false : POLL_MS),
   });
+  const toast = useToast();
+  const [rerunning, setRerunning] = useState(false);
+  // Always hit ?fresh=1 (fetchQuery would return the cached report while it is fresh), and cancel
+  // any background poll so a stale response cannot overwrite the new one.
   const rerun = async () => {
-    await qc.fetchQuery({ queryKey: ["doctor"], queryFn: () => api<Report>("/v1/doctor?fresh=1") });
+    setRerunning(true);
+    try {
+      await qc.cancelQueries({ queryKey: ["doctor"] });
+      qc.setQueryData(["doctor"], await api<Report>("/v1/doctor?fresh=1"));
+    } catch (e) {
+      toast.error(t.pages.doctor.rerunFailed, errorMessage(e));
+    } finally {
+      setRerunning(false);
+    }
   };
   const r = report.data;
 
@@ -91,7 +105,7 @@ export function Doctor() {
             updated {ago(r.at)} · every {POLL_MS / 1000}s
           </span>
         )}
-        <Button loading={report.isFetching} onClick={() => void rerun().catch(() => undefined)}>
+        <Button loading={rerunning} onClick={() => void rerun()}>
           <RotateCw aria-hidden />
           Re-run
         </Button>

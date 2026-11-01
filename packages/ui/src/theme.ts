@@ -27,6 +27,14 @@ export function initTheme() {
 export function useTheme(): [ThemeChoice, (t: ThemeChoice) => void] {
   const [choice, setChoice] = useState<ThemeChoice>(readTheme);
   useEffect(() => applyTheme(choice), [choice]);
+  // Other windows (the desktop popup and settings) and tabs share the choice.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === KEY || e.key === null) setChoice(readTheme());
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
   const set = useCallback((t: ThemeChoice) => {
     try {
       if (t === "system") localStorage.removeItem(KEY);

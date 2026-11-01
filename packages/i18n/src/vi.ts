@@ -22,6 +22,7 @@ export const vi: Messages = {
   },
   nav: {
     main: "Chính",
+    sidebar: "Thanh bên",
     home: "Trang chủ",
     review: "Duyệt",
     conversations: "Hội thoại",
@@ -106,6 +107,7 @@ export const vi: Messages = {
     doctor: {
       title: "Chẩn đoán",
       description: "Các kiểm tra giống `pama doctor`, kèm trạng thái capture.",
+      rerunFailed: "Không chạy lại được các kiểm tra",
     },
     settings: {
       title: "Cài đặt",

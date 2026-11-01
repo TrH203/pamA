@@ -1,11 +1,12 @@
 // Console routes (spec 009). URL-based so pages deep-link and the back button works; the server
 // serves console.html for each top-level section (apps/server/src/routes/static.ts).
 import { useI18n } from "@pama/i18n";
-import { buttonClass, PageHeader } from "@pama/ui";
+import { buttonClass, ErrorBanner, PageHeader } from "@pama/ui";
 import {
   createRootRoute,
   createRoute,
   createRouter,
+  type ErrorComponentProps,
   Link,
   Outlet,
   redirect,
@@ -20,6 +21,19 @@ import { Placeholder } from "./Placeholder.tsx";
 import { Review } from "./Review.tsx";
 import { Settings } from "./Settings.tsx";
 import { Shell, SubNav } from "./Shell.tsx";
+
+/** A page that threw while rendering: keep the shell and offer a retry instead of a bare trace. */
+function RouteError({ error, reset }: ErrorComponentProps) {
+  const { t } = useI18n();
+  return (
+    <ErrorBanner
+      title={t.common.loadFailed}
+      message={error instanceof Error ? error.message : String(error)}
+      onRetry={reset}
+      retryLabel={t.common.retry}
+    />
+  );
+}
 
 function NotFound() {
   const { t } = useI18n();
@@ -70,6 +84,7 @@ function LibraryLayout() {
     <>
       <PageHeader title={t.pages.library.title} description={t.pages.library.description} />
       <SubNav
+        label={t.pages.library.title}
         items={[
           { to: "/library", label: t.pages.library.title, exact: true },
           { to: "/library/tasks", label: t.nav.tasks },
@@ -103,6 +118,7 @@ function ActivityLayout() {
     <>
       <PageHeader title={t.pages.activity.title} description={t.pages.activity.description} />
       <SubNav
+        label={t.pages.activity.title}
         items={[
           { to: "/activity", label: t.pages.activity.title, exact: true },
           { to: "/activity/audit", label: t.nav.audit },
@@ -131,6 +147,13 @@ function ActivityIndex() {
   );
 }
 
+/** A search param as text: the router JSON-parses values, so `?q=123` arrives as a number. */
+export function searchText(v: unknown): string | undefined {
+  if (typeof v === "string") return v || undefined;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  return undefined;
+}
+
 export function makeRouter(opts: { dev?: boolean } = {}) {
   const root = createRootRoute({
     component: () => <Shell dev={opts.dev} />,
@@ -152,7 +175,7 @@ export function makeRouter(opts: { dev?: boolean } = {}) {
     path: "/links",
     component: Links,
     validateSearch: (s: Record<string, unknown>): { q?: string; new?: boolean } => ({
-      ...(typeof s.q === "string" && s.q ? { q: s.q } : {}),
+      ...(searchText(s.q) !== undefined ? { q: searchText(s.q) } : {}),
       ...(s.new === true || s.new === "true" ? { new: true } : {}),
     }),
   });
@@ -199,5 +222,10 @@ export function makeRouter(opts: { dev?: boolean } = {}) {
     settingsIndex,
     connections,
   ]);
-  return createRouter({ routeTree: tree, defaultPreload: "intent", scrollRestoration: true });
+  return createRouter({
+    routeTree: tree,
+    defaultPreload: "intent",
+    defaultErrorComponent: RouteError,
+    scrollRestoration: true,
+  });
 }

@@ -14,7 +14,10 @@ export function Table({
   ...rest
 }: TableHTMLAttributes<HTMLTableElement> & { wrapperClassName?: string; label?: string }) {
   return (
+    // Focusable so keyboard users can scroll a table that overflows sideways.
     <section
+      // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrollable region needs keyboard focus
+      tabIndex={0}
       className={cn("overflow-x-auto rounded-card border border-line bg-surface", wrapperClassName)}
       aria-label={label}
     >

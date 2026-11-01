@@ -11,6 +11,7 @@ import type { Env } from "../app.ts";
 import { HttpError } from "../http.ts";
 import { completeDigest, type ResumeState } from "../pipeline/complete.ts";
 import {
+  claimRetry,
   listRuns,
   loadRun,
   type PipelineCounts,
@@ -18,7 +19,6 @@ import {
   type RunEvent,
   type RunKind,
   type RunTracker,
-  reopenRun,
   runBus,
   startRun,
 } from "../services/runs.ts";
@@ -75,31 +75,40 @@ export const activityRoutes = new Hono<Env>()
   .post("/activity/:id/retry", async (c) => {
     const deps = c.get("deps");
     const id = c.req.param("id");
-    const run = await loadRun(deps.db, deps.workspaceId, id);
-    if (!run) throw new HttpError(404, "not_found", "no run with this id");
-    if (run.status !== "failed") {
-      throw new HttpError(409, "conflict", `cannot retry a ${run.status} run`);
+    // Claimed atomically: a second retry of the same run, or a retry of a run that a newer run
+    // of the session has replaced, gets 409 instead of storing the draft again.
+    const claim = await claimRetry<ResumeState>(deps.db, deps.workspaceId, id);
+    if (!claim.ok) {
+      switch (claim.reason) {
+        case "not_found":
+          throw new HttpError(404, "not_found", "no run with this id");
+        case "not_failed": {
+          const run = await loadRun(deps.db, deps.workspaceId, id);
+          throw new HttpError(409, "conflict", `cannot retry a ${run?.status ?? "running"} run`);
+        }
+        case "superseded":
+          throw new HttpError(
+            409,
+            "superseded",
+            `A newer run of this session exists (${claim.newer}); retry that one instead.`,
+          );
+        case "no_draft":
+          // The transcript never leaves the device (Constitution I): only it can start over.
+          throw new HttpError(
+            409,
+            "retry_on_device",
+            "This run failed before its draft was kept, so it needs the session from the device. Run `pama activity retry --all-failed` on that device.",
+          );
+      }
     }
-    const [row] = await deps.db.query<{ resume: ResumeState | null }>(
-      "SELECT resume FROM digest_runs WHERE id = $1",
-      [id],
-    );
-    if (!row?.resume) {
-      // The transcript never leaves the device (Constitution I): only it can start over.
-      throw new HttpError(
-        409,
-        "retry_on_device",
-        "This run failed before its draft was kept, so it needs the session from the device. Run `pama activity retry --all-failed` on that device.",
-      );
-    }
-    const tracker = await reopenRun(deps.db, deps.workspaceId, id);
+    const { tracker } = claim;
     c.header(RUN_HEADER, id);
     try {
-      const out = await completeDigest(deps, row.resume, tracker);
+      const out = await completeDigest(deps, claim.resume, tracker);
       await tracker.succeed(out.digest_id);
       return c.json({ ...out, run_id: id });
     } catch (err) {
-      await tracker.fail(err);
+      await tracker.fail(err).catch((e) => console.error("cannot record run failure", e));
       throw err;
     }
   })

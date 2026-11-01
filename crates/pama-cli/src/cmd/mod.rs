@@ -88,6 +88,11 @@ pub fn run(cli: Cli) -> anyhow::Result<Exit> {
         store,
         server: cli.global.server.clone(),
     };
+    // Retries further away than a drain waits (30 m, 2 h, 6 h) run when an owner command
+    // notices they are due (spec 006; CLI-only installs have no desktop drain).
+    if cli.command.as_ref().is_none_or(kicks_drain) {
+        capture::kick_due(&ctx);
+    }
     let Some(command) = cli.command else {
         return status::run(&ctx);
     };
@@ -155,6 +160,30 @@ pub fn run(cli: Cli) -> anyhow::Result<Exit> {
         Command::Search { query, limit } => library::search(&ctx, &query.join(" "), limit),
         Command::Doctor { report } => doctor::run(&ctx, report),
     }
+}
+
+/// Owner commands that start a drain for due captures. Not the hook and the drain themselves,
+/// and not commands that change the server, mode or login (a drain would act on the old one).
+fn kicks_drain(c: &Command) -> bool {
+    matches!(
+        c,
+        Command::Status
+            | Command::Activity { .. }
+            | Command::Logs { .. }
+            | Command::Scan { .. }
+            | Command::Review { .. }
+            | Command::Inbox
+            | Command::Reply { .. }
+            | Command::Log { .. }
+            | Command::Sync { .. }
+            | Command::Tasks { .. }
+            | Command::Sessions { .. }
+            | Command::Digests { .. }
+            | Command::Search { .. }
+            | Command::Conversations { .. }
+            | Command::Chat(..)
+            | Command::Doctor { .. }
+    )
 }
 
 /// `30m`, `2h`, `7d` → seconds.

@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use pama_core::capture::errors::{notification_text, ErrorCode, NotifyGate};
+use pama_core::capture::errors::{from_draft, notification_text, ErrorCode, NotifyGate};
 use pama_core::capture::scan::scan;
 use pama_core::capture::worker::{drain, Worker};
 use pama_core::client::{Api, LocalApi};
@@ -131,8 +131,16 @@ fn drain_remote(store: &pama_core::store::Store, rules: &RuleSet, target: &str) 
             }
         }
         Err(e) => {
-            if !store.due_captures(1).unwrap_or_default().is_empty() {
-                log_error("drafting model", &e);
+            // No drafting model (missing key, provider down): record it on the due captures so
+            // they back off, and a configuration error reaches the owner as a notification.
+            let coded = match &e {
+                pama_core::draft::DraftError::Retryable(m) => from_draft(true, m),
+                pama_core::draft::DraftError::Fatal(m) => from_draft(false, m),
+            };
+            match store.fail_due(&coded) {
+                Ok(0) => {}
+                Ok(_) => log_error("drafting model", &e),
+                Err(se) => log_error("drafting model", &se),
             }
         }
     }

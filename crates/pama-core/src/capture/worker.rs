@@ -54,27 +54,46 @@ pub enum CaptureOutcome {
     Failed(CodedError),
 }
 
-/// Fewest characters of user and assistant text worth a digest.
+/// Fewest characters of conversation (user and assistant text plus what tool calls did) worth a
+/// digest.
 pub const MIN_CONVERSATION_CHARS: usize = 40;
 
-/// Empty or trivial session guard (spec 006): no user message, no assistant reply, or almost no
-/// text. Such sessions are skipped with `empty_session` before any model call.
+/// Empty or trivial session guard (spec 006 FR-006): a session is worth a digest when the user
+/// wrote something, the agent answered it (assistant text) or acted on it (a tool call), and
+/// there are at least [`MIN_CONVERSATION_CHARS`] characters of conversation. A tool call counts
+/// with its command, path or input text, so "fix it" followed by edits is real work, while a
+/// greeting and a one-line reply is not. Tool results are output, not conversation, and do not
+/// count. Trivial sessions are skipped with `empty_session` before any model call.
 pub fn is_trivial(s: &NormalizedSession) -> bool {
     use crate::session::EventKind;
-    let (mut user, mut assistant, mut chars) = (false, false, 0usize);
+    let (mut user, mut agent, mut chars) = (false, false, 0usize);
     for e in &s.events {
-        let t = e.text.trim();
-        if t.is_empty() {
+        let n = match e.kind {
+            EventKind::User | EventKind::Assistant => e.text.trim().chars().count(),
+            EventKind::ToolCall => [
+                e.command.as_deref(),
+                e.path.as_deref(),
+                Some(e.text.as_str()),
+            ]
+            .into_iter()
+            .flatten()
+            .map(|t| t.trim().chars().count())
+            .max()
+            .unwrap_or(0)
+            .max(usize::from(e.tool.is_some())),
+            EventKind::ToolResult => 0,
+        };
+        if n == 0 {
             continue;
         }
         match e.kind {
             EventKind::User => user = true,
-            EventKind::Assistant => assistant = true,
-            _ => continue,
+            EventKind::Assistant | EventKind::ToolCall => agent = true,
+            EventKind::ToolResult => {}
         }
-        chars += t.chars().count();
+        chars += n;
     }
-    !(user && assistant && chars >= MIN_CONVERSATION_CHARS)
+    !(user && agent && chars >= MIN_CONVERSATION_CHARS)
 }
 
 pub struct Worker<'a, S: DigestSink> {
@@ -301,14 +320,28 @@ impl<'a, S: DigestSink> Worker<'a, S> {
 
     /// Process every due capture once.
     pub fn run_due(&self) -> crate::store::Result<Vec<(String, CaptureOutcome)>> {
+        self.run_due_with(|| {})
+    }
+
+    /// [`Self::run_due`], calling `before_each` before every capture (the drain refreshes its
+    /// lock so a long batch is not taken for a dead drain).
+    pub fn run_due_with(
+        &self,
+        mut before_each: impl FnMut(),
+    ) -> crate::store::Result<Vec<(String, CaptureOutcome)>> {
         let mut out = Vec::new();
         for c in self.store.due_captures(50)? {
+            before_each();
             let o = self.process(&c)?;
             out.push((c.id.clone(), o));
         }
         Ok(out)
     }
 }
+
+/// A drain lock older than this belongs to a drain that died; an in-progress capture whose
+/// attempt started before it was interrupted.
+pub const DRAIN_STALE: Duration = Duration::from_secs(600);
 
 /// Run the worker under a lock file so concurrent hook invocations do not race.
 /// Returns `None` if another drain holds a fresh lock.
@@ -321,7 +354,7 @@ pub fn drain<S: DigestSink>(
     }
     let stale = std::fs::metadata(lock)
         .and_then(|m| m.modified())
-        .map(|t| t.elapsed().unwrap_or_default() > Duration::from_secs(600))
+        .map(|t| t.elapsed().unwrap_or_default() > DRAIN_STALE)
         .unwrap_or(false);
     if stale {
         let _ = std::fs::remove_file(lock);
@@ -334,15 +367,103 @@ pub fn drain<S: DigestSink>(
     {
         return Ok(None);
     }
-    let res = w.run_due();
+    // Holding the lock: a capture still `redacting`/`digesting` from before the stale window was
+    // left by a drain that was killed or failed mid-attempt; put it back on the retry schedule.
+    let res = w
+        .store
+        .recover_interrupted(crate::store::now_ms() - DRAIN_STALE.as_millis() as i64)
+        .and_then(|_| {
+            w.run_due_with(|| {
+                if let Ok(f) = OpenOptions::new().write(true).open(lock) {
+                    let _ = f.set_modified(SystemTime::now());
+                }
+            })
+        });
     let _ = std::fs::remove_file(lock);
     res.map(Some)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::rfc3339;
+    use super::{is_trivial, rfc3339};
+    use crate::digest::Agent;
+    use crate::session::{Event, EventKind, NormalizedSession, SessionMeta};
     use std::time::{Duration, SystemTime};
+
+    fn ev(kind: EventKind, text: &str) -> Event {
+        Event {
+            kind,
+            text: text.into(),
+            tool: None,
+            path: None,
+            command: None,
+            call_id: None,
+            at: None,
+        }
+    }
+
+    fn call(tool: &str, command: Option<&str>, path: Option<&str>) -> Event {
+        Event {
+            tool: Some(tool.into()),
+            command: command.map(Into::into),
+            path: path.map(Into::into),
+            ..ev(EventKind::ToolCall, "")
+        }
+    }
+
+    fn session(events: Vec<Event>) -> NormalizedSession {
+        NormalizedSession {
+            meta: SessionMeta::new(Agent::ClaudeCode, "s"),
+            events,
+            skipped_lines: 0,
+        }
+    }
+
+    #[test]
+    fn a_question_and_a_real_answer_is_not_trivial() {
+        let s = session(vec![
+            ev(EventKind::User, "Should refunds include shipping?"),
+            ev(
+                EventKind::Assistant,
+                "No, the carrier fee is non-refundable.",
+            ),
+        ]);
+        assert!(!is_trivial(&s));
+    }
+
+    #[test]
+    fn a_short_request_answered_only_by_tool_calls_is_real_work() {
+        let s = session(vec![
+            ev(EventKind::User, "fix the failing test"),
+            call("edit", None, Some("crates/pama-core/src/store/mod.rs")),
+            call("bash", Some("cargo test -p pama-core"), None),
+            ev(EventKind::ToolResult, "test result: ok"),
+        ]);
+        assert!(!is_trivial(&s));
+    }
+
+    #[test]
+    fn greetings_tool_output_only_and_missing_sides_are_trivial() {
+        // A greeting and a one-line reply.
+        assert!(is_trivial(&session(vec![
+            ev(EventKind::User, "hi"),
+            ev(EventKind::Assistant, "Hello! How can I help?"),
+        ])));
+        // Tool calls and results but no user message (e.g. a resumed session's replay).
+        assert!(is_trivial(&session(vec![
+            call("bash", Some("cargo test -p pama-core --all-targets"), None),
+            ev(EventKind::ToolResult, &"x".repeat(500)),
+        ])));
+        // A user message nobody acted on; long tool output does not count as conversation.
+        assert!(is_trivial(&session(vec![
+            ev(
+                EventKind::User,
+                "Please look at the build failure in CI today"
+            ),
+            ev(EventKind::ToolResult, &"y".repeat(500)),
+        ])));
+        assert!(is_trivial(&session(vec![])));
+    }
 
     #[test]
     fn formats_rfc3339() {

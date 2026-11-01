@@ -530,6 +530,17 @@ impl Store {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
+    /// Whether a capture that already failed at least once is due for its retry at `at` (ms).
+    /// New captures are left to the drain their hook started.
+    pub fn retry_due(&self, at: i64) -> Result<bool> {
+        Ok(self.conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM captured_session WHERE status = 'detected'
+             AND attempts > 0 AND next_attempt_at <= ?1)",
+            [at],
+            |r| r.get(0),
+        )?)
+    }
+
     /// Milliseconds until the next `detected` capture is due (None if there is none).
     pub fn next_due_in(&self) -> Result<Option<i64>> {
         let at: Option<i64> = self.conn.query_row(
@@ -610,6 +621,61 @@ impl Store {
             }
         }
         Ok(CaptureStatus::Failed)
+    }
+
+    /// Captures left in `redacting` or `digesting` by a drain that stopped mid-attempt (killed,
+    /// crashed, or a store error) whose latest attempt started before `started_before` (ms): the
+    /// open attempt ends as `internal` ("interrupted") and the capture goes on the retry
+    /// schedule like any failure. Call it only while holding the drain lock. Returns how many.
+    pub fn recover_interrupted(&self, started_before: i64) -> Result<usize> {
+        let ids: Vec<String> = {
+            let mut st = self.conn.prepare(
+                "SELECT c.id FROM captured_session c
+                 WHERE c.status IN ('redacting', 'digesting')
+                   AND COALESCE((SELECT max(a.started_at) FROM capture_attempt a
+                                 WHERE a.capture_id = c.id), 0) < ?1",
+            )?;
+            let rows = st.query_map([started_before], |r| r.get(0))?;
+            rows.collect::<rusqlite::Result<_>>()?
+        };
+        let err = CodedError::new(
+            ErrorCode::Internal,
+            "interrupted: the drain stopped during this attempt",
+        );
+        for id in &ids {
+            let outcome = match self.fail_capture(id, &err)? {
+                CaptureStatus::Failed => "failed",
+                _ => "retry",
+            };
+            let open: Vec<String> = {
+                let mut st = self.conn.prepare(
+                    "SELECT id FROM capture_attempt WHERE capture_id = ?1 AND outcome IS NULL",
+                )?;
+                let rows = st.query_map([id], |r| r.get(0))?;
+                rows.collect::<rusqlite::Result<_>>()?
+            };
+            for a in open {
+                self.finish_attempt(&a, outcome, Some(&err), None, None)?;
+            }
+        }
+        Ok(ids.len())
+    }
+
+    /// Record `err` as a failed attempt on every due capture (nothing can draft right now: no
+    /// server, no model, not logged in), so each one backs off on the retry schedule or, for a
+    /// configuration error, waits for the owner. Returns how many.
+    pub fn fail_due(&self, err: &CodedError) -> Result<usize> {
+        let due = self.due_captures(50)?;
+        for c in &due {
+            let attempt = self.start_attempt(&c.id)?;
+            self.set_capture_status(&c.id, CaptureStatus::Redacting)?;
+            let outcome = match self.fail_capture(&c.id, err)? {
+                CaptureStatus::Failed => "failed",
+                _ => "retry",
+            };
+            self.finish_attempt(&attempt, outcome, Some(err), None, None)?;
+        }
+        Ok(due.len())
     }
 
     /// Skip a capture; the reason is always a code (project_not_enabled, sync_not_enabled,
@@ -1220,6 +1286,49 @@ mod tests {
         }
         assert_eq!(n, 7);
         assert_eq!(t, (20 * 60 + 36) * m);
+    }
+
+    #[test]
+    fn interrupted_attempts_are_recovered_onto_the_retry_schedule() {
+        let s = Store::open_in_memory().unwrap();
+        let old = s.enqueue_capture(&cap("int-old"), 0).unwrap();
+        let fresh = s.enqueue_capture(&cap("int-fresh"), 0).unwrap();
+        for id in [&old, &fresh] {
+            s.start_attempt(id).unwrap();
+            s.set_capture_status(id, CaptureStatus::Redacting).unwrap();
+            s.set_capture_status(id, CaptureStatus::Digesting).unwrap();
+        }
+        // The old drain died 20 minutes ago; the fresh one may still be running.
+        s.conn
+            .execute(
+                "UPDATE capture_attempt SET started_at = ?2 WHERE capture_id = ?1",
+                params![old, now_ms() - 20 * MINUTE_MS],
+            )
+            .unwrap();
+        assert_eq!(s.recover_interrupted(now_ms() - 10 * MINUTE_MS).unwrap(), 1);
+        let c = s.capture(&old).unwrap();
+        assert_eq!(c.status, CaptureStatus::Detected);
+        assert_eq!(c.error_code.as_deref(), Some("internal"));
+        let a = s.attempts(&old).unwrap();
+        assert_eq!(a.len(), 1);
+        assert_eq!(a[0].outcome.as_deref(), Some("retry"));
+        assert_eq!(s.capture(&fresh).unwrap().status, CaptureStatus::Digesting);
+        assert_eq!(s.recover_interrupted(now_ms() - 10 * MINUTE_MS).unwrap(), 0);
+    }
+
+    #[test]
+    fn fail_due_records_an_attempt_on_every_due_capture() {
+        let s = Store::open_in_memory().unwrap();
+        let a = s.enqueue_capture(&cap("due-a"), 0).unwrap();
+        let b = s.enqueue_capture(&cap("due-b"), 0).unwrap();
+        assert_eq!(s.fail_due(&err(ErrorCode::ProviderAuth)).unwrap(), 2);
+        for id in [&a, &b] {
+            assert_eq!(s.capture(id).unwrap().status, CaptureStatus::Failed);
+            let at = s.attempts(id).unwrap();
+            assert_eq!(at[0].outcome.as_deref(), Some("failed"));
+            assert_eq!(at[0].error_code.as_deref(), Some("provider_auth"));
+        }
+        assert_eq!(s.fail_due(&err(ErrorCode::ServerDown)).unwrap(), 0);
     }
 
     #[test]

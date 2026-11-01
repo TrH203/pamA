@@ -59,6 +59,8 @@ most once per error code per hour.
 - Server error body that is not JSON (proxy HTML): mapped by HTTP status (`502..504` →
   `server_down`, `5xx` → `internal`, `401` → `not_logged_in`, `429` → `rate_limited`).
 - Old device database: new columns are added on open (`ensure_column`).
+- No drafting model on the device (remote mode, missing key): CLI and desktop record a failed
+  attempt on every due capture with the coded error, so config errors are notified.
 
 ## Requirements
 
@@ -78,15 +80,27 @@ most once per error code per hour.
   project_not_enabled, sync_not_enabled, not_logged_in, server_down, sync_rejected, internal`.
   Each code has a hint and a policy (retry, wait for user, give up, skip).
 - **FR-005**: Retry schedule 1m, 5m, 30m, 2h, then every 6h, no retry starting more than 24h
-  after the first failure.
-- **FR-006**: Sessions without both a user and an assistant message, or with fewer than 40
-  characters of conversation, MUST be skipped with `empty_session` before any model call.
+  after the first failure. A drain waits for retries up to 5 minutes away and then exits; a
+  later retry runs when something starts a drain after it is due: an agent hook, the desktop
+  app (every minute), or, on a CLI-only install, any owner command (`pama`, `status`,
+  `activity`, `scan`, `review`, library commands, ...), which starts a background drain when a
+  retry of an already-failed capture is due and no drain holds the lock (at most once a minute).
+  A capture left `redacting`/`digesting` by a drain that died is recovered by the next drain
+  (attempt ends `internal`, "interrupted") once its attempt is older than the 10-minute lock
+  window; a running drain refreshes its lock before each capture.
+- **FR-006**: A session MUST be skipped with `empty_session` before any model call unless it
+  has a user message, an agent response (assistant text or at least one tool call), and at
+  least 40 characters of conversation, where a tool call counts with its command, path or
+  input text and tool results do not count. "fix it" followed by edits is real work; a
+  greeting with a one-line reply, or tool output without a user message, is not.
 - **FR-007**: The server MUST record a `digest_runs` row (migration 0011) for every digest and
   draft ingest, with stage updates and the coded error, role, provider, model.
 - **FR-008**: When a later stage fails after drafting, the run MUST keep the drafted output so a
   retry resumes from embed.
 - **FR-009**: Routes: `GET /v1/activity` (filter `status`, `since`; cursor pagination; counts),
-  `GET /v1/activity/:id`, `POST /v1/activity/:id/retry` (resumable runs only),
+  `GET /v1/activity/:id`, `POST /v1/activity/:id/retry` (resumable runs only; the run is
+  claimed atomically, so a concurrent second retry gets 409 `conflict`, and a run that a newer
+  run of the same session replaced gets 409 `superseded`; storing a kept draft is idempotent),
   `GET /v1/events` (SSE `run.updated`, `review.count`, `inbox.count`, `heartbeat`).
 - **FR-010**: CLI: `pama status` (also bare `pama`), `pama activity [--failed] [--follow]
   [--limit]`, `pama activity show <id>`, `pama activity retry <id>|--all-failed`,

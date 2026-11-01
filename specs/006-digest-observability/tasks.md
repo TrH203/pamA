@@ -33,6 +33,12 @@
 - [x] T018 Notify configuration errors, de-duplicated per code per hour (`NotifyGate` + test)
 - [x] T019 Background drain follows remote mode; review/inbox counts from the resolved server
 
+## Phase 5: Review fixes
+
+- [x] T023 Retry of a server run is claimed atomically; 409 for a concurrent retry or a run superseded by a newer run of the session; resubmission takes the kept draft atomically; `completeDigest` reuses an already stored version (tests in `activity.test.ts`)
+- [x] T024 Empty-session guard counts tool calls as agent activity (FR-006; unit tests in `capture/worker.rs`)
+- [x] T025 Later retries on CLI-only installs: owner commands start a drain when a retry is due (`capture::kick_due`); drains recover interrupted captures and refresh their lock; desktop records drafting-model errors on due captures (`Store::fail_due`)
+
 ## Deferred
 
 - [ ] T020 Async `202 {run_id}` digest endpoint over the job queue (plan §4.1; optional, not done)

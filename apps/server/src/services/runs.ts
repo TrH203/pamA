@@ -167,22 +167,54 @@ export async function startRun(
   return t;
 }
 
-/** Re-open a failed run for a retry on the server. */
-export async function reopenRun(
+export type RetryClaim<T> =
+  | { ok: true; tracker: RunTracker; resume: T }
+  | { ok: false; reason: "not_found" | "not_failed" | "no_draft" | "superseded"; newer?: string };
+
+/**
+ * Claim a failed run for a retry on the server. One atomic update moves it from `failed` to
+ * `running`, so two concurrent retries cannot both resume it, and a run is never resumed once a
+ * newer run of the same session exists (the device re-sent it, or a later draft was stored):
+ * storing the older draft would shadow the newer one.
+ */
+export async function claimRetry<T>(
   db: Queryable,
   workspaceId: string,
   id: string,
-): Promise<RunTracker> {
-  await db.query(
-    `UPDATE digest_runs SET status = 'running', attempts = attempts + 1, error_code = NULL,
+): Promise<RetryClaim<T>> {
+  const [claimed] = await db.query<{ resume: T }>(
+    `UPDATE digest_runs r SET status = 'running', attempts = attempts + 1, error_code = NULL,
        error_message = NULL, role = NULL, provider = NULL, model = NULL, finished_at = NULL,
-       updated_at = now() WHERE id = $1 AND workspace_id = $2`,
+       updated_at = now()
+     WHERE r.id = $1 AND r.workspace_id = $2 AND r.status = 'failed' AND r.resume IS NOT NULL
+       AND NOT EXISTS (SELECT 1 FROM digest_runs n WHERE n.workspace_id = r.workspace_id
+         AND n.agent = r.agent AND n.agent_session_id = r.agent_session_id AND n.id > r.id)
+     RETURNING r.resume`,
     [id, workspaceId],
   );
-  return new RunTracker(db, workspaceId, id);
+  if (claimed) {
+    const tracker = new RunTracker(db, workspaceId, id);
+    await tracker.publish();
+    return { ok: true, tracker, resume: claimed.resume };
+  }
+  const [r] = await db.query<{ status: RunStatus; has_resume: boolean; newer: string | null }>(
+    `SELECT r.status, (r.resume IS NOT NULL) AS has_resume,
+       (SELECT max(n.id) FROM digest_runs n WHERE n.workspace_id = r.workspace_id
+         AND n.agent = r.agent AND n.agent_session_id = r.agent_session_id AND n.id > r.id) AS newer
+     FROM digest_runs r WHERE r.id = $1 AND r.workspace_id = $2`,
+    [id, workspaceId],
+  );
+  if (!r) return { ok: false, reason: "not_found" };
+  if (r.status !== "failed") return { ok: false, reason: "not_failed" };
+  if (r.newer) return { ok: false, reason: "superseded", newer: r.newer };
+  return { ok: false, reason: "no_draft" };
 }
 
-/** The kept output of the latest failed run of a session, when it matches `inputHash`. */
+/**
+ * Take the kept output of the latest failed run of a session when it matches `inputHash`. The
+ * output is removed from that run in the same statement, so a concurrent resubmission or a
+ * server-side retry cannot store it a second time; the caller's own run keeps it from here.
+ */
 export async function resumableFor<T>(
   db: Queryable,
   workspaceId: string,
@@ -191,10 +223,13 @@ export async function resumableFor<T>(
   inputHash: string,
 ): Promise<{ id: string; resume: T } | null> {
   const [r] = await db.query<{ id: string; resume: T }>(
-    `SELECT id, resume FROM digest_runs
-     WHERE workspace_id = $1 AND agent = $2 AND agent_session_id = $3 AND status = 'failed'
-       AND resume IS NOT NULL AND resume->>'input_hash' = $4
-     ORDER BY id DESC LIMIT 1`,
+    `UPDATE digest_runs d SET resume = NULL, updated_at = now()
+     FROM (SELECT id, resume FROM digest_runs
+           WHERE workspace_id = $1 AND agent = $2 AND agent_session_id = $3 AND status = 'failed'
+             AND resume IS NOT NULL AND resume->>'input_hash' = $4
+           ORDER BY id DESC LIMIT 1) k
+     WHERE d.id = k.id AND d.resume IS NOT NULL
+     RETURNING d.id, k.resume`,
     [workspaceId, agent, agentSessionId, inputHash],
   );
   return r ?? null;

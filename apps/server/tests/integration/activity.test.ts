@@ -4,6 +4,7 @@ import type { EmbeddingModel } from "ai";
 import { MockEmbeddingModelV4 } from "ai/test";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { tagModel } from "../../src/llm/errors.ts";
+import { completeDigest, type ResumeState } from "../../src/pipeline/complete.ts";
 import { events } from "../../src/routes/activity.ts";
 import {
   classifyReply,
@@ -157,6 +158,71 @@ describeEachDb("digest runs", (f) => {
     expect(((await retry.json()) as { error: { code: string } }).error.code).toBe(
       "retry_on_device",
     );
+  });
+
+  it("two concurrent retries of one run store the draft once", async () => {
+    const embed = t.deps.models.embed;
+    t.deps.models.embed = unreachableEmbed();
+    const res = await submit();
+    expect(res.status).toBe(502);
+    const id = res.headers.get("pama-run-id") as string;
+    t.deps.models.embed = embed;
+    const [a, b] = await Promise.all([
+      t.req(`/v1/activity/${id}/retry`, { method: "POST" }),
+      t.req(`/v1/activity/${id}/retry`, { method: "POST" }),
+    ]);
+    expect([a.status, b.status].sort()).toEqual([200, 409]);
+    const digests = await t.db.query("SELECT id FROM digests");
+    expect(digests).toHaveLength(1);
+    expect(await run(id)).toMatchObject({ status: "succeeded", attempts: 2 });
+    // A retry of a run that already succeeded is refused too.
+    const late = await t.req(`/v1/activity/${id}/retry`, { method: "POST" });
+    expect(late.status).toBe(409);
+  });
+
+  it("refuses to resume a run that a newer run of the session replaced", async () => {
+    const embed = t.deps.models.embed;
+    t.deps.models.embed = unreachableEmbed();
+    const res = await submit();
+    const stale = res.headers.get("pama-run-id") as string;
+    t.deps.models.embed = embed;
+    // The device re-sends the session after more work (different transcript, new draft).
+    const events = [
+      ...(transcriptInput().events as unknown[]),
+      { kind: "user", text: "And for partial refunds, keep the same rule?" },
+      {
+        kind: "assistant",
+        text: "Yes, the shipping fee stays non-refundable for partial refunds.",
+      },
+    ];
+    const fresh = await submit({ events });
+    expect(fresh.status).toBe(200);
+    const newer = fresh.headers.get("pama-run-id") as string;
+    const before = await t.db.query("SELECT id FROM digests");
+    const retry = await t.req(`/v1/activity/${stale}/retry`, { method: "POST" });
+    expect(retry.status).toBe(409);
+    const body = (await retry.json()) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe("superseded");
+    expect(body.error.message).toContain(newer);
+    expect(await t.db.query("SELECT id FROM digests")).toHaveLength(before.length);
+    expect((await run(stale)).status).toBe("failed");
+  });
+
+  it("completing the same kept draft twice reuses the stored version", async () => {
+    const embed = t.deps.models.embed;
+    t.deps.models.embed = unreachableEmbed();
+    const res = await submit();
+    const id = res.headers.get("pama-run-id") as string;
+    t.deps.models.embed = embed;
+    const [row] = await t.db.query<{ resume: ResumeState }>(
+      "SELECT resume FROM digest_runs WHERE id = $1",
+      [id],
+    );
+    const state = row?.resume as ResumeState;
+    const first = await completeDigest(t.deps, state);
+    const second = await completeDigest(t.deps, state);
+    expect(second).toEqual(first);
+    expect(await t.db.query("SELECT id FROM digests")).toHaveLength(1);
   });
 
   it("paginates newest first and filters by since", async () => {

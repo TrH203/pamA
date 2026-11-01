@@ -1,17 +1,25 @@
 // Hotkey popup (US3): the captured question, a cited draft, and Copy / Paste / Shorter / Edit /
 // Change scope / Create Ask Link. It never sends anything: Paste only fills the focused field.
+import { useI18n } from "@pama/i18n";
+import { Badge, Button, ErrorBanner, Notice, Select, Spinner, Textarea } from "@pama/ui";
+import {
+  Check,
+  ClipboardPaste,
+  Copy,
+  Crosshair,
+  Link2,
+  Pencil,
+  Scissors,
+  ShieldAlert,
+  TriangleAlert,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { type Draft, draftApi, type SourceRef } from "./api.ts";
 import { type CaptureResult, ipc, onHotkey } from "./ipc.ts";
 
-const REFUSED: Record<string, string> = {
-  out_of_scope: "Your approved notes don't cover this.",
-  low_confidence: "Not confident enough to draft from your notes.",
-  denied_topic: "This topic is excluded.",
-  guard_failed: "The draft was blocked by the safety check.",
-};
-
 export function Popup() {
+  const { t: all } = useI18n();
+  const t = all.desktop;
   const [question, setQuestion] = useState("");
   const [method, setMethod] = useState<CaptureResult["method"]>("none");
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -78,14 +86,18 @@ export function Popup() {
 
   const answered = draft?.status === "answered";
   return (
-    <div className="flex h-screen flex-col gap-3 bg-white p-4 text-sm">
+    <div className="flex h-screen flex-col gap-3 bg-surface p-4 text-ui text-fg">
       {axDenied && (
-        <p className="rounded bg-amber-50 p-2 text-xs text-amber-900">
-          Allow pamA in Accessibility to read selected text without the clipboard.{" "}
-          <button type="button" className="underline" onClick={() => ipc.openPermissionSettings()}>
-            Open settings
+        <Notice tone="warning" icon={ShieldAlert}>
+          {t.axHint}{" "}
+          <button
+            type="button"
+            className="font-medium underline underline-offset-2"
+            onClick={() => ipc.openPermissionSettings()}
+          >
+            {t.openSettings}
           </button>
-        </p>
+        </Notice>
       )}
       <form
         onSubmit={(e) => {
@@ -93,15 +105,15 @@ export function Popup() {
           void run(question, { scope_hint: scope });
         }}
       >
-        <label className="mb-1 block text-xs text-stone-500" htmlFor="q">
-          Question{" "}
-          {method !== "none" && method !== "clipboard" ? `(read via ${method.toUpperCase()})` : ""}
+        <label className="mb-1.5 block text-xs font-medium text-muted" htmlFor="q">
+          {t.question}{" "}
+          {method !== "none" && method !== "clipboard" ? t.readVia(method.toUpperCase()) : ""}
         </label>
-        <textarea
+        <Textarea
           id="q"
-          className="w-full resize-none rounded border border-stone-300 p-2"
+          className="resize-none text-sm"
           rows={2}
-          placeholder="Paste or type the question…"
+          placeholder={t.questionPlaceholder}
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
           onKeyDown={(e) => {
@@ -113,41 +125,46 @@ export function Popup() {
         />
       </form>
 
-      <section className="min-h-0 flex-1 overflow-auto">
-        {busy && <p className="animate-pulse text-stone-500">Drafting…</p>}
-        {error && <p className="text-red-700">{error}</p>}
-        {!busy && draft && !answered && (
-          <p className="rounded bg-amber-50 p-2 text-amber-900">
-            {REFUSED[draft.reason ?? ""] ?? REFUSED.out_of_scope}
+      <section className="min-h-0 flex-1 overflow-auto" aria-live="polite" aria-busy={busy}>
+        {busy && (
+          <p className="inline-flex items-center gap-2 text-muted">
+            <Spinner size="sm" label={null} />
+            {t.drafting}
           </p>
+        )}
+        {error && <ErrorBanner title={all.common.error} message={error} />}
+        {!busy && !draft && !error && <p className="text-faint">{t.emptyHint}</p>}
+        {!busy && draft && !answered && (
+          <Notice tone="warning" icon={TriangleAlert}>
+            {t.refused[draft.reason ?? ""] ?? t.refused.out_of_scope}
+          </Notice>
         )}
         {!busy &&
           answered &&
           (editing ? (
-            <textarea
-              className="h-full min-h-32 w-full rounded border border-stone-300 p-2"
+            <Textarea
+              className="h-full min-h-32 text-sm"
               value={text}
               onChange={(e) => setText(e.target.value)}
-              aria-label="Draft"
+              aria-label={t.draft}
             />
           ) : (
-            <p className="whitespace-pre-wrap leading-relaxed">{text}</p>
+            <p className="whitespace-pre-wrap text-sm leading-6">{text}</p>
           ))}
         {!busy && answered && draft?.citations.length ? (
-          <p className="mt-2 flex flex-wrap gap-1 text-xs text-stone-500">
+          <p className="mt-3 flex flex-wrap gap-1.5">
             {draft.citations.map((c, i) => (
-              <span key={c.item_id} className="rounded bg-stone-100 px-1.5 py-0.5">
+              <Badge key={c.item_id}>
                 [{i + 1}] {c.label}
-              </span>
+              </Badge>
             ))}
           </p>
         ) : null}
       </section>
 
       {bundles && (
-        <select
-          className="rounded border border-stone-300 p-1.5"
-          aria-label="Scope"
+        <Select
+          aria-label={t.scope}
           value={scope?.[0]?.id ?? ""}
           onChange={(e) => {
             const s = e.target.value
@@ -157,66 +174,57 @@ export function Popup() {
             void run(question, { scope_hint: s });
           }}
         >
-          <option value="">All my approved work</option>
+          <option value="">{t.scopeAll}</option>
           {bundles.map((b) => (
             <option key={b.id} value={b.id}>
               {b.project} / {b.name}
             </option>
           ))}
-        </select>
+        </Select>
       )}
 
-      <footer className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          className="btn-primary"
-          disabled={!answered || busy}
-          onClick={() => ipc.pasteDraft(text)}
-        >
-          Paste
-        </button>
-        <button
-          type="button"
-          className="btn"
+      <footer className="flex flex-wrap gap-2 border-t border-line pt-3">
+        <Button variant="primary" disabled={!answered || busy} onClick={() => ipc.pasteDraft(text)}>
+          <ClipboardPaste aria-hidden />
+          {t.paste}
+        </Button>
+        <Button
           disabled={!answered || busy}
           onClick={async () => {
             await ipc.copyDraft(text);
             await ipc.hidePopup();
           }}
         >
-          Copy
-        </button>
-        <button
-          type="button"
-          className="btn"
+          <Copy aria-hidden />
+          {t.copy}
+        </Button>
+        <Button
           disabled={!answered || busy}
           onClick={() => run(question, { scope_hint: scope, shorter: true })}
         >
-          Shorter
-        </button>
-        <button
-          type="button"
-          className="btn"
-          disabled={!answered}
-          onClick={() => setEditing((x) => !x)}
-        >
-          {editing ? "Done" : "Edit"}
-        </button>
-        <button
-          type="button"
-          className="btn"
+          <Scissors aria-hidden />
+          {t.shorter}
+        </Button>
+        <Button disabled={!answered} onClick={() => setEditing((x) => !x)}>
+          {editing ? <Check aria-hidden /> : <Pencil aria-hidden />}
+          {editing ? t.done : t.edit}
+        </Button>
+        <Button
+          variant="ghost"
+          aria-pressed={bundles !== null}
           onClick={async () => setBundles(bundles ? null : (await draftApi.bundles()).items)}
         >
-          Scope
-        </button>
-        <button
-          type="button"
-          className="btn"
+          <Crosshair aria-hidden />
+          {t.scope}
+        </Button>
+        <Button
+          variant="ghost"
           disabled={!question.trim()}
-          onClick={() => ipc.openConsole(`/?tab=links&q=${encodeURIComponent(question)}`)}
+          onClick={() => ipc.openConsole(`/links?q=${encodeURIComponent(question)}`)}
         >
-          Create Ask Link
-        </button>
+          <Link2 aria-hidden />
+          {t.createLink}
+        </Button>
       </footer>
     </div>
   );

@@ -27,8 +27,9 @@ impl From<Exit> for ExitCode {
 pub struct Cli {
     #[command(flatten)]
     pub global: Global,
+    /// Without a command, `pama` prints `pama status`.
     #[command(subcommand)]
-    pub command: Command,
+    pub command: Option<Command>,
 }
 
 #[derive(Debug, Args, Clone)]
@@ -163,6 +164,32 @@ pub enum Command {
         #[arg(long, hide = true)]
         report: bool,
     },
+    /// Overview: where data goes, models, digest pipeline and sync (also bare `pama`).
+    Status,
+    /// Digest pipeline activity: captured sessions and each attempt's stages and errors.
+    Activity {
+        /// Only failed captures.
+        #[arg(long)]
+        failed: bool,
+        /// Keep printing attempts as they happen.
+        #[arg(long)]
+        follow: bool,
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+        #[command(subcommand)]
+        action: Option<ActivityAction>,
+    },
+    /// Show the device log, or the local server's log with `pama logs server`.
+    Logs {
+        #[arg(value_enum, default_value = "device")]
+        source: LogSource,
+        /// Lines to show.
+        #[arg(short = 'n', long, default_value_t = 50)]
+        lines: usize,
+        /// Keep printing new lines.
+        #[arg(short, long)]
+        follow: bool,
+    },
     /// Read or change settings.
     Config {
         #[command(subcommand)]
@@ -174,6 +201,27 @@ pub enum Command {
         #[command(subcommand)]
         action: CaptureAction,
     },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ActivityAction {
+    /// One capture (or server run) with every attempt.
+    Show { id: String },
+    /// Try a failed capture again now (or resume a failed server run).
+    Retry {
+        #[arg(required_unless_present = "all_failed")]
+        id: Option<String>,
+        #[arg(long, conflicts_with = "id")]
+        all_failed: bool,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum LogSource {
+    /// Hooks, capture and sync on this machine (~/.pama/pama.log).
+    Device,
+    /// The local server (~/.pama/server.log).
+    Server,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]

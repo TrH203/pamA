@@ -4,9 +4,11 @@
 
 use std::time::Duration;
 
+use pama_core::capture::errors::{from_draft, CodedError, ErrorCode};
 use pama_core::capture::worker::{drain, CaptureOutcome, Worker};
 use pama_core::client::Api;
 use pama_core::draft::llm::HttpModel;
+use pama_core::draft::DraftError;
 use pama_core::redact::RuleSet;
 use pama_core::remote::{self, Mode, RemoteSink};
 use pama_core::sync::{deliver_due, HttpRemote};
@@ -38,21 +40,27 @@ fn log_results(results: &[(String, CaptureOutcome)]) {
             CaptureOutcome::Submitted { digest_id, status } => {
                 log(&format!("capture {id}: {status} digest {digest_id}"))
             }
-            other => log(&format!("capture {id}: {other:?}")),
+            CaptureOutcome::Skipped(code) => log(&format!("capture {id}: skipped ({code})")),
+            CaptureOutcome::Retry(e) => log(&format!("capture {id}: will retry: {e}")),
+            CaptureOutcome::Failed(e) => log(&format!("capture {id}: failed: {e}")),
         }
     }
 }
 
 /// Local mode: the local server drafts (started if needed). `Ok(false)`: another drain runs.
-fn drain_local(ctx: &Ctx, rules: &RuleSet) -> Result<bool, String> {
-    super::server::ensure_started(&ctx.store, false).map_err(|e| e.to_string())?;
-    let api = Api::connect(&ctx.store, "cli").map_err(|e| e.to_string())?;
+#[allow(clippy::result_large_err)] // one per drain, not a hot path
+fn drain_local(ctx: &Ctx, rules: &RuleSet) -> Result<bool, CodedError> {
+    super::server::ensure_started(&ctx.store, false)
+        .map_err(|e| CodedError::new(ErrorCode::ServerDown, e.to_string()))?;
+    let api = Api::connect(&ctx.store, "cli").map_err(|e| e.coded())?;
     let worker = Worker {
         store: &ctx.store,
         rules,
         sink: api,
     };
-    match drain(&worker, &pama_core::paths::drain_lock()).map_err(|e| e.to_string())? {
+    match drain(&worker, &pama_core::paths::drain_lock())
+        .map_err(|e| CodedError::new(ErrorCode::Internal, e.to_string()))?
+    {
         None => Ok(false),
         Some(results) => {
             log_results(&results);
@@ -63,8 +71,12 @@ fn drain_local(ctx: &Ctx, rules: &RuleSet) -> Result<bool, String> {
 
 /// Remote mode (spec 004): draft on this machine, queue only the digest for `target`. No local
 /// server is started.
-fn drain_remote(ctx: &Ctx, rules: &RuleSet, target: &str) -> Result<bool, String> {
-    let model = HttpModel::new(&ctx.store, "cli").map_err(|e| e.to_string())?;
+#[allow(clippy::result_large_err)] // one per drain, not a hot path
+fn drain_remote(ctx: &Ctx, rules: &RuleSet, target: &str) -> Result<bool, CodedError> {
+    let model = HttpModel::new(&ctx.store, "cli").map_err(|e| match e {
+        DraftError::Retryable(m) => from_draft(true, &m),
+        DraftError::Fatal(m) => from_draft(false, &m),
+    })?;
     let worker = Worker {
         store: &ctx.store,
         rules,
@@ -75,7 +87,9 @@ fn drain_remote(ctx: &Ctx, rules: &RuleSet, target: &str) -> Result<bool, String
             target: target.to_string(),
         },
     };
-    match drain(&worker, &pama_core::paths::drain_lock()).map_err(|e| e.to_string())? {
+    match drain(&worker, &pama_core::paths::drain_lock())
+        .map_err(|e| CodedError::new(ErrorCode::Internal, e.to_string()))?
+    {
         None => Ok(false),
         Some(results) => {
             log_results(&results);
@@ -103,7 +117,10 @@ pub fn run(ctx: &Ctx, action: CaptureAction) -> anyhow::Result<Exit> {
         let done = match (remote_mode, &target) {
             (false, _) => drain_local(ctx, &rules),
             (true, Some(t)) => drain_remote(ctx, &rules, t),
-            (true, None) => Err("remote mode but not logged in (pama login)".into()),
+            (true, None) => Err(CodedError::new(
+                ErrorCode::NotLoggedIn,
+                "remote mode but not logged in (pama login)",
+            )),
         };
         match done {
             Ok(true) => {}
@@ -113,9 +130,15 @@ pub fn run(ctx: &Ctx, action: CaptureAction) -> anyhow::Result<Exit> {
                 // retries.
                 log(&format!("drain: cannot draft now: {e}"));
                 for c in ctx.store.due_captures(50)? {
+                    let attempt = ctx.store.start_attempt(&c.id)?;
                     ctx.store
                         .set_capture_status(&c.id, pama_core::store::CaptureStatus::Redacting)?;
-                    ctx.store.fail_capture(&c.id, &e, true)?;
+                    let outcome = match ctx.store.fail_capture(&c.id, &e)? {
+                        pama_core::store::CaptureStatus::Failed => "failed",
+                        _ => "retry",
+                    };
+                    ctx.store
+                        .finish_attempt(&attempt, outcome, Some(&e), None, None)?;
                 }
                 break;
             }

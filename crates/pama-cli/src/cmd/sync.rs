@@ -41,7 +41,15 @@ pub fn pair(ctx: &Ctx, code: &str, server: &str) -> anyhow::Result<Exit> {
     }
     let token = body["token"].as_str().unwrap_or_default();
     pama_core::secrets::set(&token_key(server), token)?;
-    ctx.store.set_setting(KEY_DEFAULT_TARGET, server)?;
+    // Listed like a logged-in server, so `pama server list`, `use` and `forget` see it (spec 005).
+    remote::add_server(
+        &ctx.store,
+        remote::ServerEntry {
+            url: server.to_string(),
+            workspace_id: None,
+            device_id: body["device_id"].as_str().map(String::from),
+        },
+    )?;
     ctx.print(&json!({ "server": server, "device_id": body["device_id"] }), || {
         format!("paired with {server}; enable sync per source with `pama sync enable --project <id>`")
     });
@@ -90,7 +98,7 @@ fn status(ctx: &Ctx, api: &Api) -> anyhow::Result<Exit> {
 fn set(ctx: &Ctx, api: &Api, t: &SyncTarget, enabled: bool) -> anyhow::Result<Exit> {
     let target = t.target.clone().or(ctx.store.setting(KEY_DEFAULT_TARGET)?);
     if enabled && target.is_none() {
-        eprintln!("error: no target server; pair first (`pama pair <code> --server <url>`) or pass --target");
+        eprintln!("error: no target server; connect first (`pama connect <url>`) or pass --target");
         return Ok(Exit::Config);
     }
     let (path, what) = match (&t.project, &t.bundle) {

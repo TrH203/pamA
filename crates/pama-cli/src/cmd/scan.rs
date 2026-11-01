@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use pama_core::capture::scan::{default_dirs, scan};
+use pama_core::capture::scan::scan;
 use serde_json::json;
 
 use super::{parse_duration, Ctx};
@@ -25,8 +25,7 @@ pub fn run(ctx: &Ctx, since: Option<String>) -> anyhow::Result<Exit> {
             }
         },
     };
-    let (claude, codex) = default_dirs();
-    let r = scan(&ctx.store, claude.as_deref(), codex.as_deref(), since, IDLE)?;
+    let r = scan(&ctx.store, since, IDLE)?;
     let at = pama_core::store::now_ms();
     ctx.store.set_setting(
         KEY_LAST_SCAN,

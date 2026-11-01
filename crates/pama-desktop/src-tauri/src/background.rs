@@ -1,18 +1,14 @@
 //! While the app runs: pick up ended sessions the hooks missed (watcher fallback), digest queued
-//! captures, and notify the owner about new drafts to review, forwarded questions and
-//! configuration errors that stop the pipeline (spec 006, at most once per code per hour).
-//! In remote mode (spec 004) drafts are made on this machine and queued for the server, and the
-//! review and inbox counts come from that server.
+//! captures, and notify the owner about new drafts to review and forwarded questions.
 
 use std::time::Duration;
 
 use pama_core::capture::errors::{notification_text, ErrorCode, NotifyGate};
-use pama_core::capture::scan::{default_dirs, scan};
-use pama_core::capture::worker::{drain, DigestSink, Worker};
+use pama_core::capture::scan::scan;
+use pama_core::capture::worker::{drain, Worker};
 use pama_core::client::{Api, LocalApi};
-use pama_core::draft::llm::HttpModel;
 use pama_core::redact::RuleSet;
-use pama_core::remote::{self, Mode, RemoteSink};
+use pama_core::remote::{self, Home, RemoteSink};
 use pama_core::store::{now_ms, Store};
 use tauri::{AppHandle, Emitter, Runtime};
 use tauri_plugin_notification::NotificationExt;
@@ -31,7 +27,6 @@ pub fn start<R: Runtime>(app: AppHandle<R>) {
                 return;
             }
         };
-        let (claude, codex) = default_dirs();
         let (mut review, mut inbox) = (0usize, 0usize);
         let mut gate = NotifyGate::default();
         let mut checked_at = now_ms();
@@ -45,19 +40,28 @@ pub fn start<R: Runtime>(app: AppHandle<R>) {
         };
         loop {
             {
-                if let Err(e) = scan(
-                    &store,
-                    claude.as_deref(),
-                    codex.as_deref(),
-                    Duration::from_secs(86_400),
-                    IDLE,
-                ) {
+                if let Err(e) = scan(&store, Duration::from_secs(86_400), IDLE) {
                     log_error("scan", &e);
                 }
-                if let Err(e) = pama_core::sync::sync_once(&store) {
+                // Home decides where drafts go (spec 005): a server, or the local sidecar.
+                let home = remote::home(&store);
+                if let Home::Server(target) = &home {
+                    drain_remote(&store, &rules, target);
+                } else if let Err(e) = pama_core::sync::sync_once(&store) {
                     log_error("sync", &e);
                 }
-                drain_due(&store, &rules);
+                if home != Home::Local {
+                    // Remote mode: nothing to drain on the local server.
+                } else if let Ok(api) = LocalApi::connect(&store, "desktop") {
+                    let worker = Worker {
+                        store: &store,
+                        rules: &rules,
+                        sink: api,
+                    };
+                    if let Err(e) = drain(&worker, &pama_core::paths::drain_lock()) {
+                        log_error("drain", &e);
+                    }
+                }
                 for code in new_config_errors(&store, &mut checked_at) {
                     if gate.allow(code, now_ms(), NotifyGate::HOUR_MS) {
                         let _ = app.emit("pipeline://error", serde_json::json!({ "code": code }));
@@ -69,6 +73,7 @@ pub fn start<R: Runtime>(app: AppHandle<R>) {
                             .show();
                     }
                 }
+                pama_core::secrets::init_platform_store();
                 if let Ok(api) = Api::resolve(&store, "desktop", None) {
                     let count = |path: &str| {
                         api.get(path, "desktop.poll")
@@ -106,38 +111,59 @@ pub fn start<R: Runtime>(app: AppHandle<R>) {
     });
 }
 
-fn run_worker<S: DigestSink>(store: &Store, rules: &RuleSet, sink: S) {
-    let worker = Worker { store, rules, sink };
-    if let Err(e) = drain(&worker, &pama_core::paths::drain_lock()) {
-        log_error("drain", &e);
-    }
-}
-
-/// Digest due captures: on the local server, or in remote mode on this machine (queued for the
-/// default server). Without a drafter the captures stay queued; `pama status` explains why.
-fn drain_due(store: &Store, rules: &RuleSet) {
-    if store.due_captures(1).map(|d| d.is_empty()).unwrap_or(true) {
-        return;
-    }
-    if remote::mode(store) == Mode::Remote {
-        let Some(target) = remote::default_server(store) else {
-            return;
-        };
-        match HttpModel::new(store, "desktop") {
-            Ok(model) => run_worker(
+/// Remote mode: draft on this machine, deliver to the home server, pull review decisions.
+fn drain_remote(store: &pama_core::store::Store, rules: &RuleSet, target: &str) {
+    pama_core::secrets::init_platform_store();
+    match pama_core::draft::llm::HttpModel::new(store, "desktop") {
+        Ok(model) => {
+            let worker = Worker {
                 store,
                 rules,
-                RemoteSink {
+                sink: RemoteSink {
                     store,
                     rules,
                     model: &model,
-                    target,
+                    target: target.to_string(),
                 },
-            ),
-            Err(e) => log_error("draft model", &format!("{e:?}")),
+            };
+            if let Err(e) = drain(&worker, &pama_core::paths::drain_lock()) {
+                log_error("drain", &e);
+            }
         }
-    } else if let Ok(api) = LocalApi::connect(store, "desktop") {
-        run_worker(store, rules, api);
+        Err(e) => {
+            if !store.due_captures(1).unwrap_or_default().is_empty() {
+                log_error("drafting model", &e);
+            }
+        }
+    }
+    let http = pama_core::sync::HttpRemote::new(store);
+    if let Err(e) = pama_core::sync::deliver_due(store, &http) {
+        log_error("deliver", &e);
+    }
+    if let Ok(api) = Api::remote(store, "desktop", target) {
+        if let Err(e) = remote::pull_changes(store, &api, false) {
+            log_error("pull", &e);
+        }
+    }
+}
+
+/// Background failures go to ~/.pama/pama.log (the desktop app has no visible stderr).
+fn log_error(stage: &str, e: &dyn std::fmt::Display) {
+    use std::io::Write;
+    let path = pama_core::paths::log_file();
+    if let Some(d) = path.parent() {
+        let _ = std::fs::create_dir_all(d);
+    }
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let _ = writeln!(f, "{now} desktop {stage} failed: {e}");
     }
 }
 
@@ -160,24 +186,4 @@ fn new_config_errors(store: &Store, checked_at: &mut i64) -> Vec<ErrorCode> {
         }
     }
     codes
-}
-
-/// Background failures go to ~/.pama/pama.log (the desktop app has no visible stderr).
-fn log_error(stage: &str, e: &dyn std::fmt::Display) {
-    use std::io::Write;
-    let path = pama_core::paths::log_file();
-    if let Some(d) = path.parent() {
-        let _ = std::fs::create_dir_all(d);
-    }
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-    {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        let _ = writeln!(f, "{now} desktop {stage} failed: {e}");
-    }
 }

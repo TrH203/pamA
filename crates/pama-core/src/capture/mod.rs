@@ -37,6 +37,16 @@ pub fn enabled_for(store: &Store, cwd: Option<&str>) -> bool {
     })
 }
 
+/// The project directories capture is enabled for (`pama init`).
+pub fn enabled_projects(store: &Store) -> Vec<String> {
+    store
+        .setting(KEY_CAPTURE_PROJECTS)
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
 pub fn enable_project(store: &Store, path: &str) -> crate::store::Result<bool> {
     let mut list: Vec<String> = store
         .setting(KEY_CAPTURE_PROJECTS)?

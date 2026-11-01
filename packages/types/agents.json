@@ -1,0 +1,10 @@
+{
+  "$comment": "Coding agents pamA reads (spec 005). Read by the server (AgentSchema) and checked against the Rust adapter registry (crates/pama-core/src/agents). Adding an agent: add it here, add an adapter, a DB migration widening sessions_agent, and the JSON schema enum.",
+  "version": 1,
+  "agents": [
+    { "id": "claude_code", "cli_id": "claude", "display_name": "Claude Code" },
+    { "id": "codex", "cli_id": "codex", "display_name": "Codex" },
+    { "id": "cursor", "cli_id": "cursor", "display_name": "Cursor" },
+    { "id": "opencode", "cli_id": "opencode", "display_name": "OpenCode" }
+  ]
+}

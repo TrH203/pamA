@@ -110,6 +110,165 @@ pub fn server_entry(store: &Store, url: &str) -> Option<ServerEntry> {
     servers(store).into_iter().find(|s| s.url == url)
 }
 
+/// Make a known server the default (sync target, and home in remote mode). Returns false when
+/// this device is not connected to `url`.
+pub fn set_default_server(store: &Store, url: &str) -> crate::store::Result<bool> {
+    let url = normalize(url);
+    if server_entry(store, &url).is_none() {
+        return Ok(false);
+    }
+    store.set_setting(KEY_DEFAULT_TARGET, &url)?;
+    Ok(true)
+}
+
+/// Repair drift between `sync.default_target` and `remote.servers` (spec 005): older `pama pair`
+/// set the default without listing the server, so it never showed up and could not be logged
+/// out of. A default that is not listed is added; a remote mode without any server falls back
+/// to local. Returns whether anything changed.
+pub fn repair(store: &Store) -> crate::store::Result<bool> {
+    let mut changed = false;
+    if let Some(d) = default_server(store) {
+        if server_entry(store, &d).is_none() {
+            let mut list = servers(store);
+            list.push(ServerEntry {
+                url: d,
+                workspace_id: None,
+                device_id: None,
+            });
+            save_servers(store, &list)?;
+            changed = true;
+        }
+    }
+    if mode(store) == Mode::Remote && default_server(store).is_none() {
+        match servers(store).last() {
+            Some(s) => store.set_setting(KEY_DEFAULT_TARGET, &s.url)?,
+            None => set_mode(store, Mode::Local)?,
+        }
+        changed = true;
+    }
+    Ok(changed)
+}
+
+// --- home: where this machine's work lives (spec 005) ----------------------------------------
+
+/// Where review, Ask Links and answers live for this machine.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", content = "url", rename_all = "snake_case")]
+pub enum Home {
+    /// The local server on this machine.
+    Local,
+    /// A remote server (self-host or pamA Cloud); this machine only drafts.
+    Server(String),
+}
+
+impl Home {
+    pub fn label(&self) -> String {
+        match self {
+            Home::Local => "this machine".into(),
+            Home::Server(u) => format!("server {u}"),
+        }
+    }
+}
+
+pub fn home(store: &Store) -> Home {
+    match (mode(store), default_server(store)) {
+        (Mode::Remote, Some(u)) => Home::Server(u),
+        _ => Home::Local,
+    }
+}
+
+/// What switching home would do, shown before asking for confirmation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SwitchPreview {
+    pub from: Home,
+    pub to: Home,
+    /// Nothing to do.
+    pub unchanged: bool,
+    /// The target server is not connected yet (`pama connect <url>` first).
+    pub needs_connect: bool,
+    /// Projects that send drafts to a server in remote mode.
+    pub sync_projects: Vec<String>,
+    /// Items still waiting for delivery to the current server.
+    pub pending_outbox: i64,
+    /// Plain-language consequences, one per line.
+    pub consequences: Vec<String>,
+}
+
+pub fn preview_switch(store: &Store, to: &Home) -> crate::store::Result<SwitchPreview> {
+    let from = home(store);
+    let to = match to {
+        Home::Server(u) => Home::Server(normalize(u)),
+        Home::Local => Home::Local,
+    };
+    let needs_connect = matches!(&to, Home::Server(u) if server_entry(store, u).is_none());
+    let sync = sync_projects(store);
+    let pending = match &from {
+        Home::Server(u) => store.outbox_pending_for(u)?,
+        Home::Local => 0,
+    };
+    let mut c = Vec::new();
+    match (&from, &to) {
+        (a, b) if a == b => {}
+        (_, Home::Local) => {
+            c.push("Review, Ask Links and answers use the local server on this machine (it needs a model and `pama-server`).".into());
+            c.push(
+                "Digests already on the server stay there; nothing is deleted or copied back."
+                    .into(),
+            );
+            c.push(
+                "New sessions are drafted by the local server instead of being sent to a server."
+                    .into(),
+            );
+            if pending > 0 {
+                c.push(format!("{pending} item(s) still waiting for the old server are kept and sent when you switch back."));
+            }
+        }
+        (_, Home::Server(u)) => {
+            c.push(format!(
+                "Review, Ask Links and answers move to {u}; this machine only drafts digests."
+            ));
+            c.push("Transcripts never leave this machine; only drafted digests of synced projects are sent.".into());
+            c.push(
+                "Digests in the local server stay on this machine; they are not uploaded.".into(),
+            );
+            c.push(if sync.is_empty() {
+                "No project sends drafts yet: turn one on with `pama init --sync` or `pama sync enable --project <dir>`.".into()
+            } else {
+                format!("{} project(s) will send their drafts to {u}.", sync.len())
+            });
+            if pending > 0 {
+                c.push(format!(
+                    "{pending} item(s) still waiting for the previous server stay queued for it."
+                ));
+            }
+        }
+    }
+    Ok(SwitchPreview {
+        unchanged: from == to,
+        from,
+        to,
+        needs_connect,
+        sync_projects: sync,
+        pending_outbox: pending,
+        consequences: c,
+    })
+}
+
+/// Switch home. A server must already be connected. Keeps `mode`, `sync.default_target` and
+/// `remote.servers` consistent.
+pub fn switch_home(store: &Store, to: &Home) -> crate::store::Result<bool> {
+    match to {
+        Home::Local => set_mode(store, Mode::Local)?,
+        Home::Server(u) => {
+            if !set_default_server(store, u)? {
+                return Ok(false);
+            }
+            set_mode(store, Mode::Remote)?;
+        }
+    }
+    Ok(true)
+}
+
 // --- per-project sync opt-in (remote mode) --------------------------------------------------
 
 pub fn sync_projects(store: &Store) -> Vec<String> {
@@ -535,6 +694,45 @@ mod tests {
         set_mode(&s, Mode::Remote).unwrap();
         assert_eq!(mode(&s), Mode::Remote);
         assert_eq!(normalize(" https://x.example/ "), "https://x.example");
+    }
+
+    #[test]
+    fn repair_lists_a_paired_default_and_home_switches_consistently() {
+        let s = Store::open_in_memory().unwrap();
+        // What `pama pair` used to leave behind: a default that is not in the list.
+        s.set_setting(KEY_DEFAULT_TARGET, "https://p.example")
+            .unwrap();
+        assert!(servers(&s).is_empty());
+        assert!(repair(&s).unwrap());
+        assert_eq!(servers(&s)[0].url, "https://p.example");
+        assert!(!repair(&s).unwrap());
+        assert_eq!(home(&s), Home::Local);
+
+        let p = preview_switch(&s, &Home::Server("https://q.example/".into())).unwrap();
+        assert!(p.needs_connect);
+        assert!(!switch_home(&s, &Home::Server("https://q.example".into())).unwrap());
+        assert_eq!(home(&s), Home::Local);
+
+        let p = preview_switch(&s, &Home::Server("https://p.example".into())).unwrap();
+        assert!(!p.needs_connect && !p.unchanged);
+        assert!(p
+            .consequences
+            .iter()
+            .any(|c| c.contains("No project sends drafts")));
+        assert!(switch_home(&s, &Home::Server("https://p.example".into())).unwrap());
+        assert_eq!(home(&s), Home::Server("https://p.example".into()));
+        assert_eq!(mode(&s), Mode::Remote);
+        assert!(
+            preview_switch(&s, &Home::Server("https://p.example".into()))
+                .unwrap()
+                .unchanged
+        );
+
+        // Forgetting the only server in remote mode falls back to local.
+        remove_server(&s, "https://p.example").unwrap();
+        assert!(repair(&s).unwrap());
+        assert_eq!(home(&s), Home::Local);
+        assert_eq!(mode(&s), Mode::Local);
     }
 
     #[test]

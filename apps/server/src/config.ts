@@ -5,6 +5,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
+import { resolveProvider } from "./llm/registry.ts";
 
 export const VERSION = "0.1.0";
 
@@ -77,6 +78,8 @@ export interface Config {
   chat: ProviderConfig;
   small: ProviderConfig;
   embed: ProviderConfig;
+  /** Where each role's startup model came from before saved settings (spec 005). */
+  modelOrigin?: Record<"chat" | "small" | "embed", "env" | "default">;
   smtp: { url: string; from: string } | undefined;
 }
 
@@ -101,12 +104,14 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     throw new Error(`DATABASE_URL is required in ${e.PAMA_MODE} mode`);
   }
   const bind = e.PAMA_BIND ?? (e.PAMA_MODE === "local" ? "127.0.0.1" : "0.0.0.0");
+  // Registry ids (`lmstudio`, `deepinfra`, …) map onto the protocol they speak (spec 005).
   const chat = ProviderSchema.parse({
-    provider: e.PAMA_CHAT_PROVIDER,
+    ...resolveProvider(e.PAMA_CHAT_PROVIDER, e.PAMA_CHAT_BASE_URL),
     model: e.PAMA_CHAT_MODEL,
-    baseUrl: e.PAMA_CHAT_BASE_URL,
     apiKey: e.PAMA_CHAT_API_KEY,
   });
+  const set = (...keys: string[]) => keys.some((k) => Boolean(env[k]));
+  const chatFromEnv = set("PAMA_CHAT_PROVIDER", "PAMA_CHAT_MODEL", "PAMA_CHAT_BASE_URL");
   return {
     mode: e.PAMA_MODE,
     version: VERSION,
@@ -126,11 +131,17 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     chat,
     small: { ...chat, model: e.PAMA_SMALL_MODEL ?? chat.model },
     embed: ProviderSchema.parse({
-      provider: e.PAMA_EMBED_PROVIDER,
+      ...resolveProvider(e.PAMA_EMBED_PROVIDER, e.PAMA_EMBED_BASE_URL),
       model: e.PAMA_EMBED_MODEL,
-      baseUrl: e.PAMA_EMBED_BASE_URL,
       apiKey: e.PAMA_EMBED_API_KEY,
     }),
+    modelOrigin: {
+      chat: chatFromEnv ? "env" : "default",
+      small: chatFromEnv || set("PAMA_SMALL_MODEL") ? "env" : "default",
+      embed: set("PAMA_EMBED_PROVIDER", "PAMA_EMBED_MODEL", "PAMA_EMBED_BASE_URL")
+        ? "env"
+        : "default",
+    },
     smtp: e.SMTP_URL ? { url: e.SMTP_URL, from: e.SMTP_FROM ?? "pama@localhost" } : undefined,
   };
 }

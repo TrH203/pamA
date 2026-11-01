@@ -50,6 +50,9 @@ pub struct Global {
 pub enum AgentArg {
     Claude,
     Codex,
+    Cursor,
+    Opencode,
+    /// Claude Code and Codex, plus Cursor and OpenCode when they are used on this machine.
     All,
 }
 
@@ -75,8 +78,38 @@ pub enum Command {
         #[arg(long)]
         sync: bool,
     },
-    /// Connect this machine to a remote pamA server (browser approval). Give the server with
-    /// `--server <url>` (default: $PAMA_CLOUD_URL).
+    /// Connect this machine to a pamA server (browser approval) and make it home.
+    Connect {
+        /// Server URL (default: --server or $PAMA_CLOUD_URL).
+        url: Option<String>,
+        /// Print the approval link instead of opening a browser.
+        #[arg(long)]
+        no_browser: bool,
+        /// Use a pairing code from the server's console instead of browser approval (servers
+        /// without device login; the server becomes the default sync target).
+        #[arg(long)]
+        code: Option<String>,
+    },
+    /// Switch where this machine's work lives: `local` or a connected server URL.
+    Use {
+        /// `local` or a server URL.
+        target: String,
+        /// Switch without asking.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Provider API keys in the OS keychain (values are never printed).
+    Keys {
+        #[command(subcommand)]
+        action: KeysAction,
+    },
+    /// Coding agents pamA reads: detection, hooks and per-agent capture.
+    Agents {
+        #[command(subcommand)]
+        action: Option<AgentsAction>,
+    },
+    /// Deprecated: use `pama connect <url>`.
+    #[command(hide = true)]
     Login {
         /// Print the approval link instead of opening a browser.
         #[arg(long)]
@@ -133,7 +166,8 @@ pub enum Command {
         #[command(subcommand)]
         action: SyncAction,
     },
-    /// Pair this device with a server.
+    /// Deprecated: use `pama connect <url> --code <code>`.
+    #[command(hide = true)]
     Pair {
         code: String,
         #[arg(long)]
@@ -244,8 +278,63 @@ pub enum CaptureAction {
 pub enum HookAgent {
     /// Claude Code hook (JSON on stdin).
     Claude,
-    /// Codex hook (stdin) or notify (JSON in argv).
-    Codex { json: Option<String> },
+    /// Codex hook (stdin) or notify (JSON in argv; `--chain <argv…>` runs another notifier).
+    Codex {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// Cursor hook (JSON on stdin).
+    Cursor,
+    /// OpenCode plugin (JSON in argv).
+    Opencode { json: Option<String> },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum KeysAction {
+    /// Which providers have a key, and where it is stored.
+    List,
+    /// Store a provider's key (read from stdin, never from arguments).
+    Set {
+        #[arg(value_parser = clap::builder::PossibleValuesParser::new(pama_core::providers::ids()))]
+        provider: String,
+    },
+    /// Check that the provider accepts the stored key.
+    Test {
+        #[arg(value_parser = clap::builder::PossibleValuesParser::new(pama_core::providers::ids()))]
+        provider: String,
+        /// Endpoint to test against (default: the provider's, or the drafting model's).
+        #[arg(long)]
+        base_url: Option<String>,
+    },
+    /// Delete a provider's key from the keychain.
+    Remove {
+        #[arg(value_parser = clap::builder::PossibleValuesParser::new(pama_core::providers::ids()))]
+        provider: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum AgentsAction {
+    /// List agents: detected, capture on/off, hooks, recent sessions (default).
+    List,
+    /// Turn capture on for an agent and install its hook.
+    Enable {
+        /// claude, codex, cursor or opencode.
+        id: String,
+        /// Install the hook for every project (user scope).
+        #[arg(long, conflicts_with = "project")]
+        global: bool,
+        /// Install the hook in this project (default: the current directory).
+        #[arg(long)]
+        project: Option<String>,
+        /// Use the committed project config (e.g. `.claude/settings.json`).
+        #[arg(long)]
+        shared: bool,
+    },
+    /// Turn capture off for an agent (hooks stay but are ignored).
+    Disable { id: String },
+    /// Remove pamA's hooks for an agent everywhere (user scope and captured projects).
+    Uninstall { id: String },
 }
 
 #[derive(Debug, Subcommand)]
@@ -296,6 +385,19 @@ pub struct SyncTarget {
 
 #[derive(Debug, Subcommand)]
 pub enum ServerAction {
+    /// Servers this machine is connected to.
+    List,
+    /// Make a connected server the default (and home, in server mode).
+    Use {
+        url: String,
+    },
+    /// Disconnect from a server and forget it.
+    Forget {
+        url: String,
+        /// Drop drafts and deletions not yet delivered to that server.
+        #[arg(long)]
+        discard_pending: bool,
+    },
     Start {
         /// Bind on the LAN instead of 127.0.0.1.
         #[arg(long)]
@@ -347,8 +449,12 @@ pub enum ModelAction {
         #[arg(value_parser = ROLES)]
         role: String,
     },
-    /// Guided setup (interactive terminal).
-    Setup,
+    /// Guided setup (interactive terminal), optionally from a preset.
+    Setup {
+        /// offline, openrouter, openai or anthropic-deepinfra.
+        #[arg(long)]
+        preset: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -361,7 +467,7 @@ pub enum SwitchTarget {
 pub struct ModelSet {
     #[arg(value_parser = ROLES)]
     pub role: String,
-    #[arg(long, value_parser = ["ollama", "openai-compatible", "openrouter", "anthropic"])]
+    #[arg(long, value_parser = clap::builder::PossibleValuesParser::new(pama_core::providers::ids()))]
     pub provider: String,
     #[arg(long)]
     pub model: String,

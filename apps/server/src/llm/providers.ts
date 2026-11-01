@@ -13,6 +13,7 @@ import type { Config, ProviderConfig } from "../config.ts";
 import type { EgressGuard } from "../net/egress.ts";
 import { tagModel } from "./errors.ts";
 import { FakeModels } from "./fake.ts";
+import { isLocalProvider } from "./registry.ts";
 
 export interface Models {
   /** Answers and drafts. */
@@ -31,11 +32,9 @@ export const OPENROUTER_DEFAULT = "https://openrouter.ai/api/v1";
 /** OpenRouter's optional app attribution headers. */
 const OPENROUTER_HEADERS = { "HTTP-Referer": "https://github.com/TrH203/pamA", "X-Title": "pamA" };
 
+/** True when the model runs on this machine or the LAN (shared registry rule, spec 005). */
 export function isLocal(p: ProviderConfig): boolean {
-  if (p.provider === "fake" || p.provider === "ollama") return true;
-  if (p.provider === "anthropic" || p.provider === "openrouter") return false;
-  const host = p.baseUrl ? new URL(p.baseUrl).hostname : "";
-  return /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)|\.local$|\.lan$/.test(host);
+  return isLocalProvider(p.provider, p.baseUrl);
 }
 
 export function language(

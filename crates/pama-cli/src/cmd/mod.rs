@@ -1,13 +1,16 @@
 //! Command implementations (contracts/cli.md).
 
 mod activity;
+mod agents;
 mod bundle_fmt;
 mod capture;
 mod config;
+mod connect;
 mod doctor;
 mod hook;
 mod inbox;
 mod init;
+mod keys;
 mod link;
 mod login;
 mod model;
@@ -75,6 +78,8 @@ pub fn api_exit(e: &ApiError) -> Exit {
 
 pub fn run(cli: Cli) -> anyhow::Result<Exit> {
     let store = Store::open(&pama_core::paths::device_db())?;
+    // Keep the default server and the server list consistent (spec 005).
+    let _ = pama_core::remote::repair(&store);
     let ctx = Ctx {
         json: cli.global.json,
         store,
@@ -106,7 +111,18 @@ pub fn run(cli: Cli) -> anyhow::Result<Exit> {
             mode,
             sync,
         } => init::run(&ctx, project, agent, global, project_scope, mode, sync),
-        Command::Login { no_browser } => login::login(&ctx, no_browser),
+        Command::Connect {
+            url,
+            no_browser,
+            code,
+        } => connect::connect(&ctx, url, no_browser, code),
+        Command::Use { target, yes } => connect::use_home(&ctx, &target, yes),
+        Command::Keys { action } => keys::run(&ctx, action),
+        Command::Agents { action } => agents::run(&ctx, action),
+        Command::Login { no_browser } => {
+            eprintln!("note: `pama login` is deprecated; use `pama connect <url>`");
+            login::login(&ctx, no_browser)
+        }
         Command::Logout { discard_pending } => login::logout(&ctx, discard_pending),
         Command::Mode { mode } => login::mode(&ctx, mode),
         Command::Scan { since } => scan::run(&ctx, since),
@@ -123,7 +139,10 @@ pub fn run(cli: Cli) -> anyhow::Result<Exit> {
         Command::Inbox => inbox::inbox(&ctx),
         Command::Reply { ask_id, text } => inbox::reply(&ctx, &ask_id, &text),
         Command::Log { link, status } => inbox::log(&ctx, link, status),
-        Command::Pair { code, server } => sync::pair(&ctx, &code, &server),
+        Command::Pair { code, server } => {
+            eprintln!("note: `pama pair` is deprecated; use `pama connect {server} --code <code>`");
+            sync::pair(&ctx, &code, &server)
+        }
         Command::Sync { action } => sync::run(&ctx, action),
         Command::Doctor { report } => doctor::run(&ctx, report),
     }

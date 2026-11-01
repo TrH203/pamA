@@ -26,6 +26,8 @@ export interface DigestBranch {
 export enum Agent {
 	ClaudeCode = "claude_code",
 	Codex = "codex",
+	Cursor = "cursor",
+	OpenCode = "opencode",
 }
 
 export interface GitInfo {

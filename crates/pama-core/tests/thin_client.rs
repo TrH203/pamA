@@ -151,7 +151,10 @@ fn sessions_of_projects_without_sync_are_skipped_and_nothing_is_queued() {
         sink,
     };
     let out = w.run_due().unwrap();
-    assert_eq!(out[0].1, CaptureOutcome::Skipped);
+    assert_eq!(
+        out[0].1,
+        CaptureOutcome::Skipped(pama_core::capture::errors::ErrorCode::SyncNotEnabled)
+    );
     assert_eq!(
         store.captures(10).unwrap()[0].status,
         CaptureStatus::Skipped

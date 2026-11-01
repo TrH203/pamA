@@ -231,6 +231,29 @@ pub fn run(ctx: &Ctx, report: bool) -> anyhow::Result<Exit> {
         detail: format!("{} pending, {} failed", outbox.pending, outbox.dead),
         fix: Some("`pama sync status`; failed items were rejected by the server".into()),
     });
+    // Spec 006: device capture state stays on the device; doctor reports it from the store.
+    let pipeline = store.capture_counts()?;
+    let latest = store.latest_failed_attempt()?;
+    let latest_code = latest
+        .as_ref()
+        .and_then(|a| a.error_code.as_deref())
+        .and_then(pama_core::capture::errors::ErrorCode::parse);
+    checks.push(Check {
+        name: "digest pipeline",
+        ok: pipeline.failed == 0,
+        detail: match (pipeline.failed, latest_code) {
+            (0, _) => format!(
+                "{} submitted, {} queued",
+                pipeline.submitted, pipeline.detected
+            ),
+            (n, Some(c)) => format!("{n} failed capture(s), latest: {c}"),
+            (n, None) => format!("{n} failed capture(s)"),
+        },
+        fix: Some(match latest_code {
+            Some(c) => format!("{} Then `pama activity retry --all-failed`.", c.hint()),
+            None => "`pama activity --failed`".into(),
+        }),
+    });
 
     let all_ok = checks.iter().all(|c| c.ok);
     let value = json!(checks

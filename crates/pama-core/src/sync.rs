@@ -50,6 +50,10 @@ fn record_draft_reply(store: &Store, target: &str, body: &Value, reply: &Value) 
     let (Some(agent), Some(sid)) = (src["agent"].as_str(), src["agent_session_id"].as_str()) else {
         return;
     };
+    // The capture is done once the server has the digest (spec 006).
+    if let Some(id) = reply["digest_id"].as_str() {
+        let _ = store.mark_submitted(agent, sid, id);
+    }
     if let Ok(Some(mut d)) = store.remote_digest(target, agent, sid) {
         if d.status == "deleted" {
             return;

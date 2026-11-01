@@ -6,10 +6,12 @@ import { z } from "zod";
 import type { Deps } from "../app.ts";
 import type { Queryable } from "../db/client.ts";
 import { HttpError } from "../http.ts";
+import { completeDigest, type ResumeState } from "../pipeline/complete.ts";
 import { SessionDigestSchema } from "../schema/digest.ts";
 import { assignBundle, branchList, recordBranches, reevaluateSession } from "./bundles.ts";
-import { approveDigest, cleanAndLabel, digestHash, storeVersion } from "./digests.ts";
-import { autoApproveFor, upsertProject } from "./projects.ts";
+import { cleanAndLabel, digestHash, storeVersion } from "./digests.ts";
+import { upsertProject } from "./projects.ts";
+import type { RunTracker } from "./runs.ts";
 
 export const SyncDigestSchema = z.strictObject({
   outbox_id: z.string().min(1).max(64),
@@ -41,7 +43,7 @@ async function receipt(q: Queryable, outboxId: string) {
   return r?.result;
 }
 
-async function remember(q: Queryable, outboxId: string, deviceId: string, result: unknown) {
+export async function remember(q: Queryable, outboxId: string, deviceId: string, result: unknown) {
   await q.query(
     "INSERT INTO sync_receipts (outbox_id, device_id, result) VALUES ($1, $2, $3) ON CONFLICT (outbox_id) DO NOTHING",
     [outboxId, deviceId, JSON.stringify(result)],
@@ -58,6 +60,7 @@ export async function ingestDigest(
   deviceId: string,
   body: z.infer<typeof SyncDraftSchema>,
   status: "approved" | "draft" = "approved",
+  run?: RunTracker,
 ): Promise<Ingested> {
   const done = await receipt(deps.db, body.outbox_id);
   if (done) return done as Ingested;
@@ -143,6 +146,23 @@ export async function ingestDigest(
     if (status === "draft") {
       result.status = existing.status === "approved" ? "approved" : "draft";
     }
+  } else if (status === "draft") {
+    // Thin client (spec 004): the device drafted it; the run records the server's stages.
+    await run?.stage("drafted");
+    const { digest, labels } = await cleanAndLabel(deps, raw);
+    const state: ResumeState = {
+      input_hash: hash,
+      session_id: session.id,
+      bundle_id: session.bundle_id,
+      project_id: project.id,
+      digest,
+      labels,
+      content_hash: hash,
+      origin_device_id: deviceId,
+      outbox_id: body.outbox_id,
+    };
+    await run?.stage("classified", state);
+    return completeDigest(deps, state, run);
   } else {
     const { digest, labels } = await cleanAndLabel(deps, raw);
     const v = await storeVersion(deps, {
@@ -155,18 +175,6 @@ export async function ingestDigest(
       hash,
     });
     result = { digest_id: v.id, version: v.version };
-    if (status === "draft") {
-      await deps.db.query("UPDATE digests SET origin_device_id = $2 WHERE id = $1", [
-        v.id,
-        deviceId,
-      ]);
-      result.status = "draft";
-      // Same rule as drafts made on the owner's machine.
-      if (await autoApproveFor(deps.db, project.id)) {
-        await approveDigest(deps, v.id, undefined, "auto");
-        result.status = "approved";
-      }
-    }
   }
   await remember(deps.db, body.outbox_id, deviceId, result);
   return result;

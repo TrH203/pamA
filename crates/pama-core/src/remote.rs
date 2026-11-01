@@ -335,19 +335,23 @@ pub struct RemoteSink<'a> {
 
 impl crate::capture::worker::DigestSink for RemoteSink<'_> {
     fn submit(&self, body: &Value) -> Result<Value, crate::capture::worker::SinkError> {
+        use crate::capture::errors::{from_draft, ErrorCode};
         use crate::capture::worker::SinkError;
         use crate::draft::DraftError;
         let project_key = body["project_key"].as_str().unwrap_or_default();
         if !sync_enabled(self.store, project_key) {
-            return Err(SinkError::Skipped(format!(
-                "sync is off for {project_key}; enable it with `pama sync enable --project {project_key}`"
-            )));
+            return Err(SinkError::new(
+                ErrorCode::SyncNotEnabled,
+                format!(
+                    "sync is off for {project_key}; enable it with `pama sync enable --project {project_key}`"
+                ),
+            ));
         }
         let now = crate::capture::worker::rfc3339(std::time::SystemTime::now());
         let digest =
             crate::draft::draft(body, self.model, self.rules, &now).map_err(|e| match e {
-                DraftError::Retryable(m) => SinkError::Retryable(m),
-                DraftError::Fatal(m) => SinkError::Fatal(m),
+                DraftError::Retryable(m) => SinkError::from(from_draft(true, &m)),
+                DraftError::Fatal(m) => SinkError::from(from_draft(false, &m)),
             })?;
         let agent = digest["source"]["agent"]
             .as_str()
@@ -357,7 +361,8 @@ impl crate::capture::worker::DigestSink for RemoteSink<'_> {
             .as_str()
             .unwrap_or_default()
             .to_string();
-        let store_err = |e: crate::store::StoreError| SinkError::Retryable(e.to_string());
+        let store_err =
+            |e: crate::store::StoreError| SinkError::new(ErrorCode::Internal, e.to_string());
         self.store
             .put_remote_digest(&RemoteDigest {
                 target: self.target.clone(),
@@ -387,7 +392,7 @@ impl crate::capture::worker::DigestSink for RemoteSink<'_> {
                 &payload,
             )
             .map_err(store_err)?;
-        Ok(json!({ "digest_id": id, "status": "queued" }))
+        Ok(json!({ "digest_id": id, "outbox_id": id, "status": "queued" }))
     }
 }
 

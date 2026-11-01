@@ -1,5 +1,6 @@
 //! Command implementations (contracts/cli.md).
 
+mod activity;
 mod bundle_fmt;
 mod capture;
 mod config;
@@ -13,6 +14,7 @@ mod model;
 mod review;
 mod scan;
 mod server;
+mod status;
 mod sync;
 
 use pama_core::client::{Api, ApiError};
@@ -78,7 +80,22 @@ pub fn run(cli: Cli) -> anyhow::Result<Exit> {
         store,
         server: cli.global.server.clone(),
     };
-    match cli.command {
+    let Some(command) = cli.command else {
+        return status::run(&ctx);
+    };
+    match command {
+        Command::Status => status::run(&ctx),
+        Command::Activity {
+            failed,
+            follow,
+            limit,
+            action,
+        } => activity::run(&ctx, failed, follow, limit, action),
+        Command::Logs {
+            source,
+            lines,
+            follow,
+        } => activity::logs(&ctx, source, lines, follow),
         Command::Hook { agent } => hook::run(&ctx, agent),
         Command::Capture { action } => capture::run(&ctx, action),
         Command::Init {

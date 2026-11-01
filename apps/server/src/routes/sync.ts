@@ -11,6 +11,7 @@ import {
   SyncDraftSchema,
   SyncTombstoneSchema,
 } from "../services/sync.ts";
+import { tracked } from "./activity.ts";
 import { body } from "./util.ts";
 
 export const syncRoutes = new Hono<Env>()
@@ -21,7 +22,18 @@ export const syncRoutes = new Hono<Env>()
   .post("/sync/drafts", async (c) => {
     const b = await body(c, SyncDraftSchema);
     if (!c.get("device")) throw new HttpError(404, "not_found", "drafts come from paired devices");
-    return c.json(await ingestDigest(c.get("deps"), c.get("device").id, b, "draft"));
+    const src = (b.digest as { source?: Record<string, unknown> } | null)?.source ?? {};
+    const who = {
+      kind: "draft" as const,
+      agent: String(src.agent ?? "unknown"),
+      agent_session_id: String(src.agent_session_id ?? "unknown"),
+      project_key: typeof src.project_key === "string" ? src.project_key : null,
+    };
+    return c.json(
+      await tracked(c, who, (run) =>
+        ingestDigest(c.get("deps"), c.get("device").id, b, "draft", run),
+      ),
+    );
   })
   .get("/sync/changes", async (c) =>
     c.json(await changesSince(c.get("deps"), c.req.query("since"))),

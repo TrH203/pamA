@@ -4,6 +4,7 @@
 
 use serde_json::Value;
 
+use crate::capture::errors::{self, CodedError, ErrorCode};
 use crate::capture::worker::{DigestSink, SinkError};
 use crate::net::{GuardedClient, NetError, Policy};
 use crate::sidecar::ServerInfo;
@@ -52,6 +53,17 @@ impl ApiError {
                 (*status >= 500 || *status == 429) && !body.contains("\"provider_auth\"")
             }
             ApiError::NotLoggedIn(_) => false,
+        }
+    }
+
+    /// The pipeline error code for this failure (spec 006).
+    pub fn coded(&self) -> CodedError {
+        match self {
+            ApiError::NotRunning | ApiError::Net(_) => {
+                CodedError::new(ErrorCode::ServerDown, self.to_string())
+            }
+            ApiError::Status { status, body } => errors::from_server(*status, body),
+            ApiError::NotLoggedIn(_) => CodedError::new(ErrorCode::NotLoggedIn, self.to_string()),
         }
     }
 }
@@ -212,15 +224,45 @@ impl<'s> Api<'s> {
     }
 }
 
+/// Response header with the server's run id for a digest request (spec 006).
+pub const RUN_HEADER: &str = "pama-run-id";
+
+impl Api<'_> {
+    /// `post_slow` that also returns the server's run id (sent on errors too).
+    fn post_digest(&self, body: &Value) -> (Result<Value, ApiError>, Option<String>) {
+        let path = "/v1/transcripts/digest";
+        if let Err(e) = self.client.check(&self.url(path), "capture.digest") {
+            return (Err(e.into()), None);
+        }
+        let sent = self
+            .client
+            .raw()
+            .post(self.url(path))
+            .bearer_auth(&self.info.token)
+            .json(body)
+            .timeout(std::time::Duration::from_secs(180))
+            .send();
+        match sent {
+            Ok(r) => {
+                let run = r
+                    .headers()
+                    .get(RUN_HEADER)
+                    .and_then(|v| v.to_str().ok())
+                    .map(str::to_string);
+                (Self::handle(r), run)
+            }
+            Err(e) => (Err(self.not_running(NetError::Http(e))), None),
+        }
+    }
+}
+
 impl DigestSink for Api<'_> {
     fn submit(&self, body: &Value) -> Result<Value, SinkError> {
-        self.post_slow("/v1/transcripts/digest", "capture.digest", body)
-            .map_err(|e| {
-                if e.retryable() {
-                    SinkError::Retryable(e.to_string())
-                } else {
-                    SinkError::Fatal(e.to_string())
-                }
-            })
+        let (res, run) = self.post_digest(body);
+        res.map_err(|e| {
+            let mut c = e.coded();
+            c.run_id = run;
+            SinkError::from(c)
+        })
     }
 }

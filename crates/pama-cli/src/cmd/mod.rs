@@ -7,9 +7,11 @@ mod doctor;
 mod hook;
 mod inbox;
 mod init;
+mod library;
 mod link;
 mod login;
 mod model;
+mod resolve;
 mod review;
 mod scan;
 mod server;
@@ -108,6 +110,10 @@ pub fn run(cli: Cli) -> anyhow::Result<Exit> {
         Command::Log { link, status } => inbox::log(&ctx, link, status),
         Command::Pair { code, server } => sync::pair(&ctx, &code, &server),
         Command::Sync { action } => sync::run(&ctx, action),
+        Command::Tasks { action } => library::tasks(&ctx, action),
+        Command::Sessions { action } => library::sessions(&ctx, action),
+        Command::Digests { action } => library::digests(&ctx, action),
+        Command::Search { query, limit } => library::search(&ctx, &query.join(" "), limit),
         Command::Doctor { report } => doctor::run(&ctx, report),
     }
 }

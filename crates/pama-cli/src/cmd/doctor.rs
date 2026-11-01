@@ -91,11 +91,39 @@ fn remote_checks(ctx: &Ctx, checks: &mut Vec<Check>) {
         fix: Some(format!("`pama login --server {server}`")),
     });
     let synced = remote::sync_projects(store);
+    let tasks = remote::bundle_sync_overrides(store)
+        .into_iter()
+        .filter(|(_, on)| *on)
+        .count();
+    let warning = pama_core::sync::nothing_shared(Some(&server), synced.len() + tasks);
     checks.push(Check {
-        name: "sync projects",
-        ok: !synced.is_empty(),
-        detail: format!("{} project(s) send drafts", synced.len()),
-        fix: Some("`pama init --sync` in a project".into()),
+        name: "sharing",
+        ok: warning.is_none(),
+        detail: warning.unwrap_or_else(|| {
+            format!(
+                "{} project(s) and {tasks} task(s) send drafts",
+                synced.len()
+            )
+        }),
+        fix: Some("`pama init --sync` in a project, or `pama sync enable --project <dir>`".into()),
+    });
+}
+
+/// Local mode: paired with a server for Publish but nothing published to it (spec 007).
+fn publish_check(ctx: &Ctx, api: &LocalApi, checks: &mut Vec<Check>) {
+    let Ok(Some(target)) = ctx.store.setting(pama_core::remote::KEY_DEFAULT_TARGET) else {
+        return;
+    };
+    let Ok(status) = api.get("/v1/sync/status", "doctor") else {
+        return;
+    };
+    let shared = super::sync::published_count(&status);
+    let warning = pama_core::sync::nothing_shared(Some(&target), shared);
+    checks.push(Check {
+        name: "publish",
+        ok: warning.is_none(),
+        detail: warning.unwrap_or_else(|| format!("{shared} project(s)/task(s) → {target}")),
+        fix: Some("`pama sync enable --project <name>` (or `--task <name>`)".into()),
     });
 }
 
@@ -189,6 +217,7 @@ pub fn run(ctx: &Ctx, report: bool) -> anyhow::Result<Exit> {
         });
         if let Some(api) = &api {
             server_model_checks(api, &mut checks);
+            publish_check(ctx, api, &mut checks);
             server_checked = true;
         }
     }
@@ -229,7 +258,10 @@ pub fn run(ctx: &Ctx, report: bool) -> anyhow::Result<Exit> {
         name: "sync outbox",
         ok: outbox.dead == 0,
         detail: format!("{} pending, {} failed", outbox.pending, outbox.dead),
-        fix: Some("`pama sync status`; failed items were rejected by the server".into()),
+        fix: Some(
+            "`pama sync failed` shows why; `pama sync retry --all` after fixing, or `pama sync drop <id>`"
+                .into(),
+        ),
     });
 
     let all_ok = checks.iter().all(|c| c.ok);

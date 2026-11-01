@@ -1,5 +1,6 @@
 //! Capture worker: drives `captured_session` through
-//! `detected → redacting → digesting → ready_for_review`, with retries and backoff in the store.
+//! `detected → redacting → digesting → ready_for_review → submitted`, with coded errors, the
+//! retry schedule in the store, and one `capture_attempt` row per try (spec 006).
 
 use std::fs::OpenOptions;
 use std::path::Path;
@@ -8,6 +9,7 @@ use std::time::{Duration, SystemTime};
 use serde_json::{json, Value};
 
 use super::enabled_for;
+use super::errors::{CodedError, ErrorCode, Policy};
 use crate::digest::{Agent as DigestAgent, MAX_BRANCHES};
 use crate::project;
 use crate::redact::RuleSet;
@@ -17,14 +19,21 @@ use crate::store::{Agent, CaptureStatus, CapturedSession, Store};
 /// Most events sent for one session (the server accepts up to 20,000).
 const MAX_EVENTS: usize = 20_000;
 
-#[derive(Debug)]
-pub enum SinkError {
-    /// Network, server down, model unavailable: retry later with backoff.
-    Retryable(String),
-    /// Rejected input: retrying will not help.
-    Fatal(String),
-    /// Not for this sink (e.g. sync is off for the project in remote mode): nothing was sent.
-    Skipped(String),
+/// A sink failure with its code; the code decides retry, wait-for-user, give-up or skip
+/// ([`ErrorCode::policy`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SinkError(pub Box<CodedError>);
+
+impl SinkError {
+    pub fn new(code: ErrorCode, message: impl Into<String>) -> Self {
+        Self(Box::new(CodedError::new(code, message)))
+    }
+}
+
+impl From<CodedError> for SinkError {
+    fn from(e: CodedError) -> Self {
+        Self(Box::new(e))
+    }
 }
 
 /// Where redacted sessions go: the local server's `POST /v1/transcripts/digest`, or in remote
@@ -35,10 +44,37 @@ pub trait DigestSink {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CaptureOutcome {
-    Submitted { digest_id: String, status: String },
-    Skipped,
-    Retry(String),
-    Failed(String),
+    /// `digest_id` is the server's id, or empty while the draft is queued on the device.
+    Submitted {
+        digest_id: String,
+        status: String,
+    },
+    Skipped(ErrorCode),
+    Retry(CodedError),
+    Failed(CodedError),
+}
+
+/// Fewest characters of user and assistant text worth a digest.
+pub const MIN_CONVERSATION_CHARS: usize = 40;
+
+/// Empty or trivial session guard (spec 006): no user message, no assistant reply, or almost no
+/// text. Such sessions are skipped with `empty_session` before any model call.
+pub fn is_trivial(s: &NormalizedSession) -> bool {
+    use crate::session::EventKind;
+    let (mut user, mut assistant, mut chars) = (false, false, 0usize);
+    for e in &s.events {
+        let t = e.text.trim();
+        if t.is_empty() {
+            continue;
+        }
+        match e.kind {
+            EventKind::User => user = true,
+            EventKind::Assistant => assistant = true,
+            _ => continue,
+        }
+        chars += t.chars().count();
+    }
+    !(user && assistant && chars >= MIN_CONVERSATION_CHARS)
 }
 
 pub struct Worker<'a, S: DigestSink> {
@@ -159,6 +195,52 @@ pub fn request_body(
 impl<'a, S: DigestSink> Worker<'a, S> {
     pub fn process(&self, c: &CapturedSession) -> crate::store::Result<CaptureOutcome> {
         let st = self.store;
+        let attempt = st.start_attempt(&c.id)?;
+        let out = self.run_attempt(c, &attempt);
+        match &out {
+            Ok(CaptureOutcome::Submitted { digest_id, status }) => {
+                let (outcome, d) = if status == "queued" {
+                    ("queued", None)
+                } else {
+                    ("succeeded", Some(digest_id.as_str()))
+                };
+                st.finish_attempt(&attempt, outcome, None, d, None)?;
+            }
+            Ok(CaptureOutcome::Skipped(code)) => {
+                let e = CodedError::new(*code, code.hint());
+                st.finish_attempt(&attempt, "skipped", Some(&e), None, None)?;
+            }
+            Ok(CaptureOutcome::Retry(e)) => {
+                st.finish_attempt(&attempt, "retry", Some(e), None, None)?
+            }
+            Ok(CaptureOutcome::Failed(e)) => {
+                st.finish_attempt(&attempt, "failed", Some(e), None, None)?
+            }
+            Err(e) => {
+                let ce = CodedError::new(ErrorCode::Internal, e.to_string());
+                let _ = st.finish_attempt(&attempt, "failed", Some(&ce), None, None);
+            }
+        }
+        out
+    }
+
+    fn fail(&self, c: &CapturedSession, e: CodedError) -> crate::store::Result<CaptureOutcome> {
+        if e.code.policy() == Policy::Skip {
+            self.store.skip_capture(&c.id, e.code, &e.message)?;
+            return Ok(CaptureOutcome::Skipped(e.code));
+        }
+        Ok(match self.store.fail_capture(&c.id, &e)? {
+            CaptureStatus::Failed => CaptureOutcome::Failed(e),
+            _ => CaptureOutcome::Retry(e),
+        })
+    }
+
+    fn run_attempt(
+        &self,
+        c: &CapturedSession,
+        attempt: &str,
+    ) -> crate::store::Result<CaptureOutcome> {
+        let st = self.store;
         st.set_capture_status(&c.id, CaptureStatus::Redacting)?;
         let path = Path::new(&c.transcript_path);
         let parsed = match c.agent {
@@ -168,18 +250,32 @@ impl<'a, S: DigestSink> Worker<'a, S> {
         let mut s = match parsed {
             Ok(s) => s,
             Err(e) => {
-                let msg = e.to_string();
                 // A missing file may still be being written; a too-large one never will fit.
-                let retry = matches!(e, session::reader::ReadError::Io(..));
-                return Ok(match st.fail_capture(&c.id, &msg, retry)? {
-                    CaptureStatus::Failed => CaptureOutcome::Failed(msg),
-                    _ => CaptureOutcome::Retry(msg),
-                });
+                let code = match e {
+                    session::reader::ReadError::Io(..) => ErrorCode::TranscriptMissing,
+                    _ => ErrorCode::TranscriptTooLarge,
+                };
+                return self.fail(c, CodedError::new(code, e.to_string()));
             }
         };
+        st.attempt_stage(attempt, "parsed")?;
         if !enabled_for(st, s.meta.cwd.as_deref().or(c.cwd.as_deref())) {
-            st.set_capture_status(&c.id, CaptureStatus::Skipped)?;
-            return Ok(CaptureOutcome::Skipped);
+            return self.fail(
+                c,
+                CodedError::new(
+                    ErrorCode::ProjectNotEnabled,
+                    "capture is off for this project",
+                ),
+            );
+        }
+        if is_trivial(&s) {
+            return self.fail(
+                c,
+                CodedError::new(
+                    ErrorCode::EmptySession,
+                    "the session has no real conversation",
+                ),
+            );
         }
         let sha = session::reader::sha256_file(path).unwrap_or_default();
         st.set_capture_meta(
@@ -189,28 +285,23 @@ impl<'a, S: DigestSink> Worker<'a, S> {
             s.meta.git_branch.as_deref(),
         )?;
         let counts = session::redact_session(self.rules, &mut s);
+        st.attempt_stage(attempt, "redacted")?;
         st.set_capture_status(&c.id, CaptureStatus::Digesting)?;
         let body = request_body(&s, &counts, &c.agent_session_id);
         match self.sink.submit(&body) {
             Ok(v) => {
-                st.set_capture_status(&c.id, CaptureStatus::ReadyForReview)?;
-                Ok(CaptureOutcome::Submitted {
-                    digest_id: v["digest_id"].as_str().unwrap_or_default().to_string(),
-                    status: v["status"].as_str().unwrap_or_default().to_string(),
-                })
+                st.attempt_stage(attempt, "submitted")?;
+                let status = v["status"].as_str().unwrap_or_default().to_string();
+                let digest_id = v["digest_id"].as_str().unwrap_or_default().to_string();
+                let server_id =
+                    (status != "queued" && !digest_id.is_empty()).then_some(digest_id.as_str());
+                st.complete_capture(&c.id, server_id)?;
+                if let Some(run) = v["run_id"].as_str() {
+                    st.attempt_run_id(attempt, run)?;
+                }
+                Ok(CaptureOutcome::Submitted { digest_id, status })
             }
-            Err(SinkError::Retryable(m)) => Ok(match st.fail_capture(&c.id, &m, true)? {
-                CaptureStatus::Failed => CaptureOutcome::Failed(m),
-                _ => CaptureOutcome::Retry(m),
-            }),
-            Err(SinkError::Fatal(m)) => {
-                st.fail_capture(&c.id, &m, false)?;
-                Ok(CaptureOutcome::Failed(m))
-            }
-            Err(SinkError::Skipped(_)) => {
-                st.set_capture_status(&c.id, CaptureStatus::Skipped)?;
-                Ok(CaptureOutcome::Skipped)
-            }
+            Err(SinkError(e)) => self.fail(c, *e),
         }
     }
 

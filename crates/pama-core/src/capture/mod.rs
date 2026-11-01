@@ -1,5 +1,6 @@
 //! Capture: ended agent sessions → Layer-1-redacted events → draft digest on the local server.
 
+pub mod errors;
 pub mod scan;
 pub mod worker;
 

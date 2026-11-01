@@ -60,3 +60,24 @@ CREATE TABLE IF NOT EXISTS remote_digest (
   updated_at        INTEGER NOT NULL,
   PRIMARY KEY (target, agent, agent_session_id)
 );
+
+-- Pipeline observability (spec 006): one row per processing attempt of a capture. Re-enqueueing a
+-- capture never deletes its attempts.
+CREATE TABLE IF NOT EXISTS capture_attempt (
+  id           TEXT PRIMARY KEY,
+  capture_id   TEXT NOT NULL,
+  attempt      INTEGER NOT NULL,
+  stage        TEXT NOT NULL,
+  outcome      TEXT,
+  started_at   INTEGER NOT NULL,
+  ended_at     INTEGER,
+  duration_ms  INTEGER,
+  error_code   TEXT,
+  error_detail TEXT,
+  role         TEXT,
+  provider     TEXT,
+  model        TEXT,
+  digest_id    TEXT,
+  run_id       TEXT
+);
+CREATE INDEX IF NOT EXISTS capture_attempt_capture ON capture_attempt (capture_id, started_at);

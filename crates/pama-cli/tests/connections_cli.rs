@@ -329,3 +329,17 @@ fn codex_notify_chains_an_existing_notifier() {
         format!("notify = [\"{}\", \"x\"]\n", script.display())
     );
 }
+
+#[test]
+fn config_validation_uses_the_provider_registry() {
+    let e = Env::new();
+    let ok = e.run(&["config", "set", "provider.chat.provider", "lmstudio"]);
+    assert!(
+        ok.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ok.stderr)
+    );
+    let bad = e.run(&["config", "set", "provider.chat.provider", "nope"]);
+    assert!(!bad.status.success());
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("deepinfra"));
+}

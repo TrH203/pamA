@@ -231,6 +231,7 @@ pub enum LinkAction {
 
 #[derive(Debug, Args)]
 pub struct LinkCreate {
+    /// `task:<id>`, `project:<id>`, `session:<id>` or a bare task id; repeat for more.
     #[arg(long = "source")]
     pub sources: Vec<String>,
     #[arg(long)]

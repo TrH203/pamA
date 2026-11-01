@@ -207,6 +207,19 @@ impl<'s> Api<'s> {
         Self::handle(r)
     }
 
+    /// DELETE; a 204 comes back as `Value::Null`.
+    pub fn delete(&self, path: &str, purpose: &str) -> Result<Value, ApiError> {
+        self.client.check(&self.url(path), purpose)?;
+        let r = self
+            .client
+            .raw()
+            .delete(self.url(path))
+            .bearer_auth(&self.info.token)
+            .send()
+            .map_err(|e| ApiError::Net(NetError::Http(e)))?;
+        Self::handle(r)
+    }
+
     pub fn healthy(&self) -> bool {
         self.get("/v1/health", "health").is_ok()
     }

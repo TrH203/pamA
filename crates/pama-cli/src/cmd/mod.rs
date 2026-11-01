@@ -3,6 +3,7 @@
 mod bundle_fmt;
 mod capture;
 mod config;
+mod conversations;
 mod doctor;
 mod hook;
 mod inbox;
@@ -106,6 +107,8 @@ pub fn run(cli: Cli) -> anyhow::Result<Exit> {
         Command::Inbox => inbox::inbox(&ctx),
         Command::Reply { ask_id, text } => inbox::reply(&ctx, &ask_id, &text),
         Command::Log { link, status } => inbox::log(&ctx, link, status),
+        Command::Conversations { action } => conversations::run(&ctx, action),
+        Command::Chat(args) => conversations::chat(&ctx, args),
         Command::Pair { code, server } => sync::pair(&ctx, &code, &server),
         Command::Sync { action } => sync::run(&ctx, action),
         Command::Doctor { report } => doctor::run(&ctx, report),

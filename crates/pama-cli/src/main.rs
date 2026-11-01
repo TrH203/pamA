@@ -127,6 +127,13 @@ pub enum Command {
         #[arg(long)]
         status: Option<String>,
     },
+    /// Ask Link conversations and your own chats: list, show, reply, delete.
+    Conversations {
+        #[command(subcommand)]
+        action: ConversationsAction,
+    },
+    /// Chat with your own agent over your approved work (interactive; `-q` asks one question).
+    Chat(ChatArgs),
     /// Per-source sync control.
     Sync {
         #[command(subcommand)]
@@ -227,6 +234,66 @@ pub struct LinkCreate {
     pub pin: Option<String>,
     #[arg(long = "allow")]
     pub allow: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum ConversationStatusArg {
+    Open,
+    Archived,
+    /// Has a question forwarded to you and not answered yet (the inbox).
+    NeedsReply,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum ConversationOriginArg {
+    Link,
+    OwnerChat,
+    Hotkey,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ConversationsAction {
+    /// List conversations, newest first.
+    List {
+        /// Only this Ask Link (slug).
+        #[arg(long)]
+        link: Option<String>,
+        /// Only this verified asker email.
+        #[arg(long)]
+        asker: Option<String>,
+        #[arg(long, value_enum)]
+        status: Option<ConversationStatusArg>,
+        #[arg(long, value_enum)]
+        origin: Option<ConversationOriginArg>,
+        #[arg(long, default_value_t = 50)]
+        limit: u32,
+        #[arg(long, default_value_t = 0)]
+        offset: u32,
+    },
+    /// Show every turn of a conversation with citations and replies.
+    Show { id: String },
+    /// Reply in a conversation (to the question waiting for you, or `--ask <id>`).
+    Reply {
+        id: String,
+        text: String,
+        #[arg(long = "ask")]
+        ask_id: Option<String>,
+    },
+    /// Delete a conversation (hidden at once, purged by the next retention run).
+    Delete { id: String },
+}
+
+#[derive(Debug, Args)]
+pub struct ChatArgs {
+    /// Ask one question and exit (required with --json).
+    #[arg(short = 'q', long = "question")]
+    pub question: Option<String>,
+    /// Limit the chat to sources: `bundle:<id>`, `project:<id>`, `session:<id>` (repeatable).
+    #[arg(long = "scope")]
+    pub scope: Vec<String>,
+    /// Continue an earlier chat.
+    #[arg(long = "conversation", conflicts_with = "scope")]
+    pub conversation: Option<String>,
 }
 
 #[derive(Debug, Subcommand)]

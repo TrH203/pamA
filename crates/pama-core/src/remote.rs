@@ -16,6 +16,9 @@ pub const KEY_SERVERS: &str = "remote.servers";
 /// Default server (also the default sync target, as before).
 pub const KEY_DEFAULT_TARGET: &str = "sync.default_target";
 pub const KEY_SYNC_PROJECTS: &str = "remote.sync_projects";
+/// Per-task (bundle) overrides in remote mode: `{"<project_key>#<bundle_key>": true|false}`
+/// (spec 004 FR-012, spec 007). A task without an entry follows its project.
+pub const KEY_SYNC_BUNDLES: &str = "remote.sync_bundles";
 /// Pull review decisions at most this often from ordinary commands.
 const PULL_EVERY_MS: i64 = 60_000;
 
@@ -147,6 +150,107 @@ pub fn project_keys(logical: &str) -> Vec<crate::project::ProjectInfo> {
         }
     }
     out
+}
+
+fn bundle_overrides(store: &Store) -> std::collections::BTreeMap<String, bool> {
+    store
+        .setting(KEY_SYNC_BUNDLES)
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+pub fn task_key(project_key: &str, bundle_key: &str) -> String {
+    format!("{project_key}#{bundle_key}")
+}
+
+/// The per-task override, if the owner set one.
+pub fn bundle_sync_override(store: &Store, project_key: &str, bundle_key: &str) -> Option<bool> {
+    bundle_overrides(store)
+        .get(&task_key(project_key, bundle_key))
+        .copied()
+}
+
+/// Whether drafts of a task go to the server: the task's override, else its project's setting.
+pub fn sync_enabled_for(store: &Store, project_key: &str, bundle_key: &str) -> bool {
+    bundle_sync_override(store, project_key, bundle_key)
+        .unwrap_or_else(|| sync_enabled(store, project_key))
+}
+
+/// Every task with an override, as `(project_key#bundle_key, on)`.
+pub fn bundle_sync_overrides(store: &Store) -> Vec<(String, bool)> {
+    bundle_overrides(store).into_iter().collect()
+}
+
+/// Set (`Some`) or clear (`None`, follow the project) a task's override. Returns whether the
+/// effective setting changed.
+pub fn set_bundle_sync(
+    store: &Store,
+    project_key: &str,
+    bundle_key: &str,
+    on: Option<bool>,
+) -> crate::store::Result<bool> {
+    let before = sync_enabled_for(store, project_key, bundle_key);
+    let key = task_key(project_key, bundle_key);
+    let mut map = bundle_overrides(store);
+    match on {
+        Some(v) => {
+            map.insert(key.clone(), v);
+        }
+        None => {
+            map.remove(&key);
+        }
+    }
+    store.set_setting(
+        KEY_SYNC_BUNDLES,
+        &serde_json::to_string(&map).expect("json"),
+    )?;
+    let after = sync_enabled_for(store, project_key, bundle_key);
+    if after && !before {
+        store.set_setting(
+            &format!("remote.sync_enabled_at:{key}"),
+            &crate::capture::worker::rfc3339(std::time::SystemTime::now()),
+        )?;
+    }
+    Ok(before != after)
+}
+
+/// When sync was turned on for a task: its own moment if it was enabled on its own, else its
+/// project's.
+pub fn sync_enabled_at_for(store: &Store, project_key: &str, bundle_key: &str) -> Option<String> {
+    if bundle_sync_override(store, project_key, bundle_key) == Some(true) {
+        if let Some(at) = store
+            .setting(&format!(
+                "remote.sync_enabled_at:{}",
+                task_key(project_key, bundle_key)
+            ))
+            .ok()
+            .flatten()
+        {
+            return Some(at);
+        }
+    }
+    sync_enabled_at(store, project_key)
+}
+
+/// A short, readable task name from a digest goal: the first non-empty line, at most 60
+/// characters cut at a word boundary (same rule as the server's `suggestName`).
+pub fn suggest_name(goal: &str) -> Option<String> {
+    const MAX: usize = 60;
+    let line = goal.lines().find(|l| !l.trim().is_empty()).unwrap_or("");
+    let mut name = line.split_whitespace().collect::<Vec<_>>().join(" ");
+    if name.chars().count() > MAX {
+        let head: String = name.chars().take(MAX + 1).collect();
+        name = match head.rfind(' ') {
+            Some(i) if i > 0 => head[..i].to_string(),
+            _ => name.chars().take(MAX).collect(),
+        };
+    }
+    let name = name
+        .trim_end_matches(|c: char| c.is_whitespace() || ".,;:!?-".contains(c))
+        .to_string();
+    (!name.is_empty()).then_some(name)
 }
 
 /// Turn sync on or off for a project. Returns whether anything changed.
@@ -338,10 +442,17 @@ impl crate::capture::worker::DigestSink for RemoteSink<'_> {
         use crate::capture::worker::SinkError;
         use crate::draft::DraftError;
         let project_key = body["project_key"].as_str().unwrap_or_default();
-        if !sync_enabled(self.store, project_key) {
-            return Err(SinkError::Skipped(format!(
-                "sync is off for {project_key}; enable it with `pama sync enable --project {project_key}`"
-            )));
+        let bundle_key = body["bundle_key"].as_str().unwrap_or("default");
+        if !sync_enabled_for(self.store, project_key, bundle_key) {
+            return Err(SinkError::Skipped(
+                if bundle_sync_override(self.store, project_key, bundle_key) == Some(false) {
+                    format!("sync is off for task {bundle_key} of {project_key}")
+                } else {
+                    format!(
+                        "sync is off for {project_key}; enable it with `pama sync enable --project {project_key}`"
+                    )
+                },
+            ));
         }
         let now = crate::capture::worker::rfc3339(std::time::SystemTime::now());
         let digest =
@@ -374,8 +485,13 @@ impl crate::capture::worker::DigestSink for RemoteSink<'_> {
         let mut payload = json!({
             crate::sync::DRAFT_FLAG: true,
             "digest": digest,
-            "sync_enabled_at": sync_enabled_at(self.store, project_key).unwrap_or_else(|| now.clone()),
+            "sync_enabled_at": sync_enabled_at_for(self.store, project_key, bundle_key).unwrap_or_else(|| now.clone()),
         });
+        // A readable task name for the review list; the server keeps the first suggestion.
+        if let Some(n) = digest["goal"].as_str().and_then(suggest_name) {
+            payload["bundle_name"] = json!(n);
+            payload["bundle_name_source"] = json!("suggested");
+        }
         if let Some(n) = body["project_name"].as_str() {
             payload["project_name"] = json!(n);
         }
@@ -542,6 +658,44 @@ mod tests {
         assert!(sync_enabled_at(&s, "github.com/acme/shop").is_some());
         assert!(set_project_sync(&s, "github.com/acme/shop", false).unwrap());
         assert!(!sync_enabled(&s, "github.com/acme/shop"));
+    }
+
+    #[test]
+    fn task_overrides_win_over_the_project() {
+        let s = Store::open_in_memory().unwrap();
+        let p = "github.com/acme/shop";
+        assert!(!sync_enabled_for(&s, p, "feat/a"));
+        // A task can be shared while its project is not.
+        assert!(set_bundle_sync(&s, p, "feat/a", Some(true)).unwrap());
+        assert!(sync_enabled_for(&s, p, "feat/a"));
+        assert!(!sync_enabled_for(&s, p, "feat/b"));
+        assert!(sync_enabled_at_for(&s, p, "feat/a").is_some());
+        // ... or kept back while its project is shared.
+        set_project_sync(&s, p, true).unwrap();
+        assert!(set_bundle_sync(&s, p, "feat/b", Some(false)).unwrap());
+        assert!(!sync_enabled_for(&s, p, "feat/b"));
+        assert!(sync_enabled_for(&s, p, "main"));
+        assert_eq!(bundle_sync_overrides(&s).len(), 2);
+        // Clearing an override follows the project again.
+        assert!(set_bundle_sync(&s, p, "feat/b", None).unwrap());
+        assert!(sync_enabled_for(&s, p, "feat/b"));
+        assert!(
+            !set_bundle_sync(&s, p, "feat/a", None).unwrap(),
+            "still on via the project"
+        );
+    }
+
+    #[test]
+    fn suggested_names_match_the_server_rule() {
+        assert_eq!(
+            suggest_name("\n  Decide whether refunds include the shipping fee.\nMore").as_deref(),
+            Some("Decide whether refunds include the shipping fee")
+        );
+        let long = "word ".repeat(30);
+        let n = suggest_name(&long).unwrap();
+        assert!(n.chars().count() <= 60 && !n.ends_with(' '));
+        assert_eq!(suggest_name("   "), None);
+        assert_eq!(suggest_name("...").as_deref(), None);
     }
 
     #[test]

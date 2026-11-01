@@ -194,6 +194,18 @@ impl<'s> Api<'s> {
         Self::handle(r)
     }
 
+    pub fn delete(&self, path: &str, purpose: &str) -> Result<Value, ApiError> {
+        self.client.check(&self.url(path), purpose)?;
+        let r = self
+            .client
+            .raw()
+            .delete(self.url(path))
+            .bearer_auth(&self.info.token)
+            .send()
+            .map_err(|e| self.not_running(NetError::Http(e)))?;
+        Self::handle(r)
+    }
+
     pub fn put(&self, path: &str, purpose: &str, body: &Value) -> Result<Value, ApiError> {
         self.client.check(&self.url(path), purpose)?;
         let r = self

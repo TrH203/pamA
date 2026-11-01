@@ -1,8 +1,12 @@
 // Settings → Where things run: every component, where it runs now and where else it can.
 // Read-only: placement follows from the server mode and the model settings, so the page links
 // to the place where each one is changed instead of duplicating the controls.
-import { useCallback, useEffect, useState } from "react";
-import { api } from "../lib/api.ts";
+import { useI18n } from "@pama/i18n";
+import { Badge, Button, Card, CardHeader, ErrorBanner, SkeletonList, type Tone } from "@pama/ui";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Cloud, Laptop, Lock, Server } from "lucide-react";
+import { useState } from "react";
+import { api, errorMessage } from "../lib/api.ts";
 import { type Role, RoleCard, type Settings } from "./Models.tsx";
 
 type Place = "device" | "server" | "cloud";
@@ -25,10 +29,10 @@ interface Topology {
   dataFlow: string[];
 }
 
-const PLACE: Record<Place, { label: string; tone: string }> = {
-  device: { label: "Your machine", tone: "bg-stone-900 text-white" },
-  server: { label: "This server", tone: "bg-sky-100 text-sky-900" },
-  cloud: { label: "Cloud", tone: "bg-amber-100 text-amber-900" },
+const PLACE: Record<Place, { label: string; tone: Tone; icon: typeof Laptop }> = {
+  device: { label: "Your machine", tone: "accent", icon: Laptop },
+  server: { label: "This server", tone: "neutral", icon: Server },
+  cloud: { label: "Cloud", tone: "warning", icon: Cloud },
 };
 const MODE: Record<Topology["mode"], string> = {
   local: "Local: everything on this machine",
@@ -58,28 +62,29 @@ function ModelControl({
   const v = settings.roles[role];
   // On a shared cloud server only the answering model is the workspace's own to change.
   if (v.scope === "server") {
-    return <p className="text-sm text-stone-500">Set by the server operator.</p>;
+    return <p className="text-ui text-muted">Set by the server operator.</p>;
   }
   return (
     <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2 text-sm">
-        <span className="text-stone-500">Run it on:</span>
+      <div className="flex flex-wrap items-center gap-2 text-ui">
+        <span className="text-muted">Run it on:</span>
         {CHOICES.map(([k, label]) => (
-          <button
+          <Button
             key={k}
-            type="button"
-            className={`btn ${v.provider === k && !preset ? "font-semibold" : ""}`}
+            size="sm"
+            aria-pressed={v.provider === k && !preset}
+            className="aria-pressed:border-accent aria-pressed:bg-accent-soft aria-pressed:text-accent-ink"
             onClick={() => {
               setPreset(k);
               setOpen(true);
             }}
           >
             {label}
-          </button>
+          </Button>
         ))}
-        <button type="button" className="underline" onClick={() => setOpen(!open)}>
+        <Button size="sm" variant="ghost" aria-expanded={open} onClick={() => setOpen(!open)}>
           {open ? "Hide" : "Edit details"}
-        </button>
+        </Button>
       </div>
       {open && (
         <RoleCard
@@ -99,80 +104,97 @@ function ModelControl({
 
 function Pill({ place }: { place: Place }) {
   const p = PLACE[place];
-  return <span className={`rounded px-2 py-0.5 text-xs ${p.tone}`}>{p.label}</span>;
+  const Icon = p.icon;
+  return (
+    <Badge tone={p.tone}>
+      <Icon aria-hidden />
+      {p.label}
+    </Badge>
+  );
 }
 
 export function Placement() {
-  const [t, setT] = useState<Topology | null>(null);
-  const [models, setModels] = useState<Settings | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const load = useCallback(() => {
-    Promise.all([api<Topology>("/v1/settings/topology"), api<Settings>("/v1/models/settings")])
-      .then(([top, m]) => {
-        setT(top);
-        setModels(m);
-      })
-      .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
-  }, []);
-  useEffect(load, [load]);
-  if (err) return <p className="text-red-700">{err}</p>;
-  if (!t || !models) return <p className="text-stone-500">Loading…</p>;
+  const { t: tr } = useI18n();
+  const qc = useQueryClient();
+  const q = useQuery({
+    queryKey: ["placement"],
+    queryFn: () =>
+      Promise.all([api<Topology>("/v1/settings/topology"), api<Settings>("/v1/models/settings")]),
+  });
+  const load = () => {
+    void qc.invalidateQueries({ queryKey: ["placement"] });
+    void qc.invalidateQueries({ queryKey: ["models"] });
+  };
+  if (q.isError)
+    return (
+      <ErrorBanner
+        title={tr.common.loadFailed}
+        message={errorMessage(q.error)}
+        onRetry={() => void q.refetch()}
+        retryLabel={tr.common.retry}
+      />
+    );
+  if (!q.data) return <SkeletonList label={tr.common.loading} />;
+  const [t, models] = q.data;
   return (
     <section className="space-y-4">
-      <div className="rounded border border-stone-200 p-4">
-        <p className="font-semibold">{MODE[t.mode]}</p>
-        <p className="text-sm text-stone-500">
+      <Card>
+        <p className="text-sm font-semibold">{MODE[t.mode]}</p>
+        <p className="mt-0.5 font-mono text-xs text-muted">
           {t.baseUrl} · database: {t.db}
         </p>
-      </div>
+      </Card>
 
       <ul className="space-y-3">
         {t.components.map((c) => (
-          <li key={c.id} className="space-y-2 rounded border border-stone-200 p-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="font-semibold">{c.name}</h3>
-              <Pill place={c.current} />
-              {!c.movable && (
-                <span className="rounded bg-stone-200 px-2 py-0.5 text-xs text-stone-700">
-                  fixed
-                </span>
+          <li key={c.id}>
+            <Card className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-sm font-semibold">{c.name}</h3>
+                <Pill place={c.current} />
+                {!c.movable && (
+                  <Badge>
+                    <Lock aria-hidden />
+                    fixed
+                  </Badge>
+                )}
+              </div>
+              <p className="text-ui text-muted">{c.what}</p>
+              <p className="text-ui">{c.detail}</p>
+              {(c.id === "chat" || c.id === "small" || c.id === "embed") && (
+                <ModelControl role={c.id as Role} settings={models} onSaved={load} />
               )}
-            </div>
-            <p className="text-sm text-stone-500">{c.what}</p>
-            <p className="text-sm">{c.detail}</p>
-            {models && (c.id === "chat" || c.id === "small" || c.id === "embed") && (
-              <ModelControl role={c.id as Role} settings={models} onSaved={load} />
-            )}
-            <details className="text-sm text-stone-600">
-              <summary className="cursor-pointer">
-                {c.movable ? "Other places it can run" : "Why it cannot move"}
-              </summary>
-              <ul className="mt-1 space-y-1">
-                {c.options.map((o) => (
-                  <li key={o.place + o.how} className="flex gap-2">
-                    <Pill place={o.place} />
-                    <span>{o.how}</span>
-                  </li>
-                ))}
-              </ul>
-            </details>
+              <details className="text-ui text-muted">
+                <summary className="cursor-pointer select-none hover:text-fg">
+                  {c.movable ? "Other places it can run" : "Why it cannot move"}
+                </summary>
+                <ul className="mt-2 space-y-1.5">
+                  {c.options.map((o) => (
+                    <li key={o.place + o.how} className="flex flex-wrap items-center gap-2">
+                      <Pill place={o.place} />
+                      <span>{o.how}</span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            </Card>
           </li>
         ))}
       </ul>
 
-      <div className="rounded border border-stone-200 p-4">
-        <h3 className="font-semibold">What leaves your machine</h3>
-        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
+      <Card>
+        <CardHeader title="What leaves your machine" />
+        <ul className="list-disc space-y-1 pl-5 text-ui">
           {t.dataFlow.map((l) => (
             <li key={l}>{l}</li>
           ))}
         </ul>
-        <p className="mt-3 text-sm text-stone-600">
+        <p className="mt-3 text-ui text-muted">
           Strict offline: {t.strictOffline ? "on" : "off"}
           {t.declaredHosts.length > 0 && ` · declared hosts: ${t.declaredHosts.join(", ")}`}. Change
           it in the desktop app (Settings → Strict offline mode).
         </p>
-      </div>
+      </Card>
     </section>
   );
 }

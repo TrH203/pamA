@@ -1,7 +1,22 @@
 // Model settings (spec 003): chat, small and embedding roles. Talks to /v1/models/*; the CLI
 // (`pama model`) uses the same endpoints, so both always show the same values.
-import { useCallback, useEffect, useState } from "react";
-import { ApiError, api } from "../lib/api.ts";
+import { useI18n } from "@pama/i18n";
+import {
+  Button,
+  Card,
+  ErrorBanner,
+  Field,
+  Input,
+  Notice,
+  Select,
+  SkeletonList,
+  StatusPill,
+  useToast,
+} from "@pama/ui";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { CircleAlert, CircleCheck, Cloud, Laptop, ShieldAlert } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ApiError, api, errorMessage } from "../lib/api.ts";
 
 export type Role = "chat" | "small" | "embed";
 type Confirm = "data_leaves" | "reindex" | "unverified";
@@ -62,26 +77,26 @@ const NOTICE: Record<string, string> = {
   reindex: "Changing the embedding model re-indexes all stored digest items.",
 };
 
-function Badge({ ok, children }: { ok: boolean | null; children: string }) {
-  const tone =
-    ok === null
-      ? "bg-stone-200 text-stone-700"
-      : ok
-        ? "bg-green-100 text-green-800"
-        : "bg-red-100 text-red-800";
-  return <span className={`rounded px-2 py-0.5 text-xs ${tone}`}>{children}</span>;
-}
-
 function CheckList({ check }: { check: Check }) {
   return (
-    <ul className="mt-2 space-y-1 text-sm">
+    <ul className="space-y-1 text-ui">
       {check.items.map((i) => (
-        <li key={i.name} className={i.ok ? "text-green-700" : "text-red-700"}>
-          <span aria-hidden>{i.ok ? "✓" : "✗"}</span> {i.detail}
-          {i.fix && <span className="opacity-80"> — {i.fix}</span>}
+        <li
+          key={i.name}
+          className={`flex items-start gap-2 ${i.ok ? "text-success-ink" : "text-danger-ink"}`}
+        >
+          {i.ok ? (
+            <CircleCheck aria-label="OK" className="mt-0.5 size-4 shrink-0" />
+          ) : (
+            <CircleAlert aria-label="Failed" className="mt-0.5 size-4 shrink-0" />
+          )}
+          <span>
+            {i.detail}
+            {i.fix && <span className="opacity-80"> — {i.fix}</span>}
+          </span>
         </li>
       ))}
-      {check.latencyMs !== null && <li className="text-stone-500">{check.latencyMs} ms</li>}
+      {check.latencyMs !== null && <li className="pl-6 text-muted">{check.latencyMs} ms</li>}
     </ul>
   );
 }
@@ -110,6 +125,7 @@ export function RoleCard({
   const [needs, setNeeds] = useState<string[]>([]);
   const [failed, setFailed] = useState(false);
   const [title, sub] = TITLES[role];
+  const toast = useToast();
   const wantsUrl = provider !== "anthropic";
   const hints = MODEL_HINTS[provider] ?? [];
   const wantsKey = provider !== "ollama";
@@ -165,6 +181,7 @@ export function RoleCard({
       setCheck(r.check);
       setNeeds([]);
       setFailed(false);
+      toast.success("Model saved");
       onSaved();
     });
   const test = () =>
@@ -179,87 +196,86 @@ export function RoleCard({
     });
 
   return (
-    <section className="space-y-3 rounded border border-stone-200 p-4">
+    <Card className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <h3 className="font-semibold">{title}</h3>
-        <span className="text-sm text-stone-500">{sub}</span>
+        <h3 className="text-sm font-semibold">{title}</h3>
+        <span className="text-ui text-muted">{sub}</span>
         <span className="ml-auto flex gap-1">
-          <Badge ok={null}>{v.local ? "local" : "cloud"}</Badge>
-          <Badge ok={v.source === "saved" ? v.verified : null}>
-            {v.source === "env" ? "default" : v.verified ? "verified" : "unverified"}
-          </Badge>
+          <StatusPill tone="neutral" icon={v.local ? Laptop : Cloud}>
+            {v.local ? "local" : "cloud"}
+          </StatusPill>
+          {v.source === "env" ? (
+            <StatusPill tone="neutral">default</StatusPill>
+          ) : v.verified ? (
+            <StatusPill tone="success">verified</StatusPill>
+          ) : (
+            <StatusPill tone="warning">unverified</StatusPill>
+          )}
         </span>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="text-sm">
-          Provider
-          <select
-            className="input mt-1 w-full"
-            value={provider}
-            onChange={(e) => setProvider(e.target.value)}
-          >
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Provider">
+          <Select value={provider} onChange={(e) => setProvider(e.target.value)}>
             {PROVIDERS.map(([k, label]) => (
               <option key={k} value={k}>
                 {label}
               </option>
             ))}
-          </select>
-        </label>
-        <label className="text-sm">
-          Model
-          <input
-            className="input mt-1 w-full"
-            value={model}
-            list={`models-${role}`}
-            onChange={(e) => setModel(e.target.value)}
-          />
-          <datalist id={`models-${role}`}>
-            {hints.map((h) => (
-              <option key={h} value={h} />
-            ))}
-          </datalist>
-        </label>
+          </Select>
+        </Field>
+        <Field label="Model">
+          <Input value={model} list={`models-${role}`} onChange={(e) => setModel(e.target.value)} />
+        </Field>
+        <datalist id={`models-${role}`}>
+          {hints.map((h) => (
+            <option key={h} value={h} />
+          ))}
+        </datalist>
         {wantsUrl && (
-          <label className="text-sm">
-            Endpoint{" "}
-            {provider === "ollama" && (
-              <span className="text-stone-500">(default http://127.0.0.1:11434)</span>
-            )}
-            {provider === "openrouter" && (
-              <span className="text-stone-500">(default https://openrouter.ai/api/v1)</span>
-            )}
-            <input
-              className="input mt-1 w-full"
+          <Field
+            label="Endpoint"
+            hint={
+              provider === "ollama"
+                ? "Default http://127.0.0.1:11434"
+                : provider === "openrouter"
+                  ? "Default https://openrouter.ai/api/v1"
+                  : undefined
+            }
+          >
+            <Input
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
               placeholder="https://…"
             />
-          </label>
+          </Field>
         )}
         {wantsKey && (
-          <label className="text-sm">
-            API key{" "}
-            {v.keySet && provider === v.provider ? (
-              <Badge ok>set</Badge>
-            ) : (
-              <Badge ok={false}>not set</Badge>
-            )}
-            <input
-              className="input mt-1 w-full"
+          <Field
+            label="API key"
+            labelAside={
+              v.keySet && provider === v.provider ? (
+                <StatusPill tone="success">set</StatusPill>
+              ) : (
+                <StatusPill tone="warning">not set</StatusPill>
+              )
+            }
+            hint="Write-only: the saved key is never shown."
+          >
+            <Input
               type="password"
               autoComplete="off"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               placeholder={v.keySet && provider === v.provider ? "leave empty to keep" : ""}
             />
-          </label>
+          </Field>
         )}
       </div>
       {provider === "openrouter" && (
-        <p className="text-sm text-stone-600">
+        <p className="text-ui text-muted">
           Create a key at{" "}
           <a
-            className="underline"
+            className="text-accent-ink underline underline-offset-2"
             href="https://openrouter.ai/keys"
             target="_blank"
             rel="noreferrer"
@@ -271,72 +287,73 @@ export function RoleCard({
         </p>
       )}
       {strict && provider !== "ollama" && (
-        <p className="text-sm text-amber-700">
+        <Notice tone="warning" icon={ShieldAlert}>
           Strict offline is on: cloud endpoints are blocked unless declared.
-        </p>
+        </Notice>
       )}
       {needs.length > 0 && (
-        <div className="space-y-2 rounded bg-amber-50 p-3 text-sm">
-          {needs.map((n) => (
-            <p key={n}>{NOTICE[n] ?? n}</p>
-          ))}
-          <button
-            type="button"
-            className="btn-primary"
-            disabled={busy}
-            onClick={() => save(needs as Confirm[])}
-          >
-            Confirm and save
-          </button>
-        </div>
+        <Notice tone="warning">
+          <div className="space-y-2">
+            {needs.map((n) => (
+              <p key={n}>{NOTICE[n] ?? n}</p>
+            ))}
+            <Button variant="primary" loading={busy} onClick={() => save(needs as Confirm[])}>
+              Confirm and save
+            </Button>
+          </div>
+        </Notice>
       )}
       {error && (
-        <p className="text-sm text-red-700">
-          {error}{" "}
-          {failed && (
-            <button type="button" className="underline" onClick={() => save(["unverified"])}>
-              Save anyway
-            </button>
-          )}
-        </p>
+        <ErrorBanner
+          title="Couldn't save"
+          message={error}
+          onRetry={failed ? () => save(["unverified"]) : undefined}
+          retryLabel="Save anyway"
+        />
       )}
       {check && <CheckList check={check} />}
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          className="btn-primary"
-          disabled={busy || !model}
-          onClick={() => save()}
-        >
+      <div className="flex flex-wrap gap-2 border-t border-line pt-4">
+        <Button variant="primary" loading={busy} disabled={!model} onClick={() => save()}>
           Save
-        </button>
-        <button type="button" className="btn" disabled={busy || !model} onClick={test}>
+        </Button>
+        <Button disabled={busy || !model} onClick={test}>
           Test
-        </button>
+        </Button>
         {v.previous && (
-          <button type="button" className="btn" disabled={busy} onClick={revert}>
+          <Button variant="ghost" disabled={busy} onClick={revert}>
             Revert to {v.previous.provider} / {v.previous.model}
-          </button>
+          </Button>
         )}
       </div>
-    </section>
+    </Card>
   );
 }
 
 export function Models() {
-  const [s, setS] = useState<Settings | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const load = useCallback(() => {
-    api<Settings>("/v1/models/settings")
-      .then(setS)
-      .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
-  }, []);
-  useEffect(load, [load]);
-  if (err) return <p className="text-red-700">{err}</p>;
-  if (!s) return <p className="text-stone-500">Loading…</p>;
+  const { t } = useI18n();
+  const qc = useQueryClient();
+  const q = useQuery({
+    queryKey: ["models"],
+    queryFn: () => api<Settings>("/v1/models/settings"),
+  });
+  const load = () => {
+    void qc.invalidateQueries({ queryKey: ["models"] });
+    void qc.invalidateQueries({ queryKey: ["placement"] });
+  };
+  if (q.isError)
+    return (
+      <ErrorBanner
+        title={t.common.loadFailed}
+        message={errorMessage(q.error)}
+        onRetry={() => void q.refetch()}
+        retryLabel={t.common.retry}
+      />
+    );
+  if (!q.data) return <SkeletonList label={t.common.loading} />;
+  const s = q.data;
   return (
     <section className="space-y-4">
-      {s.strict_offline && <Badge ok={null}>strict offline</Badge>}
+      {s.strict_offline && <StatusPill tone="warning">strict offline</StatusPill>}
       {(["chat", "embed", "small"] as Role[]).map((r) => (
         <RoleCard key={r} role={r} v={s.roles[r]} strict={s.strict_offline} onSaved={load} />
       ))}

@@ -1,7 +1,24 @@
 // Doctor: the same checks as `pama doctor`, plus scan and capture state. Polls /v1/doctor, which
 // runs `pama doctor --report` on this machine.
-import { useCallback, useEffect, useState } from "react";
-import { api } from "../lib/api.ts";
+import { useI18n } from "@pama/i18n";
+import {
+  Button,
+  Card,
+  CardHeader,
+  ErrorBanner,
+  SkeletonList,
+  StatusPill,
+  Table,
+  TBody,
+  TD,
+  TH,
+  THead,
+  type Tone,
+  TR,
+} from "@pama/ui";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { CircleAlert, CircleCheck, RotateCw } from "lucide-react";
+import { api, errorMessage } from "../lib/api.ts";
 
 interface DoctorCheck {
   check: string;
@@ -28,21 +45,19 @@ interface Report {
 }
 
 const POLL_MS = 30_000;
-const TONE: Record<string, string> = {
-  failed: "bg-red-100 text-red-800",
-  submitted: "bg-green-100 text-green-800",
-  ready_for_review: "bg-blue-100 text-blue-800",
-  skipped: "bg-stone-200 text-stone-700",
+const TONE: Record<string, Tone> = {
+  failed: "danger",
+  submitted: "success",
+  ready_for_review: "accent",
+  skipped: "neutral",
 };
 
 function Pill({ status, n }: { status: string; n?: number }) {
   return (
-    <span
-      className={`rounded px-2 py-0.5 text-xs ${TONE[status] ?? "bg-amber-100 text-amber-800"}`}
-    >
+    <StatusPill tone={TONE[status] ?? "warning"}>
       {status.replaceAll("_", " ")}
       {n !== undefined && ` ${n}`}
-    </span>
+    </StatusPill>
   );
 }
 
@@ -55,106 +70,121 @@ function ago(ms: number): string {
 }
 
 export function Doctor() {
-  const [r, setR] = useState<Report | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const load = useCallback((fresh = false) => {
-    setBusy(true);
-    api<Report>(fresh ? "/v1/doctor?fresh=1" : "/v1/doctor")
-      .then((d) => {
-        setR(d);
-        setErr(null);
-      })
-      .catch((e) => setErr(e instanceof Error ? e.message : String(e)))
-      .finally(() => setBusy(false));
-  }, []);
-  useEffect(() => {
-    load();
-    const t = setInterval(() => {
-      if (!document.hidden) load();
-    }, POLL_MS);
-    return () => clearInterval(t);
-  }, [load]);
+  const { t } = useI18n();
+  const qc = useQueryClient();
+  const report = useQuery({
+    queryKey: ["doctor"],
+    queryFn: () => api<Report>("/v1/doctor"),
+    refetchInterval: () => (document.hidden ? false : POLL_MS),
+  });
+  const rerun = async () => {
+    await qc.fetchQuery({ queryKey: ["doctor"], queryFn: () => api<Report>("/v1/doctor?fresh=1") });
+  };
+  const r = report.data;
 
   return (
-    <section className="space-y-4">
-      <div className="flex items-center gap-2">
-        <h2 className="mr-auto text-lg font-semibold">Doctor</h2>
+    <section className="space-y-4" aria-label={t.pages.doctor.title}>
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="mr-auto text-ui text-muted">{t.pages.doctor.description}</p>
         {r && (
-          <span className="text-sm text-stone-500">
+          <span className="text-xs text-faint">
             updated {ago(r.at)} · every {POLL_MS / 1000}s
           </span>
         )}
-        <button type="button" className="btn" disabled={busy} onClick={() => load(true)}>
-          {busy ? "Checking…" : "Re-run"}
-        </button>
+        <Button loading={report.isFetching} onClick={() => void rerun().catch(() => undefined)}>
+          <RotateCw aria-hidden />
+          Re-run
+        </Button>
       </div>
-      {err && <p className="text-sm text-red-700">{err}</p>}
-      {!r && !err && <p className="text-stone-500">Checking…</p>}
+      {report.isError && (
+        <ErrorBanner
+          title={t.common.loadFailed}
+          message={errorMessage(report.error)}
+          onRetry={() => void report.refetch()}
+          retryLabel={t.common.retry}
+        />
+      )}
+      {report.isPending && <SkeletonList rows={2} label={t.common.loading} />}
       {r && (
         <>
-          <ul className="divide-y divide-stone-200 rounded border border-stone-200 bg-white">
-            {r.checks.map((c) => (
-              <li key={c.check} className="flex flex-wrap gap-x-3 px-3 py-2 text-sm">
-                <span className={c.ok ? "text-green-700" : "text-red-700"} aria-hidden>
-                  {c.ok ? "✓" : "✗"}
-                </span>
-                <span className="w-36 font-medium">{c.check}</span>
-                <span className="text-stone-700">{c.detail}</span>
-                {c.fix && <span className="w-full pl-6 text-red-700">→ {c.fix}</span>}
-              </li>
-            ))}
-          </ul>
+          <Card className="p-0">
+            <ul className="divide-y divide-line">
+              {r.checks.map((c) => (
+                <li
+                  key={c.check}
+                  className="flex flex-wrap items-start gap-x-3 gap-y-1 px-4 py-3 text-ui"
+                >
+                  {c.ok ? (
+                    <CircleCheck aria-label="OK" className="mt-0.5 size-4 shrink-0 text-success" />
+                  ) : (
+                    <CircleAlert
+                      aria-label="Failed"
+                      className="mt-0.5 size-4 shrink-0 text-danger"
+                    />
+                  )}
+                  <span className="w-36 font-medium">{c.check}</span>
+                  <span className="min-w-0 flex-1 text-muted">{c.detail}</span>
+                  {c.fix && (
+                    <span className="w-full pl-7 text-danger-ink">
+                      → <code className="text-xs">{c.fix}</code>
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </Card>
 
-          <div className="space-y-2 rounded border border-stone-200 bg-white p-3 text-sm">
-            <h3 className="font-semibold">Scan</h3>
-            <p className="text-stone-700">
-              {r.scan
-                ? `Last \`pama scan\` ${ago(r.scan.at)}: ${r.scan.seen} ended sessions found, ${r.scan.enqueued} queued.`
-                : "`pama scan` has not run yet. Hooks capture sessions as they end."}
-            </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-stone-500">{r.captures.total} captures</span>
+          <Card>
+            <CardHeader
+              title="Scan"
+              description={
+                r.scan
+                  ? `Last \`pama scan\` ${ago(r.scan.at)}: ${r.scan.seen} ended sessions found, ${r.scan.enqueued} queued.`
+                  : "`pama scan` has not run yet. Hooks capture sessions as they end."
+              }
+            />
+            <div className="flex flex-wrap items-center gap-2 text-ui">
+              <span className="text-muted">{r.captures.total} captures</span>
               {Object.entries(r.captures.byStatus).map(([s, n]) => (
                 <Pill key={s} status={s} n={n} />
               ))}
               {r.outbox.pending + r.outbox.failed > 0 && (
-                <span className="text-stone-500">
+                <span className="text-muted">
                   · sync outbox {r.outbox.pending} pending, {r.outbox.failed} failed
                 </span>
               )}
             </div>
-          </div>
+          </Card>
 
-          <div className="overflow-x-auto rounded border border-stone-200 bg-white">
-            <table className="w-full text-left text-sm">
-              <thead className="text-stone-500">
+          {r.captures.recent.length > 0 && (
+            <Table label="Recent captures">
+              <THead>
                 <tr>
-                  <th className="px-3 py-2 font-normal">Ended</th>
-                  <th className="px-3 py-2 font-normal">Project</th>
-                  <th className="px-3 py-2 font-normal">Agent</th>
-                  <th className="px-3 py-2 font-normal">Status</th>
-                  <th className="px-3 py-2 font-normal">Error</th>
+                  <TH>Ended</TH>
+                  <TH>Project</TH>
+                  <TH>Agent</TH>
+                  <TH>Status</TH>
+                  <TH>Error</TH>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-stone-100">
+              </THead>
+              <TBody>
                 {r.captures.recent.map((c) => (
-                  <tr key={c.id} className="align-top">
-                    <td className="whitespace-nowrap px-3 py-2">{ago(c.endedAt)}</td>
-                    <td className="px-3 py-2">{c.cwd ?? "—"}</td>
-                    <td className="px-3 py-2">{c.agent.replace("_", " ")}</td>
-                    <td className="px-3 py-2">
+                  <TR key={c.id}>
+                    <TD className="whitespace-nowrap text-muted">{ago(c.endedAt)}</TD>
+                    <TD className="font-mono text-xs">{c.cwd ?? "—"}</TD>
+                    <TD>{c.agent.replace("_", " ")}</TD>
+                    <TD>
                       <Pill status={c.status} />
-                    </td>
-                    <td className="px-3 py-2 text-red-700">
+                    </TD>
+                    <TD className="text-danger-ink">
                       {c.error}
                       {c.error && c.attempts > 1 && ` (${c.attempts} attempts)`}
-                    </td>
-                  </tr>
+                    </TD>
+                  </TR>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </TBody>
+            </Table>
+          )}
         </>
       )}
     </section>

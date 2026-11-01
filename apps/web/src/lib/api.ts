@@ -67,3 +67,15 @@ export async function api<T>(
   }
   return body as T;
 }
+
+/** True when the server answered with this HTTP status (typed check for callers). */
+export function isApiError(e: unknown, status?: number): e is ApiError {
+  return e instanceof ApiError && (status === undefined || e.status === status);
+}
+
+/** A message fit for an ErrorBanner: the server's message, or a generic network hint. */
+export function errorMessage(e: unknown): string {
+  if (e instanceof ApiError) return e.message;
+  if (e instanceof TypeError) return "Couldn't reach the pamA server. Check that it is running.";
+  return e instanceof Error ? e.message : String(e);
+}

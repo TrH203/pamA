@@ -1,6 +1,25 @@
 // Every question asked through links or the hotkey, with outcome, citations and guard results.
-import { useCallback, useEffect, useState } from "react";
-import { api, token } from "../lib/api.ts";
+import { useI18n } from "@pama/i18n";
+import {
+  Button,
+  EmptyState,
+  ErrorBanner,
+  Select,
+  SkeletonList,
+  StatusPill,
+  Table,
+  TBody,
+  TD,
+  TH,
+  THead,
+  type Tone,
+  TR,
+  useToast,
+} from "@pama/ui";
+import { useQuery } from "@tanstack/react-query";
+import { Download, ScrollText, ThumbsDown, ThumbsUp } from "lucide-react";
+import { useState } from "react";
+import { api, errorMessage, token } from "../lib/api.ts";
 
 interface Row {
   id: string;
@@ -16,83 +35,131 @@ interface Row {
   useful: boolean | null;
 }
 
+const STATUSES = ["answered", "refused", "forwarded", "owner_answered", "dismissed", "drafted"];
+const TONE: Record<string, Tone> = {
+  answered: "success",
+  owner_answered: "success",
+  drafted: "accent",
+  refused: "warning",
+  forwarded: "warning",
+  dismissed: "neutral",
+};
+
 export function Audit() {
-  const [rows, setRows] = useState<Row[]>([]);
+  const { t } = useI18n();
+  const toast = useToast();
   const [status, setStatus] = useState("");
-  const load = useCallback(async () => {
-    const q = status ? `?status=${status}` : "";
-    setRows((await api<{ items: Row[] }>(`/v1/audit${q}`)).items);
-  }, [status]);
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const rows = useQuery({
+    queryKey: ["audit", status],
+    queryFn: () => api<{ items: Row[] }>(`/v1/audit${status ? `?status=${status}` : ""}`),
+  });
 
   async function exportCsv() {
-    const res = await fetch(`/v1/audit?format=csv${status ? `&status=${status}` : ""}`, {
-      headers: { authorization: `Bearer ${token()}` },
-    });
-    const url = URL.createObjectURL(await res.blob());
-    const a = Object.assign(document.createElement("a"), { href: url, download: "pama-audit.csv" });
-    a.click();
-    URL.revokeObjectURL(url);
+    try {
+      const t0 = token();
+      const res = await fetch(`/v1/audit?format=csv${status ? `&status=${status}` : ""}`, {
+        headers: t0 ? { authorization: `Bearer ${t0}` } : {},
+      });
+      if (!res.ok) throw new Error(res.statusText);
+      const url = URL.createObjectURL(await res.blob());
+      const a = Object.assign(document.createElement("a"), {
+        href: url,
+        download: "pama-audit.csv",
+      });
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      toast.error("Couldn't export", errorMessage(e));
+    }
   }
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-4" aria-label={t.pages.audit.title}>
       <div className="flex flex-wrap items-center gap-2">
-        <h2 className="mr-auto text-lg font-semibold">Audit log</h2>
-        <select
-          className="rounded border border-stone-300 px-2 py-1.5 text-sm"
+        <p className="mr-auto text-ui text-muted">{t.pages.audit.description}</p>
+        <Select
+          className="w-44"
           value={status}
           onChange={(e) => setStatus(e.target.value)}
           aria-label="Status"
         >
-          <option value="">All</option>
-          {["answered", "refused", "forwarded", "owner_answered", "dismissed", "drafted"].map(
-            (s) => (
-              <option key={s}>{s}</option>
-            ),
-          )}
-        </select>
-        <button type="button" className="btn" onClick={exportCsv}>
+          <option value="">All outcomes</option>
+          {STATUSES.map((s) => (
+            <option key={s} value={s}>
+              {s.replace("_", " ")}
+            </option>
+          ))}
+        </Select>
+        <Button onClick={exportCsv}>
+          <Download aria-hidden />
           Export CSV
-        </button>
+        </Button>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead className="text-stone-500">
+      {rows.isPending && <SkeletonList rows={2} label={t.common.loading} />}
+      {rows.isError && (
+        <ErrorBanner
+          title={t.common.loadFailed}
+          message={errorMessage(rows.error)}
+          onRetry={() => void rows.refetch()}
+          retryLabel={t.common.retry}
+        />
+      )}
+      {rows.data?.items.length === 0 && (
+        <EmptyState
+          icon={ScrollText}
+          title={t.pages.audit.empty}
+          description={t.pages.audit.emptyHint}
+        />
+      )}
+      {!!rows.data?.items.length && (
+        <Table label={t.pages.audit.title}>
+          <THead>
             <tr>
-              <th className="py-2">When</th>
-              <th>Question</th>
-              <th>Outcome</th>
-              <th>Cited</th>
-              <th>Asker</th>
+              <TH>When</TH>
+              <TH>Question</TH>
+              <TH>Outcome</TH>
+              <TH className="text-right">Cited</TH>
+              <TH>Asker</TH>
             </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.id} className="border-t border-stone-200 align-top">
-                <td className="py-2 pr-2 text-xs text-stone-500">
+          </THead>
+          <TBody>
+            {rows.data.items.map((r) => (
+              <TR key={r.id}>
+                <TD className="whitespace-nowrap text-xs text-muted">
                   {new Date(r.created_at).toLocaleString()}
-                </td>
-                <td className="pr-2">
+                </TD>
+                <TD className="min-w-64">
                   <p>{r.question}</p>
-                  {r.answer && <p className="mt-1 text-stone-500">{r.answer}</p>}
-                </td>
-                <td className="pr-2">
-                  {r.status}
-                  {r.reason ? ` (${r.reason.replaceAll("_", " ")})` : ""}
-                  {r.useful !== null && <span className="ml-1">{r.useful ? "👍" : "👎"}</span>}
-                </td>
-                <td className="pr-2">{r.citations.length}</td>
-                <td className="text-xs">
+                  {r.answer && <p className="mt-1 line-clamp-3 text-muted">{r.answer}</p>}
+                </TD>
+                <TD>
+                  <div className="flex flex-wrap items-center gap-1">
+                    <StatusPill tone={TONE[r.status] ?? "neutral"}>
+                      {r.status.replace("_", " ")}
+                    </StatusPill>
+                    {r.useful !== null &&
+                      (r.useful ? (
+                        <ThumbsUp aria-label="Marked useful" className="size-3.5 text-success" />
+                      ) : (
+                        <ThumbsDown
+                          aria-label="Marked not useful"
+                          className="size-3.5 text-danger"
+                        />
+                      ))}
+                  </div>
+                  {r.reason && (
+                    <p className="mt-1 text-xs text-muted">{r.reason.replaceAll("_", " ")}</p>
+                  )}
+                </TD>
+                <TD className="text-right tabular-nums">{r.citations.length}</TD>
+                <TD className="text-xs text-muted">
                   {r.asker_email ?? (r.origin === "hotkey" ? "you (hotkey)" : "anonymous")}
-                </td>
-              </tr>
+                </TD>
+              </TR>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </TBody>
+        </Table>
+      )}
     </section>
   );
 }

@@ -1,25 +1,42 @@
 // Review queue (US1): read each draft digest, then approve, edit or discard it.
-import { useCallback, useEffect, useState } from "react";
-import { api } from "../lib/api.ts";
+import { useI18n } from "@pama/i18n";
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  EmptyState,
+  ErrorBanner,
+  PageHeader,
+  SkeletonList,
+  StatusPill,
+  Switch,
+  Textarea,
+  type Tone,
+  useConfirm,
+  useToast,
+} from "@pama/ui";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Check, ClipboardCheck, Pencil, X } from "lucide-react";
+import { useState } from "react";
+import { api, errorMessage } from "../lib/api.ts";
+import { queries } from "../lib/query.ts";
 import type { DigestContent, Draft, Project } from "./types.ts";
 
-const LABEL_STYLE: Record<string, string> = {
-  infra: "bg-sky-100 text-sky-900",
-  business_sensitive: "bg-amber-100 text-amber-900",
-  customer: "bg-rose-100 text-rose-900",
+const LABEL_TONE: Record<string, Tone> = {
+  infra: "accent",
+  business_sensitive: "warning",
+  customer: "danger",
 };
 
 function Labels({ labels }: { labels?: string[] }) {
   if (!labels?.length) return null;
   return (
-    <span className="ml-2 inline-flex gap-1">
+    <span className="ml-2 inline-flex flex-wrap gap-1 align-middle">
       {labels.map((l) => (
-        <span
-          key={l}
-          className={`rounded px-1.5 py-0.5 text-[11px] ${LABEL_STYLE[l] ?? "bg-stone-100"}`}
-        >
+        <Badge key={l} tone={LABEL_TONE[l] ?? "neutral"}>
           {l.replace("_", " ")}
-        </span>
+        </Badge>
       ))}
     </span>
   );
@@ -27,19 +44,19 @@ function Labels({ labels }: { labels?: string[] }) {
 
 function DigestView({ c }: { c: DigestContent }) {
   return (
-    <div className="space-y-3 text-sm">
+    <div className="space-y-3 text-sm leading-6">
       <p>
         <span className="font-medium">Goal.</span> {c.goal}
       </p>
       {c.decisions.length > 0 && (
-        <ol className="list-decimal space-y-2 pl-5">
+        <ol className="list-decimal space-y-2 pl-5 marker:text-faint">
           {c.decisions.map((d) => (
             <li key={d.id}>
               <span className="font-medium">{d.what}</span>
               <Labels labels={d.labels} />
-              {d.why && <div className="text-stone-600">Why: {d.why}</div>}
+              {d.why && <div className="text-muted">Why: {d.why}</div>}
               {!!d.alternatives?.length && (
-                <div className="text-stone-500">Rejected: {d.alternatives.join("; ")}</div>
+                <div className="text-faint">Rejected: {d.alternatives.join("; ")}</div>
               )}
             </li>
           ))}
@@ -55,7 +72,7 @@ function DigestView({ c }: { c: DigestContent }) {
           <span className="font-medium">Open.</span> {c.open_items.join(" · ")}
         </p>
       )}
-      <p className="text-xs text-stone-500">
+      <p className="text-xs text-muted">
         {c.modules.length > 0 && <>Modules: {c.modules.join(", ")} · </>}
         Removed before digesting: {c.redactions.secret} secret(s), {c.redactions.pii} personal
         item(s)
@@ -65,23 +82,20 @@ function DigestView({ c }: { c: DigestContent }) {
 }
 
 function DraftCard({ d, onDone }: { d: Draft; onDone: () => void }) {
+  const toast = useToast();
+  const confirm = useConfirm();
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(() => JSON.stringify(d.content, null, 2));
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  async function act(path: string, json: unknown = {}) {
-    setBusy(true);
-    setError(null);
-    try {
-      await api(path, { json });
+  const act = useMutation({
+    mutationFn: ({ path, json }: { path: string; json?: unknown; done: string }) =>
+      api(path, { json: json ?? {} }),
+    onSuccess: (_r, v) => {
+      toast.success(v.done);
       onDone();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
+    },
+    onError: (e) => setError(errorMessage(e)),
+  });
 
   function approveEdited() {
     let content: unknown;
@@ -91,23 +105,29 @@ function DraftCard({ d, onDone }: { d: Draft; onDone: () => void }) {
       setError("The digest is not valid JSON.");
       return;
     }
-    void act(`/v1/digests/${d.id}/approve`, { content });
+    setError(null);
+    act.mutate({ path: `/v1/digests/${d.id}/approve`, json: { content }, done: "Approved" });
   }
 
   return (
-    <article className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
-      <header className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="font-semibold">
-          {d.project} <span className="font-normal text-stone-500">/ {d.bundle}</span>
-        </h3>
-        <span className="text-xs text-stone-500">
-          {d.content.source.agent.replace("_", " ")}
-          {d.device ? ` · from ${d.device}` : ""} · {new Date(d.created_at).toLocaleString()}
-        </span>
-      </header>
+    <Card>
+      <CardHeader
+        title={
+          <>
+            {d.project} <span className="font-normal text-muted">/ {d.bundle}</span>
+          </>
+        }
+        description={
+          <>
+            {d.content.source.agent.replace("_", " ")}
+            {d.device ? ` · from ${d.device}` : ""} · {new Date(d.created_at).toLocaleString()}
+          </>
+        }
+        actions={<StatusPill tone="warning">draft</StatusPill>}
+      />
       {editing ? (
-        <textarea
-          className="h-80 w-full rounded border border-stone-300 p-2 font-mono text-xs"
+        <Textarea
+          className="h-80 font-mono text-xs"
           value={text}
           onChange={(e) => setText(e.target.value)}
           aria-label="Digest JSON"
@@ -115,116 +135,134 @@ function DraftCard({ d, onDone }: { d: Draft; onDone: () => void }) {
       ) : (
         <DigestView c={d.content} />
       )}
-      {error && <p className="mt-2 text-sm text-red-700">{error}</p>}
-      <footer className="mt-4 flex flex-wrap gap-2">
+      {error && <ErrorBanner className="mt-3" title="Couldn't save" message={error} />}
+      <footer className="mt-4 flex flex-wrap gap-2 border-t border-line pt-4">
         {editing ? (
           <>
-            <button type="button" disabled={busy} onClick={approveEdited} className="btn-primary">
+            <Button variant="primary" loading={act.isPending} onClick={approveEdited}>
+              <Check aria-hidden />
               Approve edited
-            </button>
-            <button type="button" onClick={() => setEditing(false)} className="btn">
-              Cancel
-            </button>
+            </Button>
+            <Button onClick={() => setEditing(false)}>Cancel</Button>
           </>
         ) : (
           <>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => act(`/v1/digests/${d.id}/approve`)}
-              className="btn-primary"
+            <Button
+              variant="primary"
+              loading={act.isPending}
+              onClick={() => act.mutate({ path: `/v1/digests/${d.id}/approve`, done: "Approved" })}
             >
+              <Check aria-hidden />
               Approve
-            </button>
-            <button type="button" onClick={() => setEditing(true)} className="btn">
+            </Button>
+            <Button onClick={() => setEditing(true)}>
+              <Pencil aria-hidden />
               Edit
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => act(`/v1/digests/${d.id}/discard`)}
-              className="btn-danger"
+            </Button>
+            <Button
+              variant="danger"
+              disabled={act.isPending}
+              onClick={async () => {
+                const ok = await confirm({
+                  title: "Discard this digest?",
+                  description: "It will not be shared or used for answers.",
+                  confirmLabel: "Discard",
+                  danger: true,
+                });
+                if (ok) act.mutate({ path: `/v1/digests/${d.id}/discard`, done: "Discarded" });
+              }}
             >
+              <X aria-hidden />
               Discard
-            </button>
+            </Button>
           </>
         )}
       </footer>
-    </article>
+    </Card>
   );
 }
 
 function AutoApprove({ projects, reload }: { projects: Project[]; reload: () => void }) {
+  const toast = useToast();
   if (!projects.length) return null;
   return (
-    <section className="rounded-lg border border-stone-200 bg-white p-4">
-      <h2 className="mb-2 font-semibold">Auto-approve</h2>
-      <p className="mb-3 text-sm text-stone-600">
-        Off by default: digests stay private until you approve them.
-      </p>
-      <ul className="space-y-1 text-sm">
+    <Card className="h-fit">
+      <CardHeader
+        title="Auto-approve"
+        description="Off by default: digests stay private until you approve them."
+      />
+      <ul className="space-y-3">
         {projects.map((p) => (
-          <li key={p.id} className="flex items-center gap-2">
-            <input
+          <li key={p.id} className="flex items-center gap-3">
+            <Switch
               id={`auto-${p.id}`}
-              type="checkbox"
               checked={p.auto_approve === true}
-              onChange={async (e) => {
-                await api(`/v1/projects/${p.id}`, {
-                  method: "PATCH",
-                  json: { auto_approve: e.target.checked },
-                });
+              onCheckedChange={async (checked) => {
+                try {
+                  await api(`/v1/projects/${p.id}`, {
+                    method: "PATCH",
+                    json: { auto_approve: checked },
+                  });
+                } catch (e) {
+                  toast.error("Couldn't change auto-approve", errorMessage(e));
+                }
                 reload();
               }}
             />
-            <label htmlFor={`auto-${p.id}`}>{p.name}</label>
-            <span className="text-xs text-stone-400">{p.repo_key}</span>
+            <label htmlFor={`auto-${p.id}`} className="min-w-0 text-ui">
+              <span className="block font-medium">{p.name}</span>
+              <span className="block truncate font-mono text-xs text-faint">{p.repo_key}</span>
+            </label>
           </li>
         ))}
       </ul>
-    </section>
+    </Card>
   );
 }
 
 export function Review() {
-  const [drafts, setDrafts] = useState<Draft[] | null>(null);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      const [r, p] = await Promise.all([
-        api<{ items: Draft[] }>("/v1/review"),
-        api<{ items: Project[] }>("/v1/projects"),
-      ]);
-      setDrafts(r.items);
-      setProjects(p.items);
-      setError(null);
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const { t } = useI18n();
+  const qc = useQueryClient();
+  const drafts = useQuery({
+    ...queries.review,
+    queryFn: () => api<{ items: Draft[] }>("/v1/review"),
+  });
+  const projects = useQuery({
+    queryKey: ["projects"],
+    queryFn: () => api<{ items: Project[] }>("/v1/projects"),
+  });
+  const reload = () => {
+    void qc.invalidateQueries({ queryKey: queries.review.queryKey });
+    void qc.invalidateQueries({ queryKey: ["projects"] });
+  };
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_18rem]">
-      <section className="space-y-4">
-        <h2 className="text-lg font-semibold">Waiting for review</h2>
-        {error && <p className="text-sm text-red-700">{error}</p>}
-        {drafts === null && !error && <p className="text-sm text-stone-500">Loading…</p>}
-        {drafts?.length === 0 && (
-          <p className="rounded-lg border border-dashed border-stone-300 p-6 text-center text-sm text-stone-500">
-            Nothing to review. New sessions appear here a minute or two after they end.
-          </p>
-        )}
-        {drafts?.map((d) => (
-          <DraftCard key={d.id} d={d} onDone={load} />
-        ))}
-      </section>
-      <AutoApprove projects={projects} reload={load} />
-    </div>
+    <>
+      <PageHeader title={t.pages.review.title} description={t.pages.review.description} />
+      <div className="grid gap-6 lg:grid-cols-[1fr_18rem]">
+        <section className="min-w-0 space-y-4" aria-label={t.pages.review.title}>
+          {drafts.isPending && <SkeletonList label={t.common.loading} />}
+          {drafts.isError && (
+            <ErrorBanner
+              title={t.common.loadFailed}
+              message={errorMessage(drafts.error)}
+              onRetry={() => void drafts.refetch()}
+              retryLabel={t.common.retry}
+            />
+          )}
+          {drafts.data?.items.length === 0 && (
+            <EmptyState
+              icon={ClipboardCheck}
+              title={t.pages.review.empty}
+              description={t.pages.review.emptyHint}
+            />
+          )}
+          {drafts.data?.items.map((d) => (
+            <DraftCard key={d.id} d={d} onDone={reload} />
+          ))}
+        </section>
+        <AutoApprove projects={projects.data?.items ?? []} reload={reload} />
+      </div>
+    </>
   );
 }

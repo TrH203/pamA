@@ -197,8 +197,8 @@ fn device_row(ctx: &Ctx) -> Value {
         .ok()
         .flatten()
         .is_some();
-    let key_set = pama_core::secrets::exists(&pama_core::providers::key_name(&c.provider))
-        .unwrap_or(false);
+    let key_set =
+        pama_core::secrets::exists(&pama_core::providers::key_name(&c.provider)).unwrap_or(false);
     let base_url = pama_core::providers::resolve(&c.provider, c.base_url.as_deref()).1;
     json!({
         "role": "drafting", "scope": "device", "provider": c.provider, "model": c.model,
@@ -369,8 +369,8 @@ fn setup(ctx: &Ctx, api: &Api, preset: Option<String>) -> anyhow::Result<Exit> {
             }
             None => {
                 let provider = ask(&format!("provider ({ids})"), s(x, "provider"))?;
-                let suggested = providers::get(&provider)
-                    .and_then(|p| p.suggested_for(role).first().cloned());
+                let suggested =
+                    providers::get(&provider).and_then(|p| p.suggested_for(role).first().cloned());
                 let default_model = if s(x, "provider") == provider {
                     s(x, "model").to_string()
                 } else {
@@ -385,7 +385,11 @@ fn setup(ctx: &Ctx, api: &Api, preset: Option<String>) -> anyhow::Result<Exit> {
             continue;
         }
         let base_url = match entry.map(|p| p.locality) {
-            Some(providers::Locality::Cloud) | Some(providers::Locality::Local) if preset.is_some() => String::new(),
+            Some(providers::Locality::Cloud) | Some(providers::Locality::Local)
+                if preset.is_some() =>
+            {
+                String::new()
+            }
             _ if provider == "anthropic" || provider == "openrouter" => String::new(),
             _ => ask(
                 "endpoint (empty = default)",
@@ -432,7 +436,11 @@ fn run_device(ctx: &Ctx, action: ModelAction) -> anyhow::Result<Exit> {
                 if v["local"] == true { "local" } else { "cloud" },
                 s(&v, "model"),
                 origin_label(s(&v, "origin")),
-                if v["key_set"] == true { "set" } else { "not set" },
+                if v["key_set"] == true {
+                    "set"
+                } else {
+                    "not set"
+                },
                 v["base_url"].as_str().unwrap_or("")
             )
         });

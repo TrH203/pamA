@@ -145,9 +145,7 @@ pub fn run(ctx: &Ctx, action: Option<AgentsAction>) -> anyhow::Result<Exit> {
                 ));
             }
             match install(a, &scope) {
-                Ok(Installed::Added(f)) => {
-                    changes.push(format!("hook added to {}", f.display()))
-                }
+                Ok(Installed::Added(f)) => changes.push(format!("hook added to {}", f.display())),
                 Ok(Installed::Unchanged(f)) => {
                     changes.push(format!("hook already in {}", f.display()))
                 }

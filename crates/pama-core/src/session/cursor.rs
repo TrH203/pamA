@@ -103,20 +103,37 @@ pub(crate) fn normalize_loose(name: &str) -> String {
     }
 }
 
-pub(crate) fn tool_event(name: &str, input: &Value, id: Option<String>, at: Option<String>) -> Event {
+pub(crate) fn tool_event(
+    name: &str,
+    input: &Value,
+    id: Option<String>,
+    at: Option<String>,
+) -> Event {
     let tool = normalize_loose(name);
-    let path = ["file_path", "filePath", "target_file", "path", "notebook_path"]
-        .iter()
-        .find_map(|k| str_of(input, k))
-        .map(String::from);
+    let path = [
+        "file_path",
+        "filePath",
+        "target_file",
+        "path",
+        "notebook_path",
+    ]
+    .iter()
+    .find_map(|k| str_of(input, k))
+    .map(String::from);
     let command = str_of(input, "command").map(String::from);
     let text = match tool.as_str() {
         "bash" => command.clone().unwrap_or_else(|| input.to_string()),
         "edit" | "write" => {
-            let body = ["new_string", "newString", "content", "code_edit", "contents"]
-                .iter()
-                .find_map(|k| str_of(input, k))
-                .unwrap_or_default();
+            let body = [
+                "new_string",
+                "newString",
+                "content",
+                "code_edit",
+                "contents",
+            ]
+            .iter()
+            .find_map(|k| str_of(input, k))
+            .unwrap_or_default();
             format!(
                 "{tool} {}\n{}",
                 path.as_deref().unwrap_or("?"),

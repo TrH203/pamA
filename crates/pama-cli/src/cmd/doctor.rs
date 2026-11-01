@@ -106,8 +106,7 @@ pub fn run(ctx: &Ctx, report: bool) -> anyhow::Result<Exit> {
         let hooks = pama_core::agents::hook_locations(store, a);
         let enabled = pama_core::agents::enabled(store, a.agent());
         let detected = a.detected();
-        if !detected && hooks.is_empty() && !matches!(a.agent(), Agent::ClaudeCode | Agent::Codex)
-        {
+        if !detected && hooks.is_empty() && !matches!(a.agent(), Agent::ClaudeCode | Agent::Codex) {
             continue; // not used here: no line for agents the owner never ran
         }
         checks.push(Check {

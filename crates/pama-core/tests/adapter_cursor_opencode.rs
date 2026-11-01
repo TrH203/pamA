@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use pama_core::agents::{self, AgentAdapter};
+use pama_core::agents;
 use pama_core::digest::Agent;
 use pama_core::session::{cursor, opencode, EventKind};
 
@@ -18,10 +18,7 @@ const CURSOR_ID: &str = "6f1c2d3e-4a5b-4c6d-8e7f-90a1b2c3d4e5";
 fn cursor_lists_nested_and_flat_transcripts() {
     let found = cursor::transcripts(&fixtures().join("cursor/projects"));
     let ids: Vec<&str> = found.iter().map(|(id, _)| id.as_str()).collect();
-    assert_eq!(
-        ids,
-        vec!["0a0b0c0d-1111-4222-8333-444455556666", CURSOR_ID]
-    );
+    assert_eq!(ids, vec!["0a0b0c0d-1111-4222-8333-444455556666", CURSOR_ID]);
 }
 
 #[test]
@@ -68,7 +65,10 @@ fn cursor_slug_resolves_to_an_existing_workspace() {
         .trim_start_matches('/')
         .replace('/', "-");
     assert_eq!(cursor::workspace_of_slug(&slug), Some(real));
-    assert_eq!(cursor::workspace_of_slug("does-not-exist-anywhere-xyz"), None);
+    assert_eq!(
+        cursor::workspace_of_slug("does-not-exist-anywhere-xyz"),
+        None
+    );
 }
 
 fn check_opencode(s: &pama_core::session::NormalizedSession) {
@@ -171,8 +171,11 @@ fn opencode_sqlite_parses_and_wins_over_legacy_copies() {
     // A leftover legacy copy of the same session next to the database.
     let legacy = dir.path().join("storage/session/proj1");
     std::fs::create_dir_all(&legacy).unwrap();
-    std::fs::copy(src.join("session/proj1/ses_abc123.json"), legacy.join("ses_abc123.json"))
-        .unwrap();
+    std::fs::copy(
+        src.join("session/proj1/ses_abc123.json"),
+        legacy.join("ses_abc123.json"),
+    )
+    .unwrap();
 
     let found = opencode::sessions(dir.path());
     assert_eq!(found.len(), 1, "database record wins");

@@ -165,7 +165,10 @@ mod tests {
         assert!(!install_into(&f, "/bin/pama hook cursor").unwrap());
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&f).unwrap()).unwrap();
         assert_eq!(v["hooks"]["stop"].as_array().unwrap().len(), 2);
-        assert_eq!(v["hooks"]["sessionEnd"][0]["command"], "/bin/pama hook cursor");
+        assert_eq!(
+            v["hooks"]["sessionEnd"][0]["command"],
+            "/bin/pama hook cursor"
+        );
         assert!(present_in(&f));
         assert!(uninstall_from(&f).unwrap());
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&f).unwrap()).unwrap();

@@ -62,7 +62,9 @@ pub fn run(
         }
         match super::agents::install(a, &scope) {
             Ok(Installed::Added(f)) => changes.push(match a.agent() {
-                Agent::ClaudeCode => format!("Claude Code SessionEnd hook added to {}", f.display()),
+                Agent::ClaudeCode => {
+                    format!("Claude Code SessionEnd hook added to {}", f.display())
+                }
                 Agent::Codex => format!("Codex notify registered in {}", f.display()),
                 _ => format!("{} hook added to {}", a.display_name(), f.display()),
             }),

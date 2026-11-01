@@ -115,7 +115,13 @@ mod tests {
             idle,
         )
         .unwrap();
-        assert_eq!(r, ScanReport { seen: 2, enqueued: 1 });
+        assert_eq!(
+            r,
+            ScanReport {
+                seen: 2,
+                enqueued: 1
+            }
+        );
         let again = enqueue_found(&s, vec![(Agent::Cursor, found("a", 600))], day, idle).unwrap();
         assert_eq!(again.enqueued, 0);
         assert_eq!(s.captures(10).unwrap()[0].agent, Agent::Cursor);

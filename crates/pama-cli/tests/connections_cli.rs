@@ -95,7 +95,10 @@ fn keys_are_set_from_stdin_listed_without_values_and_removed() {
     assert!(out.status.success(), "{}", text(&out));
     let v = e.json(&["keys", "list"]);
     let raw = v.to_string();
-    assert!(!raw.contains("sk-or-secret-123"), "values are never printed");
+    assert!(
+        !raw.contains("sk-or-secret-123"),
+        "values are never printed"
+    );
     let row = v["keys"]
         .as_array()
         .unwrap()
@@ -109,7 +112,10 @@ fn keys_are_set_from_stdin_listed_without_values_and_removed() {
     assert!(secrets.contains("provider.openrouter.key"));
     // Unknown providers are a usage error; an empty key is refused.
     assert_eq!(e.run(&["keys", "set", "bogus"]).status.code(), Some(2));
-    assert!(!e.run_stdin(&["keys", "set", "openai"], "\n").status.success());
+    assert!(!e
+        .run_stdin(&["keys", "set", "openai"], "\n")
+        .status
+        .success());
     // Testing without a key is a config error, before any network call.
     assert_eq!(e.run(&["keys", "test", "anthropic"]).status.code(), Some(2));
     let out = e.run(&["keys", "remove", "openrouter"]);
@@ -258,8 +264,14 @@ fn agents_enable_list_disable_and_uninstall() {
     assert_eq!(v["removed"].as_array().unwrap().len(), 1);
     let hooks = read_json(&proj.join(".cursor/hooks.json"));
     assert!(hooks["hooks"].get("stop").is_none());
-    assert_eq!(e.json(&["agents", "uninstall", "cursor"])["removed"], serde_json::json!([]));
-    assert_eq!(e.run(&["agents", "enable", "windsurf"]).status.code(), Some(1));
+    assert_eq!(
+        e.json(&["agents", "uninstall", "cursor"])["removed"],
+        serde_json::json!([])
+    );
+    assert_eq!(
+        e.run(&["agents", "enable", "windsurf"]).status.code(),
+        Some(1)
+    );
 }
 
 #[test]
@@ -280,7 +292,11 @@ fn codex_notify_chains_an_existing_notifier() {
         std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
     let cfg = codex.join("config.toml");
-    std::fs::write(&cfg, format!("notify = [\"{}\", \"x\"]\n", script.display())).unwrap();
+    std::fs::write(
+        &cfg,
+        format!("notify = [\"{}\", \"x\"]\n", script.display()),
+    )
+    .unwrap();
     e.json(&["agents", "enable", "codex", "--global"]);
     let text = std::fs::read_to_string(&cfg).unwrap();
     assert!(text.contains("\"hook\", \"codex\", \"--chain\""), "{text}");
@@ -302,7 +318,10 @@ fn codex_notify_chains_an_existing_notifier() {
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
     let got = std::fs::read_to_string(&marker).unwrap();
-    assert!(got.starts_with("x {\"type\":\"agent-turn-complete\""), "{got}");
+    assert!(
+        got.starts_with("x {\"type\":\"agent-turn-complete\""),
+        "{got}"
+    );
 
     e.json(&["agents", "uninstall", "codex"]);
     assert_eq!(

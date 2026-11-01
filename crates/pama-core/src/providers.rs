@@ -111,7 +111,7 @@ pub fn preset(id: &str) -> Option<&'static Preset> {
 pub fn is_local_host(host: &str) -> bool {
     let h = host.to_ascii_lowercase();
     let l = &registry().local_hosts;
-    l.exact.iter().any(|e| *e == h)
+    l.exact.contains(&h)
         || l.prefixes.iter().any(|p| h.starts_with(p.as_str()))
         || l.suffixes.iter().any(|s| h.ends_with(s.as_str()))
 }

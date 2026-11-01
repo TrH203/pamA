@@ -211,23 +211,35 @@ pub fn preview_switch(store: &Store, to: &Home) -> crate::store::Result<SwitchPr
         (a, b) if a == b => {}
         (_, Home::Local) => {
             c.push("Review, Ask Links and answers use the local server on this machine (it needs a model and `pama-server`).".into());
-            c.push("Digests already on the server stay there; nothing is deleted or copied back.".into());
-            c.push("New sessions are drafted by the local server instead of being sent to a server.".into());
+            c.push(
+                "Digests already on the server stay there; nothing is deleted or copied back."
+                    .into(),
+            );
+            c.push(
+                "New sessions are drafted by the local server instead of being sent to a server."
+                    .into(),
+            );
             if pending > 0 {
                 c.push(format!("{pending} item(s) still waiting for the old server are kept and sent when you switch back."));
             }
         }
         (_, Home::Server(u)) => {
-            c.push(format!("Review, Ask Links and answers move to {u}; this machine only drafts digests."));
+            c.push(format!(
+                "Review, Ask Links and answers move to {u}; this machine only drafts digests."
+            ));
             c.push("Transcripts never leave this machine; only drafted digests of synced projects are sent.".into());
-            c.push("Digests in the local server stay on this machine; they are not uploaded.".into());
+            c.push(
+                "Digests in the local server stay on this machine; they are not uploaded.".into(),
+            );
             c.push(if sync.is_empty() {
                 "No project sends drafts yet: turn one on with `pama init --sync` or `pama sync enable --project <dir>`.".into()
             } else {
                 format!("{} project(s) will send their drafts to {u}.", sync.len())
             });
             if pending > 0 {
-                c.push(format!("{pending} item(s) still waiting for the previous server stay queued for it."));
+                c.push(format!(
+                    "{pending} item(s) still waiting for the previous server stay queued for it."
+                ));
             }
         }
     }
@@ -683,7 +695,8 @@ mod tests {
     fn repair_lists_a_paired_default_and_home_switches_consistently() {
         let s = Store::open_in_memory().unwrap();
         // What `pama pair` used to leave behind: a default that is not in the list.
-        s.set_setting(KEY_DEFAULT_TARGET, "https://p.example").unwrap();
+        s.set_setting(KEY_DEFAULT_TARGET, "https://p.example")
+            .unwrap();
         assert!(servers(&s).is_empty());
         assert!(repair(&s).unwrap());
         assert_eq!(servers(&s)[0].url, "https://p.example");
@@ -697,11 +710,18 @@ mod tests {
 
         let p = preview_switch(&s, &Home::Server("https://p.example".into())).unwrap();
         assert!(!p.needs_connect && !p.unchanged);
-        assert!(p.consequences.iter().any(|c| c.contains("No project sends drafts")));
+        assert!(p
+            .consequences
+            .iter()
+            .any(|c| c.contains("No project sends drafts")));
         assert!(switch_home(&s, &Home::Server("https://p.example".into())).unwrap());
         assert_eq!(home(&s), Home::Server("https://p.example".into()));
         assert_eq!(mode(&s), Mode::Remote);
-        assert!(preview_switch(&s, &Home::Server("https://p.example".into())).unwrap().unchanged);
+        assert!(
+            preview_switch(&s, &Home::Server("https://p.example".into()))
+                .unwrap()
+                .unchanged
+        );
 
         // Forgetting the only server in remote mode falls back to local.
         remove_server(&s, "https://p.example").unwrap();

@@ -74,9 +74,10 @@ pub fn use_home(ctx: &Ctx, target: &str, yes: bool) -> anyhow::Result<Exit> {
     } else {
         remote::switch_home(&ctx.store, &to)?;
     }
-    ctx.print(&json!({ "home": p.to, "changed": true, "preview": p }), || {
-        format!("now using {}", p.to.label())
-    });
+    ctx.print(
+        &json!({ "home": p.to, "changed": true, "preview": p }),
+        || format!("now using {}", p.to.label()),
+    );
     Ok(Exit::Ok)
 }
 
@@ -88,8 +89,8 @@ pub fn server_list(ctx: &Ctx) -> anyhow::Result<Exit> {
     let rows: Vec<serde_json::Value> = list
         .iter()
         .map(|s| {
-            let token = pama_core::secrets::exists(&pama_core::sync::token_key(&s.url))
-                .unwrap_or(false);
+            let token =
+                pama_core::secrets::exists(&pama_core::sync::token_key(&s.url)).unwrap_or(false);
             json!({
                 "url": s.url,
                 "default": default.as_deref() == Some(s.url.as_str()),

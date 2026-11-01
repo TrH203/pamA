@@ -146,7 +146,11 @@ pub fn run(ctx: &Ctx, action: KeysAction) -> anyhow::Result<Exit> {
             }
             // The drafting model's endpoint when it uses this provider (custom base URLs).
             let base_url = base_url.or_else(|| {
-                (ctx.store.setting("provider.chat.provider").ok().flatten().as_deref()
+                (ctx.store
+                    .setting("provider.chat.provider")
+                    .ok()
+                    .flatten()
+                    .as_deref()
                     == Some(provider.as_str()))
                 .then(|| ctx.store.setting("provider.chat.base_url").ok().flatten())
                 .flatten()

@@ -7,7 +7,9 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use super::{home, jsonl_files, mtime, AgentAdapter, FoundSession, HookError, HookScope, Installed};
+use super::{
+    home, jsonl_files, mtime, AgentAdapter, FoundSession, HookError, HookScope, Installed,
+};
 use crate::digest::Agent;
 use crate::session::reader::ReadError;
 use crate::session::{codex, NormalizedSession};
@@ -225,7 +227,11 @@ mod tests {
         );
 
         // Another notifier: chained, then restored exactly.
-        std::fs::write(&f, "notify = [\"notify-send\", \"Codex\"]\nmodel = \"o3\"\n").unwrap();
+        std::fs::write(
+            &f,
+            "notify = [\"notify-send\", \"Codex\"]\nmodel = \"o3\"\n",
+        )
+        .unwrap();
         assert!(install_into(&f, "/bin/pama").unwrap());
         let text = std::fs::read_to_string(&f).unwrap();
         assert!(text.starts_with(

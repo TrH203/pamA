@@ -39,9 +39,11 @@ pub fn install_into(settings: &Path, command: &str) -> Result<bool, HookError> {
     let arr = list
         .as_array_mut()
         .ok_or_else(|| HookError::Config("hooks.SessionEnd is not a list".into()))?;
-    let present = arr
-        .iter()
-        .any(|m| m["hooks"].as_array().is_some_and(|hs| hs.iter().any(is_ours)));
+    let present = arr.iter().any(|m| {
+        m["hooks"]
+            .as_array()
+            .is_some_and(|hs| hs.iter().any(is_ours))
+    });
     if present {
         return Ok(false);
     }
@@ -168,7 +170,10 @@ mod tests {
         )
         .unwrap();
         assert!(install_into(&f, "/bin/pama hook claude").unwrap());
-        assert!(!install_into(&f, "/bin/pama hook claude").unwrap(), "idempotent");
+        assert!(
+            !install_into(&f, "/bin/pama hook claude").unwrap(),
+            "idempotent"
+        );
         let v: Value = serde_json::from_str(&std::fs::read_to_string(&f).unwrap()).unwrap();
         assert_eq!(v["permissions"]["allow"][0], "Bash(ls)");
         assert_eq!(

@@ -15,7 +15,6 @@ use serde_json::Value;
 use super::Ctx;
 use crate::{Exit, HookAgent};
 
-
 pub fn log(msg: &str) {
     use std::io::Write;
     let path = pama_core::paths::log_file();
@@ -225,7 +224,11 @@ pub fn run(ctx: &Ctx, agent: HookAgent) -> anyhow::Result<Exit> {
         }
         HookAgent::Opencode { .. } => {
             let a = agents::adapter(Agent::OpenCode);
-            (Agent::OpenCode, opencode_capture(&input), delay_ms(a, false))
+            (
+                Agent::OpenCode,
+                opencode_capture(&input),
+                delay_ms(a, false),
+            )
         }
     };
     if !agents::enabled(&ctx.store, kind) {
@@ -262,6 +265,8 @@ mod tests {
         assert_eq!(c.agent_session_id, "conv-1");
         assert_eq!(c.cwd.as_deref(), Some("/work/shop"));
         // Transcripts disabled in Cursor: nothing to read, the scan cannot help either.
-        assert!(cursor_capture(&json!({ "conversation_id": "c", "transcript_path": null })).is_none());
+        assert!(
+            cursor_capture(&json!({ "conversation_id": "c", "transcript_path": null })).is_none()
+        );
     }
 }

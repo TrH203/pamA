@@ -21,7 +21,12 @@ pub enum Agent {
 
 impl Agent {
     /// Every agent pamA has an adapter for (same order as `packages/types/agents.json`).
-    pub const ALL: [Agent; 4] = [Agent::ClaudeCode, Agent::Codex, Agent::Cursor, Agent::OpenCode];
+    pub const ALL: [Agent; 4] = [
+        Agent::ClaudeCode,
+        Agent::Codex,
+        Agent::Cursor,
+        Agent::OpenCode,
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {

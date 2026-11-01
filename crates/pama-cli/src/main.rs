@@ -340,7 +340,9 @@ pub enum ServerAction {
     /// Servers this machine is connected to.
     List,
     /// Make a connected server the default (and home, in server mode).
-    Use { url: String },
+    Use {
+        url: String,
+    },
     /// Disconnect from a server and forget it.
     Forget {
         url: String,

@@ -6,8 +6,8 @@ use std::time::Duration;
 use pama_core::capture::scan::scan;
 use pama_core::capture::worker::{drain, Worker};
 use pama_core::client::{Api, LocalApi};
-use pama_core::remote::{self, Home, RemoteSink};
 use pama_core::redact::RuleSet;
+use pama_core::remote::{self, Home, RemoteSink};
 use tauri::{AppHandle, Emitter, Runtime};
 use tauri_plugin_notification::NotificationExt;
 

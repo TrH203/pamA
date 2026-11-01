@@ -36,6 +36,23 @@ describeEachDb("POST /v1/draft", (f) => {
     expect(d.suggested_scope[0]).toMatchObject({ type: "bundle", id: s.bundleRefund });
   });
 
+  it("drafts sent at the same time share one hotkey conversation for the day", async () => {
+    await Promise.all([
+      draft({ question: "Do refunds include the shipping fee?" }),
+      draft({ question: "Do refunds include the shipping fee?" }),
+      draft({ question: "Do refunds include the shipping fee?" }),
+    ]);
+    const rows = await t.db.query<{ n: number; convs: number }>(
+      `SELECT count(*)::int AS n, count(DISTINCT conversation_id)::int AS convs
+       FROM asks WHERE origin = 'hotkey'`,
+    );
+    expect(rows[0]).toEqual({ n: 3, convs: 1 });
+    const [c] = await t.db.query<{ n: number }>(
+      "SELECT count(*)::int AS n FROM conversations WHERE origin = 'hotkey'",
+    );
+    expect(c?.n).toBe(1);
+  });
+
   it("respects a scope hint", async () => {
     const d = await draft({
       question: "Do refunds include the shipping fee?",

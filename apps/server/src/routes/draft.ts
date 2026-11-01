@@ -55,24 +55,32 @@ export async function draftForOwner(
   });
 }
 
-/** Hotkey drafts are grouped in one conversation per workspace and UTC day (spec 008b). */
+/**
+ * Hotkey drafts are grouped in one conversation per workspace and UTC day (spec 008b). The lookup
+ * and insert run under a transaction-scoped advisory lock so two drafts at once share one row.
+ */
 async function hotkeyConversation(deps: Pick<Deps, "db" | "workspaceId">): Promise<string> {
   const day = new Date().toISOString().slice(0, 10);
-  const [c] = await deps.db.query<{ id: string }>(
-    `SELECT id FROM conversations
-     WHERE workspace_id = $1 AND origin = 'hotkey' AND deleted_at IS NULL
-       AND to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') = $2
-     ORDER BY created_at LIMIT 1`,
-    [deps.workspaceId, day],
-  );
-  return (
-    c?.id ??
-    createConversation(deps.db, {
-      workspaceId: deps.workspaceId,
-      origin: "hotkey",
-      title: `Drafts ${day}`,
-    })
-  );
+  return deps.db.tx(async (q) => {
+    await q.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+      `hotkey:${deps.workspaceId}:${day}`,
+    ]);
+    const [c] = await q.query<{ id: string }>(
+      `SELECT id FROM conversations
+       WHERE workspace_id = $1 AND origin = 'hotkey' AND deleted_at IS NULL
+         AND to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') = $2
+       ORDER BY created_at LIMIT 1`,
+      [deps.workspaceId, day],
+    );
+    return (
+      c?.id ??
+      createConversation(q, {
+        workspaceId: deps.workspaceId,
+        origin: "hotkey",
+        title: `Drafts ${day}`,
+      })
+    );
+  });
 }
 
 export const draftRoutes = new Hono<Env>()

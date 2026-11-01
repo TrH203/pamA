@@ -217,6 +217,120 @@ describeEachDb("conversations", (f) => {
     expect(m?.n).toBe(1);
   });
 
+  it("a stale verification with a code pending for another email does not resume", async () => {
+    const l = await createLink(t.deps, {
+      title: "Refunds",
+      sources: [{ type: "bundle", id: s.bundleRefund }],
+      access_mode: "email_otp",
+      suggested_questions: ["?"],
+    });
+    const codeOf = () => /code is (\d{6})/.exec(t.mails.at(-1)?.text ?? "")?.[1];
+    const victim = visitor(t, l.slug, "203.0.113.40");
+    await victim.call("/api/access", { email: "victim@example.com" });
+    await victim.call("/api/access", { email: "victim@example.com", otp: codeOf() });
+    const r = (await (
+      await victim.call("/api/ask", { question: "Do refunds include the shipping fee?" })
+    ).json()) as AskRes;
+
+    const attacker = visitor(t, l.slug, "203.0.113.41");
+    await attacker.call("/api/access", { email: "attacker@example.com" });
+    await attacker.call("/api/access", { email: "attacker@example.com", otp: codeOf() });
+    await attacker.call("/api/access", { email: "victim@example.com" });
+    // A row written before verification was cleared on email change: verified, with the victim's
+    // email, but its code was never entered.
+    await t.db.query(
+      "UPDATE visitors SET verified_at = now() WHERE link_slug = $1 AND email = $2 AND otp_hash IS NOT NULL",
+      [l.slug, "victim@example.com"],
+    );
+    const list = (await (await attacker.call("/api/conversations")).json()) as {
+      items: unknown[];
+    };
+    expect(list.items).toHaveLength(0);
+    expect((await attacker.call(`/api/conversations/${r.conversation_id}`)).status).toBe(404);
+    const asks = (await (await attacker.call("/api/asks")).json()) as { items: unknown[] };
+    expect(asks.items).toHaveLength(0);
+    expect((await attacker.call(`/api/asks/${r.ask_id}/feedback`, { useful: false })).status).toBe(
+      404,
+    );
+    // And the victim does not see the attacker's row either.
+    const mine = (await (await victim.call("/api/conversations")).json()) as {
+      items: { id: string }[];
+    };
+    expect(mine.items.map((x) => x.id)).toEqual([r.conversation_id]);
+  });
+
+  it("after resume on another device, earlier turns can be listed, rated and forwarded", async () => {
+    const l = await createLink(t.deps, {
+      title: "Refunds",
+      sources: [{ type: "bundle", id: s.bundleRefund }],
+      access_mode: "email_otp",
+      suggested_questions: ["?"],
+    });
+    const verify = async (ip: string) => {
+      const v = visitor(t, l.slug, ip);
+      await v.call("/api/access", { email: "minh@example.com" });
+      const code = /code is (\d{6})/.exec(t.mails.at(-1)?.text ?? "")?.[1];
+      await v.call("/api/access", { email: "minh@example.com", otp: code });
+      return v;
+    };
+    const laptop = await verify("203.0.113.50");
+    const ok = (await (
+      await laptop.call("/api/ask", { question: "Do refunds include the shipping fee?" })
+    ).json()) as AskRes;
+    const refused = (await (
+      await laptop.call("/api/ask", {
+        question: "What is the weather in Hanoi?",
+        conversation_id: ok.conversation_id,
+      })
+    ).json()) as AskRes;
+    expect(refused.status).toBe("refused");
+
+    const phone = await verify("203.0.113.51");
+    const asks = (await (await phone.call("/api/asks")).json()) as { items: { id: string }[] };
+    expect(asks.items.map((x) => x.id)).toEqual([refused.ask_id, ok.ask_id]);
+    expect((await phone.call(`/api/asks/${ok.ask_id}/feedback`, { useful: true })).status).toBe(
+      204,
+    );
+    expect((await phone.call(`/api/asks/${refused.ask_id}/forward`, {})).status).toBe(202);
+    const conv = (await (await phone.call(`/api/conversations/${ok.conversation_id}`)).json()) as {
+      turns: { status: string; useful: boolean | null }[];
+    };
+    expect(conv.turns.map((x) => [x.status, x.useful])).toEqual([
+      ["answered", true],
+      ["forwarded", null],
+    ]);
+  });
+
+  it("new chats are capped per link per hour", async () => {
+    const l = await createLink(t.deps, {
+      title: "Refunds",
+      sources: [{ type: "bundle", id: s.bundleRefund }],
+      access_mode: "open",
+      suggested_questions: ["?"],
+      rate_limit_per_hour: 2,
+    });
+    const statuses: number[] = [];
+    for (const ip of ["203.0.113.60", "203.0.113.61", "203.0.113.62"]) {
+      statuses.push((await visitor(t, l.slug, ip).call("/api/conversations", {})).status);
+    }
+    expect(statuses).toEqual([201, 201, 429]);
+    const [n] = await t.db.query<{ n: number }>("SELECT count(*)::int AS n FROM conversations");
+    expect(n?.n).toBe(2);
+  });
+
+  it("CSV export neutralises formulas in visitor text", async () => {
+    const l = await openLink();
+    const v = visitor(t, l.slug);
+    await v.call("/api/ask", { question: '=HYPERLINK("https://evil.example/","x")' });
+    const csv = await (await t.req("/v1/conversations/export?format=csv")).text();
+    expect(csv).toContain('"\'=HYPERLINK(""https://evil.example/"",""x"")"');
+    expect(csv).not.toMatch(/(^|,)=HYPERLINK/m);
+    const json = (await (await t.req("/v1/conversations/export")).json()) as {
+      next_offset: number | null;
+    };
+    expect(json.next_offset).toBeNull();
+  });
+
   it("owner: list, filter needs_reply, detail with citations, reply, archive, export, delete", async () => {
     const l = await openLink();
     const v = visitor(t, l.slug);

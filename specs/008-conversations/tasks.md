@@ -36,6 +36,14 @@
 - [x] T015 `Api::delete` in `crates/pama-core/src/client.rs`
 - [x] T016 `pama conversations list|show|reply|delete` and `pama chat` in `crates/pama-cli/src/cmd/conversations.rs`, `main.rs`, `cmd/mod.rs`; unit tests
 
+## Review fixes
+
+- [x] T019 Resume only with an email proven by a one-time code on this link (`askerIds` ignores visitors with a code pending; asking for a code for another email clears `verified_at`)
+- [x] T020 CSV export neutralises formulas (`csvCell`, also after leading spaces and full-width forms); export pages by `offset` with `next_offset` (JSON) / `X-Pama-Next-Offset` (CSV) past 2000 conversations
+- [x] T021 "New chat" reuses an empty conversation (advisory lock), shares the question budget, and a link takes at most `rate_limit_per_hour` new empty conversations an hour
+- [x] T022 Retrieval is driven by the current question; only a short follow-up borrows the previous non-denied question (`retrievalQuery`)
+- [x] T023 Hotkey day conversation lookup/insert under an advisory lock; after resume, `/api/asks`, feedback and forward work for turns asked on the other device
+
 ## Not in this slice
 
 - [ ] T017 CLI flags for `--from/--to`, archive and export (server routes exist)

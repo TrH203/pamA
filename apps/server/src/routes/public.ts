@@ -158,7 +158,13 @@ export const publicRoutes = new Hono<Env>()
     const { db } = c.get("deps");
     const link = await resolveLink(db, c.req.param("slug"));
     const visitor = await requireAccess(c, link);
-    await forwardAsk(c.get("deps"), link.slug, visitor.id, c.req.param("id"));
+    // A turn asked on another device of the same verified asker can be forwarded from this one.
+    const [own] = await db.query<{ visitor_id: string }>(
+      "SELECT visitor_id FROM asks WHERE id = $1 AND link_slug = $2 AND visitor_id = ANY($3)",
+      [c.req.param("id"), link.slug, await askerIds(db, link.slug, visitor)],
+    );
+    if (!own) throw new HttpError(404, "not_found", "question not found");
+    await forwardAsk(c.get("deps"), link.slug, own.visitor_id, c.req.param("id"));
     return c.json({ status: "forwarded" }, 202);
   })
   .post("/:slug/api/asks/:id/feedback", async (c) => {
@@ -167,8 +173,8 @@ export const publicRoutes = new Hono<Env>()
     const visitor = await requireAccess(c, link);
     const { useful } = await body(c, z.strictObject({ useful: z.boolean() }));
     const rows = await db.query(
-      "UPDATE asks SET useful = $4 WHERE id = $1 AND link_slug = $2 AND visitor_id = $3 RETURNING id",
-      [c.req.param("id"), link.slug, visitor.id, useful],
+      "UPDATE asks SET useful = $4 WHERE id = $1 AND link_slug = $2 AND visitor_id = ANY($3) RETURNING id",
+      [c.req.param("id"), link.slug, await askerIds(db, link.slug, visitor), useful],
     );
     if (!rows.length) throw new HttpError(404, "not_found", "question not found");
     return c.body(null, 204);
@@ -179,10 +185,10 @@ export const publicRoutes = new Hono<Env>()
     const visitor = await requireAccess(c, link);
     const items = await db.query(
       `SELECT id, conversation_id, question, status, reason, answer, language, owner_reply, owner_replied_at, created_at, useful
-       FROM asks a WHERE link_slug = $1 AND visitor_id = $2
+       FROM asks a WHERE link_slug = $1 AND visitor_id = ANY($2)
          AND NOT EXISTS (SELECT 1 FROM conversations c WHERE c.id = a.conversation_id AND c.deleted_at IS NOT NULL)
-       ORDER BY created_at DESC LIMIT 100`,
-      [link.slug, visitor.id],
+       ORDER BY created_at DESC, id DESC LIMIT 100`,
+      [link.slug, await askerIds(db, link.slug, visitor)],
     );
     return c.json({ items });
   })
@@ -193,24 +199,44 @@ export const publicRoutes = new Hono<Env>()
     const link = await resolveLink(db, c.req.param("slug"));
     const visitor = await requireAccess(c, link);
     // "New chat" reuses this visitor's newest conversation that has no question yet, so repeated
-    // clicks (or a script) cannot pile up empty rows; it shares the link's question budget.
-    const [empty] = await db.query<{ id: string }>(
-      `SELECT c.id FROM conversations c
-       WHERE c.link_slug = $1 AND c.visitor_id = $2 AND c.deleted_at IS NULL
-         AND NOT EXISTS (SELECT 1 FROM asks a WHERE a.conversation_id = c.id)
-       ORDER BY c.created_at DESC, c.id DESC LIMIT 1`,
-      [link.slug, visitor.id],
-    );
-    if (empty) {
-      await db.query("UPDATE conversations SET last_at = now() WHERE id = $1", [empty.id]);
-      return c.json({ id: empty.id, title: "", turns: [] }, 201);
-    }
-    await checkAskRate(db, link.slug, visitor.id, link.rateLimitPerHour);
-    const id = await createConversation(db, {
-      workspaceId: link.workspaceId,
-      origin: "link",
-      linkSlug: link.slug,
-      visitorId: visitor.id,
+    // clicks (or a script) cannot pile up empty rows. A new one shares the link's question budget,
+    // and the link takes at most `rateLimitPerHour` new empty conversations an hour in total (a
+    // script with fresh cookies). The advisory lock keeps two clicks at once to one row.
+    const id = await db.tx(async (q) => {
+      await q.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+        `conv:${link.slug}:${visitor.id}`,
+      ]);
+      const [empty] = await q.query<{ id: string }>(
+        `SELECT c.id FROM conversations c
+         WHERE c.link_slug = $1 AND c.visitor_id = $2 AND c.deleted_at IS NULL
+           AND NOT EXISTS (SELECT 1 FROM asks a WHERE a.conversation_id = c.id)
+         ORDER BY c.created_at DESC, c.id DESC LIMIT 1`,
+        [link.slug, visitor.id],
+      );
+      if (empty) {
+        await q.query("UPDATE conversations SET last_at = now() WHERE id = $1", [empty.id]);
+        return empty.id;
+      }
+      await checkAskRate(q, link.slug, visitor.id, link.rateLimitPerHour);
+      const [r] = await q.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM conversations c
+         WHERE c.link_slug = $1 AND c.created_at > now() - interval '1 hour'
+           AND NOT EXISTS (SELECT 1 FROM asks a WHERE a.conversation_id = c.id)`,
+        [link.slug],
+      );
+      if ((r?.n ?? 0) >= link.rateLimitPerHour) {
+        throw new HttpError(
+          429,
+          "rate_limited",
+          "Too many new chats for now. Please try again later.",
+        );
+      }
+      return createConversation(q, {
+        workspaceId: link.workspaceId,
+        origin: "link",
+        linkSlug: link.slug,
+        visitorId: visitor.id,
+      });
     });
     return c.json({ id, title: "", turns: [] }, 201);
   })
@@ -223,7 +249,7 @@ export const publicRoutes = new Hono<Env>()
               (SELECT count(*)::int FROM asks a WHERE a.conversation_id = c.id) AS turns
        FROM conversations c
        WHERE c.link_slug = $1 AND c.visitor_id = ANY($2) AND c.deleted_at IS NULL
-       ORDER BY c.last_at DESC LIMIT 100`,
+       ORDER BY c.last_at DESC, c.id DESC LIMIT 100`,
       [link.slug, await askerIds(db, link.slug, visitor)],
     );
     return c.json({ items });

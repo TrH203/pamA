@@ -9,10 +9,36 @@ import {
   historyBlock,
   MAX_PRIOR_TURNS,
   type PriorTurn,
+  retrievalQuery,
 } from "../../src/pipeline/answer.ts";
 import { type Seeded, seed } from "../fixtures/seed.ts";
 import { makeCtx, type TestCtx } from "../helpers/ctx.ts";
 import { pglite } from "../helpers/db.ts";
+
+describe("retrievalQuery", () => {
+  const turns: PriorTurn[] = [
+    { question: "What about pricing for enterprise?", answer: null },
+    { question: "Do refunds include the shipping fee?", answer: "No." },
+  ];
+
+  it("a standalone question searches on its own", () => {
+    const q = "How long does a refund request take to be processed by the team?";
+    expect(retrievalQuery(q, turns)).toBe(q);
+    expect(retrievalQuery("why?", [])).toBe("why?");
+  });
+
+  it("a short follow-up puts the current question first, then the previous one", () => {
+    expect(retrievalQuery("Why?", turns)).toBe("Why?\nDo refunds include the shipping fee?");
+  });
+
+  it("never borrows a turn that touches a denied topic", () => {
+    const denied = [turns[1] as PriorTurn, turns[0] as PriorTurn];
+    expect(retrievalQuery("Why?", denied, ["pricing"])).toBe(
+      "Why?\nDo refunds include the shipping fee?",
+    );
+    expect(retrievalQuery("Why?", [turns[0] as PriorTurn], ["pricing"])).toBe("Why?");
+  });
+});
 
 describe("historyBlock", () => {
   it("is empty without turns", () => {

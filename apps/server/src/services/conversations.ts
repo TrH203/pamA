@@ -71,15 +71,20 @@ export async function touchConversation(q: Queryable, id: string, question: stri
  * The visitor ids that count as "this asker" on a link: the cookie's visitor and, once their email
  * is verified, every visitor of the same link verified with the same email (resume on another
  * device after the one-time code).
+ *
+ * Only an email proven by a one-time code on this link counts: asking for a code for another
+ * address clears `verified_at` (grantAccess), and a visitor with a code still pending
+ * (`otp_hash` set) is treated as unverified, which also covers rows written before that rule.
  */
 export async function askerIds(
   q: Queryable,
   linkSlug: string,
-  v: { id: string; email: string | null; verified_at: Date | null },
+  v: { id: string; email: string | null; verified_at: Date | null; otp_hash?: string | null },
 ): Promise<string[]> {
-  if (!v.email || !v.verified_at) return [v.id];
+  if (!v.email || !v.verified_at || v.otp_hash) return [v.id];
   const rows = await q.query<{ id: string }>(
-    `SELECT id FROM visitors WHERE link_slug = $1 AND lower(email) = lower($2) AND verified_at IS NOT NULL`,
+    `SELECT id FROM visitors
+     WHERE link_slug = $1 AND lower(email) = lower($2) AND verified_at IS NOT NULL AND otp_hash IS NULL`,
     [linkSlug, v.email],
   );
   return [...new Set([v.id, ...rows.map((r) => r.id)])];

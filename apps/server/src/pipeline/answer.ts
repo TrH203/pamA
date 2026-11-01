@@ -85,6 +85,27 @@ export function historyBlock(turns: PriorTurn[] = [], denyTopics: string[] = [])
   return kept.length ? `<history>\n${kept.join("\n")}\n</history>\n` : "";
 }
 
+/** A question this short may lean on the previous one ("why?", "and the fee?"). */
+export const FOLLOW_UP_MAX_WORDS = 8;
+
+/**
+ * The text retrieval searches with. The current question drives it; only a short follow-up
+ * borrows the previous question (the last earlier turn that touches no denied topic, clipped), so
+ * an earlier topic cannot pull in items for a question that stands on its own. Retrieval still
+ * runs inside the link's scope, so this only ranks in-scope items differently.
+ */
+export function retrievalQuery(
+  question: string,
+  turns: PriorTurn[] = [],
+  denyTopics: string[] = [],
+): string {
+  if (question.trim().split(/\s+/).length > FOLLOW_UP_MAX_WORDS) return question;
+  const previous = turns.findLast(
+    (t) => !mentionsTopic(`${t.question}\n${t.answer ?? ""}`, denyTopics),
+  )?.question;
+  return previous ? `${question}\n${clip(previous, 300)}` : question;
+}
+
 const OutputSchema = z.object({
   status: z.enum(["answered", "refused"]),
   answer: z.string(),
@@ -126,10 +147,7 @@ export async function answerQuestion(
   if (mentionsTopic(input.question, input.denyTopics)) return refuse("denied_topic", language, []);
 
   const history = historyBlock(input.history, input.denyTopics);
-  // A follow-up ("why?") needs the previous question to find its items. Retrieval still runs
-  // inside the scope, so this can only rank in-scope items differently.
-  const previous = history ? input.history?.at(-1)?.question : undefined;
-  const lookup = previous ? `${previous}\n${input.question}` : input.question;
+  const lookup = retrievalQuery(input.question, input.history, input.denyTopics);
   const { embedding } = await embed({ model: deps.models.embed, value: lookup });
   const items = await scopedItems(deps.db, input.scope, { embedding, text: lookup, k: 8 });
   if (!items.length) return refuse("out_of_scope", language, items);

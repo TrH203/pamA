@@ -110,7 +110,10 @@ The owner sets how many days asks and conversations are kept (default 180, 1–3
 - **FR-006**: Owner API: `GET /v1/conversations` (filters link, asker, status incl.
   `needs_reply`, origin, from/to; `limit`/`offset`), `GET /v1/conversations/:id`,
   `POST /v1/conversations/:id/reply`, `PATCH` (archive / title), `DELETE`,
-  `GET /v1/conversations/export?format=json|csv`. The inbox route is unchanged.
+  `GET /v1/conversations/export?format=json|csv` (at most 2000 conversations per request; more
+  are paged with `offset`, signalled by `next_offset` in JSON or the `X-Pama-Next-Offset` header
+  in CSV; visitor text that looks like a spreadsheet formula is prefixed with `'`). The inbox
+  route is unchanged.
 - **FR-007**: Owner chat: `POST /v1/chat`, `GET /v1/chat/conversations`,
   `POST /v1/chat/:id/link`; hotkey drafts recorded into conversations; `GET /v1/draft/recent`.
 - **FR-008**: Retention per workspace (`workspaces.ask_retention_days`, default 180) with

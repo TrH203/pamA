@@ -24,7 +24,9 @@ const MARK: &str = "hook cursor";
 pub const EVENTS: [&str; 2] = ["stop", "sessionEnd"];
 
 fn is_ours(h: &Value) -> bool {
-    h["command"].as_str().is_some_and(|c| c.contains(MARK))
+    h["command"]
+        .as_str()
+        .is_some_and(super::is_pama_command(MARK))
 }
 
 pub fn install_into(file: &Path, command: &str) -> Result<bool, HookError> {
@@ -82,9 +84,14 @@ pub fn uninstall_from(file: &Path) -> Result<bool, HookError> {
 }
 
 pub fn present_in(file: &Path) -> bool {
-    std::fs::read_to_string(file)
-        .map(|s| s.contains(MARK))
-        .unwrap_or(false)
+    let Ok(doc) = read_json_doc(file) else {
+        return false;
+    };
+    EVENTS.iter().any(|ev| {
+        doc["hooks"][ev]
+            .as_array()
+            .is_some_and(|a| a.iter().any(is_ours))
+    })
 }
 
 impl AgentAdapter for CursorAdapter {
@@ -175,5 +182,14 @@ mod tests {
         assert_eq!(v["hooks"]["stop"][0]["command"], "./audit.sh");
         assert!(v["hooks"].get("sessionEnd").is_none());
         assert_eq!(v["version"], 1);
+
+        // A user hook that merely mentions the words is not ours.
+        std::fs::write(
+            &f,
+            r#"{"version":1,"hooks":{"stop":[{"command":"./log-hook cursor"}]}}"#,
+        )
+        .unwrap();
+        assert!(!present_in(&f));
+        assert!(!uninstall_from(&f).unwrap());
     }
 }

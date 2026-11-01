@@ -117,12 +117,16 @@ pub fn logout_from(
     } else {
         0
     };
+    let home_before = remote::home(&ctx.store);
     let left = remote::remove_server(&ctx.store, &server)?;
     if left.is_empty() {
         remote::set_mode(&ctx.store, Mode::Local)?;
     }
+    // Forgetting the home server moves home to the next connected one: say so (spec 005).
+    let home = remote::home(&ctx.store);
+    let moved = (home != home_before && !left.is_empty()).then(|| home.label());
     ctx.print(
-        &json!({ "server": server, "revoked": revoked, "pending": pending, "discarded": discarded }),
+        &json!({ "server": server, "revoked": revoked, "pending": pending, "discarded": discarded, "home": home }),
         || {
             let mut out = format!("logged out of {server}");
             if !revoked {
@@ -137,6 +141,10 @@ pub fn logout_from(
             }
             if left.is_empty() {
                 out.push_str("\nthis machine is back in local mode");
+            } else if let Some(h) = &moved {
+                out.push_str(&format!(
+                    "\nhome is now {h}; `pama use local` keeps work on this machine"
+                ));
             }
             out
         },

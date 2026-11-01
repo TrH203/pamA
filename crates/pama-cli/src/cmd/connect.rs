@@ -20,7 +20,20 @@ pub fn connect(
                 eprintln!("error: which server? `pama connect <url> --code <code>`");
                 return Ok(Exit::User);
             };
-            super::sync::pair(ctx, &code, &remote::normalize(&server))
+            // Pairing makes the server the default target; in remote mode the default is also
+            // home, so keep home where it was and let `pama use` move it (with its preview).
+            let home_before = remote::home(&ctx.store);
+            let exit = super::sync::pair(ctx, &code, &remote::normalize(&server))?;
+            if let Home::Server(prev) = &home_before {
+                if remote::home(&ctx.store) != home_before {
+                    remote::set_default_server(&ctx.store, prev)?;
+                    eprintln!(
+                        "note: home stays {prev}; `pama use {}` moves review and Ask Links there",
+                        remote::normalize(&server)
+                    );
+                }
+            }
+            Ok(exit)
         }
         None => super::login::login_to(ctx, url, no_browser),
     }
@@ -43,6 +56,15 @@ pub fn use_home(ctx: &Ctx, target: &str, yes: bool) -> anyhow::Result<Exit> {
             "error: this machine is not connected to {target}; run `pama connect {target}` first"
         );
         return Ok(Exit::Config);
+    }
+    // A listed server without its device token (e.g. a default set by hand and then listed by
+    // `remote::repair`) cannot be used as home: every review call would fail.
+    if let Home::Server(u) = &p.to {
+        pama_core::secrets::init_platform_store();
+        if !pama_core::secrets::exists(&pama_core::sync::token_key(u)).unwrap_or(false) {
+            eprintln!("error: no device token for {u}; run `pama connect {u}` again");
+            return Ok(Exit::Config);
+        }
     }
     if p.unchanged {
         ctx.print(&json!({ "home": p.to, "changed": false }), || {

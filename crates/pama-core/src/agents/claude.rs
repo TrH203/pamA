@@ -20,7 +20,9 @@ pub struct ClaudeAdapter;
 const MARK: &str = "hook claude";
 
 fn is_ours(h: &Value) -> bool {
-    h["command"].as_str().is_some_and(|c| c.contains(MARK))
+    h["command"]
+        .as_str()
+        .is_some_and(super::is_pama_command(MARK))
 }
 
 /// Add our SessionEnd hook to a Claude settings file. Returns true if the file changed.
@@ -90,9 +92,16 @@ pub fn uninstall_from(settings: &Path) -> Result<bool, HookError> {
 
 /// Is there a hook that runs `pama hook claude` in this settings file?
 pub fn present_in(p: &Path) -> bool {
-    std::fs::read_to_string(p)
-        .map(|s| s.lines().any(|l| l.contains("pama") && l.contains(MARK)))
-        .unwrap_or(false)
+    let Ok(doc) = read_json_doc(p) else {
+        return false;
+    };
+    doc["hooks"]["SessionEnd"].as_array().is_some_and(|arr| {
+        arr.iter().any(|m| {
+            m["hooks"]
+                .as_array()
+                .is_some_and(|hs| hs.iter().any(is_ours))
+        })
+    })
 }
 
 impl AgentAdapter for ClaudeAdapter {
@@ -188,6 +197,25 @@ mod tests {
         assert!(v["hooks"]["Stop"].is_array());
         assert_eq!(v["permissions"]["allow"][0], "Bash(ls)");
         assert!(!present_in(&f));
+    }
+
+    #[test]
+    fn someone_elses_hook_with_a_similar_command_is_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("settings.json");
+        std::fs::write(
+            &f,
+            r#"{"hooks":{"SessionEnd":[{"hooks":[{"type":"command","command":"~/bin/githook claude"},{"type":"command","command":"pama-notes hook claude --verbose"}]}]}}"#,
+        )
+        .unwrap();
+        assert!(!present_in(&f));
+        assert!(!uninstall_from(&f).unwrap());
+        assert!(install_into(&f, "\"/Applications/pamA.app/bin/pama\" hook claude").unwrap());
+        assert!(present_in(&f));
+        assert!(uninstall_from(&f).unwrap());
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(&f).unwrap()).unwrap();
+        let hs = v["hooks"]["SessionEnd"][0]["hooks"].as_array().unwrap();
+        assert_eq!(hs.len(), 2);
     }
 
     #[test]

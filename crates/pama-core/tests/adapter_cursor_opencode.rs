@@ -180,6 +180,13 @@ fn opencode_sqlite_parses_and_wins_over_legacy_copies() {
     let found = opencode::sessions(dir.path());
     assert_eq!(found.len(), 1, "database record wins");
     assert!(found[0].location.ends_with("opencode.db#ses_abc123"));
+    assert_eq!(
+        opencode::locate(dir.path(), "ses_abc123").as_deref(),
+        Some(found[0].location.as_str()),
+        "the hook finds the database record, not the legacy copy"
+    );
+    assert_eq!(opencode::locate(dir.path(), "ses_missing"), None);
+    assert_eq!(opencode::locate(dir.path(), "../proj1/ses_abc123"), None);
     let s = agents::adapter(Agent::OpenCode)
         .parse(&found[0].location)
         .unwrap();

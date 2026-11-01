@@ -131,12 +131,35 @@ pub fn sessions(data: &Path) -> Vec<Found> {
     out
 }
 
-/// Where a session id lives (hook input carries only the id).
+/// Where a session id lives (hook input carries only the id). Runs in the plugin's hook after
+/// every turn, so it looks the one id up instead of listing every session: a keyed query on the
+/// database, else `storage/session/*/<id>.json` by file name.
 pub fn locate(data: &Path, session_id: &str) -> Option<String> {
-    sessions(data)
-        .into_iter()
-        .find(|s| s.id == session_id)
-        .map(|s| s.location)
+    if session_id.is_empty() || session_id.contains(['/', '\\', '#']) || session_id.contains("..") {
+        return None;
+    }
+    let db = data.join(DB_FILE);
+    if db.is_file() {
+        if let Ok(c) = open_ro(&db) {
+            let hit: Option<String> = c
+                .query_row("SELECT id FROM session WHERE id = ?1", [session_id], |r| {
+                    r.get(0)
+                })
+                .optional()
+                .ok()
+                .flatten();
+            if hit.is_some() {
+                return Some(format!("{}#{session_id}", db.display()));
+            }
+        }
+    }
+    let file = format!("{session_id}.json");
+    std::fs::read_dir(data.join("storage/session"))
+        .ok()?
+        .flatten()
+        .map(|p| p.path().join(&file))
+        .find(|f| f.is_file())
+        .map(|f| f.to_string_lossy().into_owned())
 }
 
 /// The session id of a location string.

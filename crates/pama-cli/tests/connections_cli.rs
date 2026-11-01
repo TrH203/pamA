@@ -152,6 +152,17 @@ fn paired_server_is_listed_and_home_switches_consistently() {
         Some(2)
     );
 
+    // Listed (repaired from the default) but without a device token: refused, nothing changes.
+    let out = e.run(&["use", url, "--yes"]);
+    assert_eq!(out.status.code(), Some(2), "{}", text(&out));
+    assert!(text(&out).contains("no device token"));
+    assert_eq!(remote::home(&e.store()), remote::Home::Local);
+    std::fs::write(
+        e.root.join("secrets.json"),
+        serde_json::json!({ (format!("device-token:{url}")): "t" }).to_string(),
+    )
+    .unwrap();
+
     // Without --yes and without a terminal: preview only, nothing changes.
     let out = e.run(&["use", url]);
     assert_eq!(out.status.code(), Some(1));

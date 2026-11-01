@@ -367,20 +367,56 @@ impl Store {
         if !sql.is_some_and(|s| s.contains("('claude_code', 'codex')")) {
             return Ok(());
         }
-        conn.execute_batch(
-            "BEGIN;
-             ALTER TABLE captured_session RENAME TO captured_session_old;",
-        )?;
+        conn.execute_batch("BEGIN")?;
+        let res = Self::rebuild_captured_session(conn);
+        match res {
+            Ok(()) => conn.execute_batch("COMMIT")?,
+            Err(e) => {
+                let _ = conn.execute_batch("ROLLBACK");
+                return Err(e);
+            }
+        }
+        Ok(())
+    }
+
+    /// Copy `captured_session` into a table with the current CHECK, by column name: a store
+    /// opened by a build with later columns (spec 006 `ensure_column`) has more columns than
+    /// `schema.sql` declares, and those are kept.
+    fn rebuild_captured_session(conn: &Connection) -> Result<()> {
+        let columns = |table: &str| -> rusqlite::Result<Vec<(String, String)>> {
+            let mut st = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+            let cols = st
+                .query_map([], |r| Ok((r.get::<_, String>(1)?, r.get::<_, String>(2)?)))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            Ok(cols)
+        };
+        conn.execute_batch("ALTER TABLE captured_session RENAME TO captured_session_old")?;
         let create = include_str!("schema.sql")
             .split(';')
             .find(|s| s.contains("CREATE TABLE IF NOT EXISTS captured_session"))
             .expect("schema has captured_session")
             .to_string();
+        conn.execute_batch(&create)?;
+        let new_cols: Vec<String> = columns("captured_session")?
+            .into_iter()
+            .map(|c| c.0)
+            .collect();
+        let old_cols = columns("captured_session_old")?;
+        for (name, decl) in &old_cols {
+            if !new_cols.contains(name) {
+                conn.execute_batch(&format!(
+                    "ALTER TABLE captured_session ADD COLUMN \"{name}\" {decl}"
+                ))?;
+            }
+        }
+        let list = old_cols
+            .iter()
+            .map(|(n, _)| format!("\"{n}\""))
+            .collect::<Vec<_>>()
+            .join(", ");
         conn.execute_batch(&format!(
-            "{create};
-             INSERT INTO captured_session SELECT * FROM captured_session_old;
-             DROP TABLE captured_session_old;
-             COMMIT;"
+            "INSERT INTO captured_session ({list}) SELECT {list} FROM captured_session_old;
+             DROP TABLE captured_session_old;"
         ))?;
         Ok(())
     }

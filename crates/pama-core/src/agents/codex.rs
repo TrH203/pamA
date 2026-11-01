@@ -45,6 +45,40 @@ fn notify_line(argv: &[String]) -> String {
     )
 }
 
+/// Is `line` the `notify = …` key (not `notify_x` or a comment)?
+fn is_notify_key(line: &str) -> bool {
+    line.trim_start()
+        .strip_prefix("notify")
+        .is_some_and(|rest| rest.trim_start().starts_with('='))
+}
+
+/// The line of the top-level `notify` key. `notify` inside a table (`[profiles.x]`) is another
+/// setting and is never touched. Errors when the file is not valid TOML, or when a top-level
+/// `notify` exists but not on one line before the first table (pamA would otherwise add a
+/// duplicate key and break Codex's config).
+fn top_level_notify(
+    config: &Path,
+    text: &str,
+    lines: &[String],
+) -> Result<Option<usize>, HookError> {
+    let doc: toml::Table = toml::from_str(text)
+        .map_err(|e| HookError::Config(format!("{} is not valid TOML: {e}", config.display())))?;
+    if !doc.contains_key("notify") {
+        return Ok(None);
+    }
+    let found = lines
+        .iter()
+        .take_while(|l| !l.trim_start().starts_with('['))
+        .position(|l| is_notify_key(l));
+    match found {
+        Some(i) => Ok(Some(i)),
+        None => Err(HookError::Config(format!(
+            "{} has a `notify` setting pamA cannot find; edit it by hand",
+            config.display()
+        ))),
+    }
+}
+
 fn is_ours(argv: &[String]) -> bool {
     argv.len() >= 3 && argv[1] == "hook" && argv[2] == "codex"
 }
@@ -69,10 +103,7 @@ pub fn install_into(config: &Path, exe: &str) -> Result<bool, HookError> {
     let text = std::fs::read_to_string(config).unwrap_or_default();
     let mut lines: Vec<String> = text.lines().map(String::from).collect();
     let ours = vec![exe.to_string(), "hook".into(), "codex".into()];
-    if let Some(i) = lines
-        .iter()
-        .position(|l| l.trim_start().starts_with("notify"))
-    {
+    if let Some(i) = top_level_notify(config, &text, &lines)? {
         let Some(argv) = parse_notify(&lines[i]) else {
             return Err(HookError::Config(format!(
                 "{} has a `notify` setting pamA cannot read (multi-line?); add `{exe} hook codex` to it manually",
@@ -103,10 +134,7 @@ pub fn uninstall_from(config: &Path) -> Result<bool, HookError> {
         return Ok(false);
     };
     let mut lines: Vec<String> = text.lines().map(String::from).collect();
-    let Some(i) = lines
-        .iter()
-        .position(|l| l.trim_start().starts_with("notify"))
-    else {
+    let Some(i) = top_level_notify(config, &text, &lines).ok().flatten() else {
         return Ok(false);
     };
     let Some(argv) = parse_notify(&lines[i]).filter(|a| is_ours(a)) else {
@@ -243,6 +271,25 @@ mod tests {
             std::fs::read_to_string(&f).unwrap(),
             "notify = [\"notify-send\", \"Codex\"]\nmodel = \"o3\"\n"
         );
+
+        // `notify` of a profile is not the top-level key: ours is added on top, theirs kept.
+        std::fs::write(&f, "model = \"o3\"\n[profiles.x]\nnotify = [\"x\"]\n").unwrap();
+        assert!(install_into(&f, "/bin/pama").unwrap());
+        let text = std::fs::read_to_string(&f).unwrap();
+        assert!(text.starts_with("notify = [\"/bin/pama\", \"hook\", \"codex\"]\nmodel"));
+        assert!(text.contains("[profiles.x]\nnotify = [\"x\"]"));
+        let parsed: toml::Table = toml::from_str(&text).unwrap();
+        assert!(parsed["notify"].is_array());
+        assert!(uninstall_from(&f).unwrap());
+        assert_eq!(
+            std::fs::read_to_string(&f).unwrap(),
+            "model = \"o3\"\n[profiles.x]\nnotify = [\"x\"]\n"
+        );
+
+        // Invalid TOML: left alone.
+        std::fs::write(&f, "model = \n").unwrap();
+        assert!(install_into(&f, "/bin/pama").is_err());
+        assert_eq!(std::fs::read_to_string(&f).unwrap(), "model = \n");
 
         // Unreadable notify: refuse rather than break it.
         std::fs::write(&f, "notify = [\n  \"x\",\n]\n").unwrap();

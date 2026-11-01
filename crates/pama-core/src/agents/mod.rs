@@ -233,6 +233,29 @@ pub(crate) fn write_json_doc(file: &Path, doc: &serde_json::Value) -> Result<(),
     Ok(())
 }
 
+/// A matcher for the hook command pamA writes: `<exe> <mark>` (the exe possibly quoted), where
+/// the executable's file name is `pama` (`pama.exe`). Commands of other tools that merely contain
+/// the words (`githook claude`) are never treated as pamA's, so uninstall leaves them alone.
+pub(crate) fn is_pama_command(mark: &'static str) -> impl Fn(&str) -> bool {
+    move |cmd: &str| {
+        let Some(exe) = cmd.trim().strip_suffix(mark) else {
+            return false;
+        };
+        let exe = exe.trim_end();
+        if exe.len() == cmd.trim().len() - mark.len() {
+            // No separator between the executable and the mark.
+            return false;
+        }
+        let exe = exe.trim_matches('"');
+        let name = exe
+            .rsplit(['/', '\\'])
+            .next()
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        name == "pama" || name == "pama.exe"
+    }
+}
+
 /// Quote the executable for a shell command line.
 pub fn shell_command(exe: &str, args: &str) -> String {
     if exe.contains(' ') {
@@ -266,6 +289,19 @@ mod tests {
             Agent::ALL.iter().map(|a| a.as_str()).collect::<Vec<_>>(),
             ours
         );
+    }
+
+    #[test]
+    fn pama_commands_are_recognised_by_executable_name() {
+        let m = is_pama_command("hook claude");
+        assert!(m("/usr/local/bin/pama hook claude"));
+        assert!(m("pama hook claude"));
+        assert!(m("\"/Applications/pamA app/pama\" hook claude"));
+        assert!(m("C:\\Tools\\pama.exe hook claude"));
+        assert!(!m("~/bin/githook claude"));
+        assert!(!m("pama-notes hook claude"));
+        assert!(!m("pamahook claude"));
+        assert!(!m("/bin/pama hook claude --x"));
     }
 
     #[test]

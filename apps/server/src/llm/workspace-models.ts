@@ -7,6 +7,7 @@ import { HttpError } from "../http.ts";
 import { type CheckResult, checkProvider } from "./check.ts";
 import { tagModel } from "./errors.ts";
 import { isLocal, language, type Models } from "./providers.ts";
+import { resolveProvider } from "./registry.ts";
 import { type ApplyInput, decryptKey, encryptKey } from "./settings.ts";
 
 interface Stored {
@@ -100,11 +101,17 @@ export async function workspaceChatView(deps: Deps) {
 
 export async function applyWorkspaceChat(deps: Deps, input: ApplyInput) {
   const cur = await load(deps, deps.workspaceId);
-  const apiKey = input.apiKey ?? (cur?.provider === input.provider ? cur.apiKey : undefined);
+  const r = resolveProvider(input.provider, input.baseUrl);
+  const provider = r.provider as ProviderConfig["provider"];
+  const apiKey =
+    input.apiKey ??
+    (cur?.provider === provider && (cur.baseUrl ?? "") === (r.baseUrl ?? "")
+      ? cur.apiKey
+      : undefined);
   const cand: ProviderConfig = {
-    provider: input.provider,
+    provider,
     model: input.model,
-    ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
+    ...(r.baseUrl ? { baseUrl: r.baseUrl } : {}),
     ...(apiKey ? { apiKey } : {}),
   };
   assertPublicEndpoint(cand);

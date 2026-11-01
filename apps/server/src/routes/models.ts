@@ -8,6 +8,7 @@ import {
   ApplySchema,
   applySettings,
   candidateOf,
+  effectiveModels,
   parseRole,
   revertSettings,
   runCheck,
@@ -16,6 +17,7 @@ import {
 import {
   applyWorkspaceChat,
   revertWorkspaceChat,
+  workspaceChatConfig,
   workspaceChatView,
 } from "../llm/workspace-models.ts";
 import { body, tenant } from "./util.ts";
@@ -26,6 +28,15 @@ const CheckSchema = z.object({
 });
 
 export const modelRoutes = new Hono<Env>()
+  // Spec 005: each role's model and its origin (saved, env, default). Tenants see the operator's
+  // choices without endpoints, and their own chat override as scope "workspace".
+  .get("/models/effective", async (c) => {
+    const deps = c.get("deps");
+    if (!tenant(c)) return c.json(await effectiveModels(deps, null));
+    const v = await effectiveModels(deps, await workspaceChatConfig(deps));
+    for (const x of Object.values(v.roles)) if (x.scope === "server") x.base_url = null;
+    return c.json(v);
+  })
   .get("/models/settings", async (c) => {
     const deps = c.get("deps");
     const v = await viewSettings(deps);

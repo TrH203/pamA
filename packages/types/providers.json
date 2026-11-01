@@ -59,7 +59,11 @@
       "default_base_url": "http://127.0.0.1:8000/v1",
       "needs_key": false,
       "roles": ["chat", "small", "embed"],
-      "suggested": { "chat": ["Qwen/Qwen3-14B"], "small": ["Qwen/Qwen3-8B"], "embed": ["BAAI/bge-m3"] }
+      "suggested": {
+        "chat": ["Qwen/Qwen3-14B"],
+        "small": ["Qwen/Qwen3-8B"],
+        "embed": ["BAAI/bge-m3"]
+      }
     },
     {
       "id": "openai",

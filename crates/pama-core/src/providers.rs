@@ -262,7 +262,12 @@ mod tests {
         }
         for p in &registry().presets {
             for r in p.roles.values() {
-                assert!(get(&r.provider).is_some(), "preset {} uses {}", p.id, r.provider);
+                assert!(
+                    get(&r.provider).is_some(),
+                    "preset {} uses {}",
+                    p.id,
+                    r.provider
+                );
             }
         }
         assert!(!get("anthropic").unwrap().supports("embed"));
@@ -299,6 +304,34 @@ mod tests {
         assert!(!is_local("openai", None));
     }
 
+    /// The same cases the server's test reads (registry parity, spec 005).
+    #[test]
+    fn shared_fixture_parity() {
+        let f: Value = serde_json::from_str(include_str!(
+            "../../../packages/types/fixtures/provider-locality.json"
+        ))
+        .unwrap();
+        let ids: Vec<&str> = f["ids"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        assert_eq!(super::ids(), ids);
+        for c in f["is_local"].as_array().unwrap() {
+            let (p, u) = (c["provider"].as_str().unwrap(), c["base_url"].as_str());
+            assert_eq!(is_local(p, u), c["local"].as_bool().unwrap(), "{p} {u:?}");
+        }
+        for c in f["preset_for"].as_array().unwrap() {
+            let (p, u) = (c["provider"].as_str().unwrap(), c["base_url"].as_str());
+            assert_eq!(
+                preset_for(p, u).map(|x| x.id.as_str()),
+                c["preset"].as_str(),
+                "{p} {u:?}"
+            );
+        }
+    }
+
     #[test]
     fn presets_resolve_to_stored_protocols() {
         assert_eq!(
@@ -314,8 +347,11 @@ mod tests {
             ("custom-thing".into(), Some("http://x".into()))
         );
         assert_eq!(
-            preset_for("openai-compatible", Some("https://api.deepinfra.com/v1/openai/"))
-                .map(|p| p.id.as_str()),
+            preset_for(
+                "openai-compatible",
+                Some("https://api.deepinfra.com/v1/openai/")
+            )
+            .map(|p| p.id.as_str()),
             Some("deepinfra")
         );
         assert_eq!(

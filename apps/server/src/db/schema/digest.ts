@@ -81,7 +81,7 @@ export const sessions = pgTable(
     bundleId: text("bundle_id")
       .notNull()
       .references(() => bundles.id),
-    agent: text("agent", { enum: ["claude_code", "codex"] }).notNull(),
+    agent: text("agent", { enum: ["claude_code", "codex", "cursor", "opencode"] }).notNull(),
     agentSessionId: text("agent_session_id").notNull(),
     startedAt: ts("started_at"),
     endedAt: ts("ended_at"),
@@ -97,7 +97,7 @@ export const sessions = pgTable(
   },
   (t) => [
     uniqueIndex("sessions_agent_session").on(t.workspaceId, t.agent, t.agentSessionId),
-    check("sessions_agent", sql`${t.agent} IN ('claude_code','codex')`),
+    check("sessions_agent", sql`${t.agent} IN ('claude_code','codex','cursor','opencode')`),
   ],
 );
 

@@ -161,10 +161,32 @@ pub enum Command {
         #[arg(long)]
         status: Option<String>,
     },
-    /// Per-source sync control.
+    /// What is shared and where: Publish (local mode, a one-way copy of approved digests to a
+    /// server) or the drafts sent to your home server (remote mode).
     Sync {
         #[command(subcommand)]
         action: SyncAction,
+    },
+    /// Tasks: agent sessions grouped by the work they belong to (by git branch at first).
+    Tasks {
+        #[command(subcommand)]
+        action: TasksAction,
+    },
+    /// Agent sessions pamA has read, with their digests.
+    Sessions {
+        #[command(subcommand)]
+        action: SessionsAction,
+    },
+    /// Digests by status (draft, approved, discarded, withdrawn).
+    Digests {
+        #[command(subcommand)]
+        action: DigestsAction,
+    },
+    /// Search approved digest items across all projects.
+    Search {
+        query: Vec<String>,
+        #[arg(long, default_value_t = 20)]
+        limit: u32,
     },
     /// Deprecated: use `pama connect <url> --code <code>`.
     #[command(hide = true)]
@@ -346,6 +368,7 @@ pub enum LinkAction {
 
 #[derive(Debug, Args)]
 pub struct LinkCreate {
+    /// `task:<id>`, `project:<id>`, `session:<id>` or a bare task id; repeat for more.
     #[arg(long = "source")]
     pub sources: Vec<String>,
     #[arg(long)]
@@ -368,19 +391,124 @@ pub struct LinkCreate {
 
 #[derive(Debug, Subcommand)]
 pub enum SyncAction {
+    /// Projects and tasks being shared, the server, the queue and failed items.
     Status,
+    /// Start sharing a project or task (local mode: Publish to the paired server).
     Enable(SyncTarget),
+    /// Stop sharing a project or task; its copies on the server are deleted. Lists the Ask Links
+    /// that would lose sources first and asks for --yes.
     Disable(SyncTarget),
+    /// Send everything waiting now (and, in remote mode, pull review decisions back).
+    Now,
+    /// Items the server refused or that ran out of retries, with the last error.
+    Failed,
+    /// Try failed items again.
+    Retry {
+        /// An id (or id prefix) from `pama sync failed`.
+        #[arg(required_unless_present = "all")]
+        id: Option<String>,
+        #[arg(long, conflicts_with = "id")]
+        all: bool,
+    },
+    /// Give up on a failed item.
+    Drop { id: String },
 }
 
 #[derive(Debug, Args)]
 pub struct SyncTarget {
+    /// Project name, id, repo key or directory.
     #[arg(long, conflicts_with = "bundle")]
     pub project: Option<String>,
-    #[arg(long)]
+    /// Task name or id.
+    #[arg(long = "task", visible_alias = "bundle")]
     pub bundle: Option<String>,
+    /// Server to publish to (local mode; default: the paired server).
     #[arg(long)]
     pub target: Option<String>,
+    /// Go ahead even if Ask Links lose sources.
+    #[arg(long)]
+    pub yes: bool,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum TasksAction {
+    /// Tasks per project.
+    List {
+        /// Project name or id.
+        #[arg(long)]
+        project: Option<String>,
+    },
+    /// One task with its sessions.
+    Show { task: String },
+    /// Give a task a new name.
+    Rename { task: String, name: String },
+    /// Merge tasks into the first one.
+    Merge {
+        #[arg(num_args = 2.., required = true)]
+        tasks: Vec<String>,
+        /// Name of the merged task (default: the first task's name).
+        #[arg(long)]
+        name: Option<String>,
+    },
+    /// Move sessions of a task into a new task.
+    Split {
+        task: String,
+        /// Session id (or prefix, or agent session id) to move; repeat for more.
+        #[arg(long = "session", required = true)]
+        sessions: Vec<String>,
+        #[arg(long)]
+        name: String,
+    },
+}
+
+#[derive(Debug, Args)]
+pub struct ListPage {
+    #[arg(long, default_value_t = 50)]
+    pub limit: u32,
+    #[arg(long, default_value_t = 0)]
+    pub offset: u32,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SessionsAction {
+    /// Agent sessions, newest first.
+    List {
+        #[arg(long)]
+        project: Option<String>,
+        #[arg(long)]
+        task: Option<String>,
+        #[arg(long, value_parser = ["claude_code", "codex"])]
+        agent: Option<String>,
+        #[arg(long, value_parser = ["draft", "approved", "discarded", "withdrawn", "none"])]
+        status: Option<String>,
+        #[command(flatten)]
+        page: ListPage,
+    },
+    /// One session: agent, times, branches, capture status, digest versions, links using it.
+    Show { session: String },
+    /// Delete a session and its digests (and its published copy).
+    Delete {
+        session: String,
+        #[arg(long)]
+        yes: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum DigestsAction {
+    List {
+        #[arg(long, value_parser = ["draft", "approved", "discarded", "withdrawn", "superseded"])]
+        status: Option<String>,
+        #[arg(long)]
+        project: Option<String>,
+        #[arg(long)]
+        task: Option<String>,
+        #[command(flatten)]
+        page: ListPage,
+    },
+    Show {
+        digest: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]

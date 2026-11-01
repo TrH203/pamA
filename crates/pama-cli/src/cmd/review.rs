@@ -51,6 +51,7 @@ pub fn run(
         Ok(a) => a,
         Err(e) => return Ok(api_exit(&e)),
     };
+    let approving = approve.is_some() || edit.is_some();
     let result = if let Some(id) = approve {
         api.post(&format!("/v1/digests/{id}/approve"), "review", &json!({}))
             .map(|v| {
@@ -114,10 +115,30 @@ pub fn run(
         })
     };
     match result {
-        Ok((v, text)) => {
+        Ok((mut v, mut text)) => {
             // Remote mode: a decision made here updates the device copy right away (FR-025).
             if api.remote_url().is_some() {
                 let _ = pama_core::remote::pull_changes(&ctx.store, &api, true);
+            } else if approving {
+                // Local mode: an approved digest of a published project goes out now rather
+                // than at the next background sync (spec 007).
+                if let Ok(r) = pama_core::sync::sync_once(&ctx.store) {
+                    if r.sent > 0 || r.retrying > 0 {
+                        text.push_str(&format!(
+                            "
+published {} item(s){}",
+                            r.sent,
+                            if r.retrying > 0 {
+                                format!(", {} waiting for the network", r.retrying)
+                            } else {
+                                String::new()
+                            }
+                        ));
+                    }
+                    if let Some(o) = v.as_object_mut() {
+                        o.insert("publish".into(), serde_json::to_value(&r)?);
+                    }
+                }
             }
             ctx.print(&v, || text);
             Ok(Exit::Ok)

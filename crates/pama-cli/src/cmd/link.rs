@@ -6,9 +6,10 @@ use serde_json::{json, Value};
 use super::{api_exit, Ctx};
 use crate::{Exit, LinkAction, LinkCreate};
 
-/// `bundle:<id>`, `project:<id>`, `session:<id>`, or a bare id (bundle).
+/// `task:<id>` (or `bundle:<id>`), `project:<id>`, `session:<id>`, or a bare id (task).
 fn source_ref(s: &str) -> Value {
     match s.split_once(':') {
+        Some(("task", id)) => json!({ "type": "bundle", "id": id }),
         Some((t @ ("bundle" | "project" | "session"), id)) => json!({ "type": t, "id": id }),
         _ => json!({ "type": "bundle", "id": s }),
     }

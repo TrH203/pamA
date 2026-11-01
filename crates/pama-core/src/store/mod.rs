@@ -186,7 +186,7 @@ pub enum OutboxKind {
 }
 
 impl OutboxKind {
-    fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::DigestUpsert => "digest_upsert",
             Self::SourceTombstone => "source_tombstone",
@@ -211,6 +211,26 @@ pub struct OutboxItem {
     pub payload: serde_json::Value,
     pub attempts: i64,
     pub status: String,
+}
+
+/// An outbox item the receiver refused or that ran out of retries (`pama sync failed`).
+#[derive(Debug, Clone, Serialize)]
+pub struct DeadItem {
+    pub id: String,
+    pub kind: OutboxKind,
+    pub target: String,
+    pub payload: serde_json::Value,
+    pub attempts: i64,
+    pub last_error: Option<String>,
+    pub created_at: i64,
+}
+
+/// Which items an id or id prefix names (`pama sync retry|drop <id>`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OutboxMatch {
+    None,
+    One(String),
+    Many(Vec<String>),
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
@@ -446,6 +466,22 @@ impl Store {
             )
             .optional()?
             .ok_or_else(|| StoreError::NotFound(id.into()))
+    }
+
+    /// The capture of one agent session, if this device saw it (`pama sessions show`).
+    pub fn capture_for_session(
+        &self,
+        agent: &str,
+        agent_session_id: &str,
+    ) -> Result<Option<CapturedSession>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT * FROM captured_session WHERE agent = ?1 AND agent_session_id = ?2",
+                params![agent, agent_session_id],
+                Self::row_to_capture,
+            )
+            .optional()?)
     }
 
     /// Captures in `detected` whose retry time has come, oldest first.
@@ -808,6 +844,79 @@ impl Store {
         Ok(())
     }
 
+    /// Dead items, newest first, with the receiver's last answer.
+    pub fn outbox_dead_items(&self, limit: usize) -> Result<Vec<DeadItem>> {
+        let mut st = self.conn.prepare(
+            "SELECT id, kind, target, payload, attempts, last_error, created_at FROM outbox_item
+             WHERE status = 'dead' ORDER BY created_at DESC, id DESC LIMIT ?1",
+        )?;
+        let rows = st.query_map([limit as i64], |r| {
+            Ok(DeadItem {
+                id: r.get(0)?,
+                kind: OutboxKind::parse(&r.get::<_, String>(1)?),
+                target: r.get(2)?,
+                payload: serde_json::from_str(&r.get::<_, String>(3)?)
+                    .unwrap_or(serde_json::Value::Null),
+                attempts: r.get(4)?,
+                last_error: r.get(5)?,
+                created_at: r.get(6)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// The dead items an id or a unique id prefix (at least 4 characters) names.
+    pub fn outbox_match_dead(&self, id: &str) -> Result<OutboxMatch> {
+        let id = id.trim();
+        if id.len() < 4 {
+            let exact: Option<String> = self
+                .conn
+                .query_row(
+                    "SELECT id FROM outbox_item WHERE status = 'dead' AND id = ?1",
+                    [id],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            return Ok(exact.map_or(OutboxMatch::None, OutboxMatch::One));
+        }
+        let mut st = self.conn.prepare(
+            "SELECT id FROM outbox_item WHERE status = 'dead' AND (id = ?1 OR substr(id, 1, length(?1)) = ?1)
+             ORDER BY created_at, id",
+        )?;
+        let ids: Vec<String> = st
+            .query_map([id.to_uppercase()], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        Ok(match ids.len() {
+            0 => OutboxMatch::None,
+            1 => OutboxMatch::One(ids.into_iter().next().unwrap_or_default()),
+            _ => OutboxMatch::Many(ids),
+        })
+    }
+
+    /// Give a dead item another full set of tries, due now. Returns whether it was dead.
+    pub fn outbox_revive(&self, id: &str) -> Result<bool> {
+        Ok(self.conn.execute(
+            "UPDATE outbox_item SET status = 'pending', attempts = 0, next_attempt_at = 0 WHERE id = ?1 AND status = 'dead'",
+            [id],
+        )? > 0)
+    }
+
+    /// Revive every dead item. Returns how many.
+    pub fn outbox_revive_all(&self) -> Result<usize> {
+        Ok(self.conn.execute(
+            "UPDATE outbox_item SET status = 'pending', attempts = 0, next_attempt_at = 0 WHERE status = 'dead'",
+            [],
+        )?)
+    }
+
+    /// Forget a dead item for good. Returns whether it existed.
+    pub fn outbox_drop(&self, id: &str) -> Result<bool> {
+        Ok(self.conn.execute(
+            "DELETE FROM outbox_item WHERE id = ?1 AND status = 'dead'",
+            [id],
+        )? > 0)
+    }
+
     pub fn outbox_counts(&self) -> Result<OutboxCounts> {
         let mut c = OutboxCounts::default();
         let mut st = self
@@ -936,6 +1045,28 @@ impl Store {
             "UPDATE remote_digest SET status = 'deleted', updated_at = ?3 WHERE target = ?1 AND project_key = ?2",
             params![target, project_key, now_ms()],
         )?)
+    }
+
+    /// Sync turned off for one task in remote mode: mark its copies deleted remotely.
+    pub fn mark_remote_bundle_deleted(
+        &self,
+        target: &str,
+        project_key: &str,
+        bundle_key: &str,
+    ) -> Result<usize> {
+        let mut n = 0;
+        for d in self.remote_digests(target)? {
+            if d.project_key == project_key
+                && d.digest["source"]["bundle_key"].as_str() == Some(bundle_key)
+                && d.status != "deleted"
+            {
+                n += self.conn.execute(
+                    "UPDATE remote_digest SET status = 'deleted', updated_at = ?4 WHERE target = ?1 AND agent = ?2 AND agent_session_id = ?3",
+                    params![target, d.agent, d.agent_session_id, now_ms()],
+                )?;
+            }
+        }
+        Ok(n)
     }
 
     /// Pending outbox items for one server (logout).
@@ -1198,6 +1329,54 @@ mod tests {
         let s = Store::init(conn).unwrap();
         let id = s.enqueue_capture(&cap("old"), 0).unwrap();
         assert_eq!(s.capture(&id).unwrap().error_code, None);
+    }
+
+    #[test]
+    fn dead_items_can_be_listed_retried_and_dropped() {
+        let s = Store::open_in_memory().unwrap();
+        let t = "https://pama.acme.vn";
+        let a = s
+            .outbox_push(OutboxKind::DigestUpsert, t, &serde_json::json!({"n": 1}))
+            .unwrap();
+        let b = s
+            .outbox_push(OutboxKind::SourceTombstone, t, &serde_json::json!({"n": 2}))
+            .unwrap();
+        s.outbox_dead(&a, "server returned 422: invalid").unwrap();
+        s.outbox_dead(&b, "server returned 409: stale").unwrap();
+        let dead = s.outbox_dead_items(10).unwrap();
+        assert_eq!(dead.len(), 2);
+        assert!(dead
+            .iter()
+            .any(|d| d.last_error.as_deref() == Some("server returned 422: invalid")));
+        assert_eq!(s.outbox_counts().unwrap().dead, 2);
+
+        assert_eq!(
+            s.outbox_match_dead(&a.to_lowercase()).unwrap(),
+            OutboxMatch::One(a.clone())
+        );
+        assert_eq!(s.outbox_match_dead("zz").unwrap(), OutboxMatch::None);
+        // Both ULIDs were made in the same millisecond range: a short shared prefix is ambiguous.
+        let shared: String = a
+            .chars()
+            .zip(b.chars())
+            .take_while(|(x, y)| x == y)
+            .map(|(x, _)| x)
+            .collect();
+        if shared.len() >= 4 {
+            assert!(matches!(
+                s.outbox_match_dead(&shared).unwrap(),
+                OutboxMatch::Many(_)
+            ));
+        }
+
+        assert!(s.outbox_revive(&a).unwrap());
+        assert!(!s.outbox_revive(&a).unwrap(), "only dead items");
+        assert_eq!(s.outbox_due(10).unwrap().len(), 1, "due right away");
+        assert_eq!(s.outbox_due(10).unwrap()[0].attempts, 0);
+        assert!(s.outbox_drop(&b).unwrap());
+        assert!(s.outbox_dead_items(10).unwrap().is_empty());
+        s.outbox_dead(&a, "again").unwrap();
+        assert_eq!(s.outbox_revive_all().unwrap(), 1);
     }
 
     #[test]

@@ -18,6 +18,7 @@ import { devicesRoutes } from "./routes/devices.ts";
 import { doctorRoutes } from "./routes/doctor.ts";
 import { draftRoutes } from "./routes/draft.ts";
 import { inboxRoutes } from "./routes/inbox.ts";
+import { libraryRoutes } from "./routes/library.ts";
 import { linkRoutes } from "./routes/links.ts";
 import { modelRoutes } from "./routes/models.ts";
 import { networkLogRoutes } from "./routes/network-log.ts";
@@ -67,7 +68,15 @@ export function createApp(deps: Deps) {
       db: deps.db.kind,
       version: deps.config.version,
       /** Optional features a sync client may rely on; absent on older servers. */
-      capabilities: ["branch_lists", "device_login", "drafts", "changes"],
+      capabilities: [
+        "branch_lists",
+        "device_login",
+        "drafts",
+        "changes",
+        "bundle_changes",
+        "affected_links",
+        "library",
+      ],
     }),
   );
 
@@ -89,6 +98,7 @@ export function createApp(deps: Deps) {
     topologyRoutes,
     doctorRoutes,
     activityRoutes,
+    libraryRoutes,
   ]) {
     app.route("/v1", r);
   }

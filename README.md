@@ -16,7 +16,7 @@ language, and never with anything you did not approve.
 - **Hotkey** — select a question in any chat app (Zalo, Slack, Teams, email…), press
   **Cmd/Ctrl+Shift+Space**, paste the cited draft. pamA never sends anything itself.
 - **Local first** — runs fully offline with Ollama/vLLM. Raw transcripts never leave your machine;
-  approved digests sync to your own server only for the projects you choose.
+  approved digests are published to your own server only for the projects and tasks you choose.
 
 Apache-2.0. Status: v0.1 (MVP).
 
@@ -62,6 +62,26 @@ pama model --device show                        # the model that drafts on your 
 
 Sessions are still read and redacted on your machine, and the digest is drafted there; only the
 draft goes to the server, where you review it (`pama review` or the web console).
+
+### Sharing, tasks and your library
+
+pamA groups sessions into **tasks** (by git branch at first). Where your data lives is your
+**home**: the local server (local mode) or a pamA server (remote mode). In local mode,
+**Publish** sends a one-way copy of approved digests of chosen projects or tasks to a server.
+
+```bash
+pama sync status                     # what is shared, the queue, failed items
+pama sync enable --project shop      # or --task "Refund fee"; disable lists Ask Links that lose sources
+pama sync now                        # send everything waiting now (remote: also pull review decisions)
+pama sync failed                     # items the server refused, with the reason
+pama sync retry --all                # or `pama sync retry <id>`, `pama sync drop <id>`
+pama tasks list | show | rename | merge | split   # names or ids; ambiguous names list the candidates
+pama sessions list --status draft    # pama sessions show <id>, pama sessions delete <id>
+pama digests list --status approved  # pama digests show <id>
+pama search "refund shipping fee"    # full-text + semantic search over approved digest items
+```
+
+Every command takes `--json`.
 
 Want to look around first? `pnpm --filter @pama/server demo` starts a server with sample data and
 prints a console URL and two Ask Links (offline models, nothing to install).

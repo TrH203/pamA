@@ -74,14 +74,21 @@ export const syncDeliveries = pgTable(
   (t) => [primaryKey({ columns: [t.digestId, t.target] })],
 );
 
-/** On the owner's machine: tombstones waiting to be handed to the device outbox. */
+/**
+ * On the owner's machine: tombstones and task (bundle) changes waiting to be handed to the device
+ * outbox. A task change has `source_type = 'bundle_change'`, the local bundle id as `source_key`
+ * (pending changes of one task coalesce) and the change itself in `payload` (migration 0012).
+ */
 export const syncOutgoing = pgTable(
   "sync_outgoing",
   {
     id: text("id").primaryKey(),
     target: text("target").notNull(),
-    sourceType: text("source_type", { enum: ["project", "bundle", "session"] }).notNull(),
+    sourceType: text("source_type", {
+      enum: ["project", "bundle", "session", "bundle_change"],
+    }).notNull(),
     sourceKey: text("source_key").notNull(),
+    payload: jsonb("payload"),
     createdAt: ts("created_at").notNull().defaultNow(),
     handedAt: ts("handed_at"),
   },

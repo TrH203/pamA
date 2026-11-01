@@ -22,7 +22,15 @@ describe("app", () => {
       mode: "local",
       db: "pglite",
       version: "0.1.0",
-      capabilities: ["branch_lists", "device_login", "drafts", "changes"],
+      capabilities: [
+        "branch_lists",
+        "device_login",
+        "drafts",
+        "changes",
+        "bundle_changes",
+        "affected_links",
+        "library",
+      ],
     });
   });
 

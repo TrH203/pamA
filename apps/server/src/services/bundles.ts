@@ -117,7 +117,12 @@ export async function renameBundle(db: Db, workspaceId: string, id: string, name
 }
 
 /** `pin` marks the sessions as owner-placed so re-capture does not re-file them. */
-async function moveSessions(q: Queryable, sessionIds: string[], bundleId: string, pin = true) {
+export async function moveSessions(
+  q: Queryable,
+  sessionIds: string[],
+  bundleId: string,
+  pin = true,
+) {
   await q.query(
     "UPDATE sessions SET bundle_id = $2, bundle_pinned = bundle_pinned OR $3 WHERE id = ANY($1)",
     [sessionIds, bundleId, pin],
@@ -191,6 +196,8 @@ export interface BundleSummary {
   key: string | null;
   project_id: string;
   project: string;
+  /** The project's portable key (repo key), used by devices for per-task sync (spec 007). */
+  project_key: string;
   /** Distinct branches over the member sessions, earliest first-seen first. */
   branches: string[];
   session_count: number;
@@ -215,8 +222,9 @@ export async function listBundles(db: Db, workspaceId: string): Promise<BundleSu
     key: string | null;
     project_id: string;
     project: string;
+    project_key: string;
   }>(
-    `SELECT b.id, b.name, b.name_source, b.key, b.project_id, p.name AS project
+    `SELECT b.id, b.name, b.name_source, b.key, b.project_id, p.name AS project, p.repo_key AS project_key
      FROM bundles b JOIN projects p ON p.id = b.project_id
      WHERE b.workspace_id = $1 ORDER BY b.created_at, b.id`,
     [workspaceId],

@@ -110,14 +110,6 @@ export const publicRoutes = new Hono<Env>()
       : null;
     await checkAskRate(deps.db, link.slug, visitor.id, link.rateLimitPerHour);
     const history = conv ? await priorTurns(deps.db, conv.id) : [];
-    const conversationId =
-      conv?.id ??
-      (await createConversation(deps.db, {
-        workspaceId: link.workspaceId,
-        origin: "link",
-        linkSlug: link.slug,
-        visitorId: visitor.id,
-      }));
     const [ws] = await deps.db.query<{ t: number }>(
       "SELECT answer_threshold::float AS t FROM workspaces WHERE id = $1",
       [link.workspaceId],
@@ -136,6 +128,15 @@ export const publicRoutes = new Hono<Env>()
       threshold: ws?.t ?? 0.7,
       history,
     });
+    // Created only once there is an answer to record, so a failed ask leaves no empty row.
+    const conversationId =
+      conv?.id ??
+      (await createConversation(deps.db, {
+        workspaceId: link.workspaceId,
+        origin: "link",
+        linkSlug: link.slug,
+        visitorId: visitor.id,
+      }));
     const askId = await recordAsk(deps, {
       origin: "link",
       conversationId,
@@ -191,6 +192,20 @@ export const publicRoutes = new Hono<Env>()
     const { db } = c.get("deps");
     const link = await resolveLink(db, c.req.param("slug"));
     const visitor = await requireAccess(c, link);
+    // "New chat" reuses this visitor's newest conversation that has no question yet, so repeated
+    // clicks (or a script) cannot pile up empty rows; it shares the link's question budget.
+    const [empty] = await db.query<{ id: string }>(
+      `SELECT c.id FROM conversations c
+       WHERE c.link_slug = $1 AND c.visitor_id = $2 AND c.deleted_at IS NULL
+         AND NOT EXISTS (SELECT 1 FROM asks a WHERE a.conversation_id = c.id)
+       ORDER BY c.created_at DESC, c.id DESC LIMIT 1`,
+      [link.slug, visitor.id],
+    );
+    if (empty) {
+      await db.query("UPDATE conversations SET last_at = now() WHERE id = $1", [empty.id]);
+      return c.json({ id: empty.id, title: "", turns: [] }, 201);
+    }
+    await checkAskRate(db, link.slug, visitor.id, link.rateLimitPerHour);
     const id = await createConversation(db, {
       workspaceId: link.workspaceId,
       origin: "link",

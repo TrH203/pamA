@@ -153,6 +153,65 @@ describeEachDb("conversations", (f) => {
     expect(none.items).toHaveLength(0);
   });
 
+  it("asking for a code for another email drops the old verification (no borrowed resume)", async () => {
+    const l = await createLink(t.deps, {
+      title: "Refunds",
+      sources: [{ type: "bundle", id: s.bundleRefund }],
+      access_mode: "email_otp",
+      suggested_questions: ["?"],
+    });
+    const codeOf = () => /code is (\d{6})/.exec(t.mails.at(-1)?.text ?? "")?.[1];
+    const victim = visitor(t, l.slug, "203.0.113.20");
+    await victim.call("/api/access", { email: "victim@example.com" });
+    await victim.call("/api/access", { email: "victim@example.com", otp: codeOf() });
+    const r = (await (
+      await victim.call("/api/ask", { question: "Do refunds include the shipping fee?" })
+    ).json()) as AskRes;
+    expect(r.conversation_id).toBeTruthy();
+
+    const attacker = visitor(t, l.slug, "203.0.113.21");
+    await attacker.call("/api/access", { email: "attacker@example.com" });
+    expect(
+      (await attacker.call("/api/access", { email: "attacker@example.com", otp: codeOf() })).status,
+    ).toBe(204);
+    // Ask for the victim's code but never enter it.
+    await attacker.call("/api/access", { email: "victim@example.com" });
+    const list = (await (await attacker.call("/api/conversations")).json()) as {
+      items: unknown[];
+    };
+    expect(list.items).toHaveLength(0);
+    expect((await attacker.call(`/api/conversations/${r.conversation_id}`)).status).toBe(404);
+    expect(
+      (
+        await attacker.call("/api/ask", {
+          question: "Why?",
+          conversation_id: r.conversation_id,
+        })
+      ).status,
+    ).toBe(404);
+    expect(
+      (await attacker.call(`/api/conversations/${r.conversation_id}`, undefined, "DELETE")).status,
+    ).toBe(404);
+  });
+
+  it("new chat reuses an empty conversation; a failed ask leaves no conversation", async () => {
+    const l = await openLink();
+    const v = visitor(t, l.slug);
+    const a = (await (await v.call("/api/conversations", {})).json()) as { id: string };
+    const b = (await (await v.call("/api/conversations", {})).json()) as { id: string };
+    expect(b.id).toBe(a.id);
+    const [n] = await t.db.query<{ n: number }>("SELECT count(*)::int AS n FROM conversations");
+    expect(n?.n).toBe(1);
+
+    const failing = visitor(t, l.slug, "203.0.113.30");
+    t.fake.fail = true;
+    const res = await failing.call("/api/ask", { question: "Do refunds include the shipping fee?" });
+    t.fake.fail = false;
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    const [m] = await t.db.query<{ n: number }>("SELECT count(*)::int AS n FROM conversations");
+    expect(m?.n).toBe(1);
+  });
+
   it("owner: list, filter needs_reply, detail with citations, reply, archive, export, delete", async () => {
     const l = await openLink();
     const v = visitor(t, l.slug);

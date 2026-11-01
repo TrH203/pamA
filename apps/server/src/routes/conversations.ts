@@ -20,8 +20,12 @@ import { createLink, LinkInputSchema, SourceRefSchema } from "../services/links.
 import { draftForOwner } from "./draft.ts";
 import { body } from "./util.ts";
 
-const csvCell = (v: unknown) => {
-  const s =
+/**
+ * One CSV cell. Visitor text that starts like a formula (=, +, -, @, tab, CR) gets a leading `'`
+ * so spreadsheets show it as text instead of running it (OWASP CSV injection).
+ */
+export const csvCell = (v: unknown) => {
+  let s =
     v === null || v === undefined
       ? ""
       : typeof v === "string"
@@ -29,7 +33,8 @@ const csvCell = (v: unknown) => {
         : v instanceof Date
           ? v.toISOString()
           : JSON.stringify(v);
-  return /[",\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  return /[",\r\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
 };
 
 const FilterSchema = z.object({

@@ -62,7 +62,7 @@ test("wrong PIN five times locks access", async ({ browser }) => {
   for (let i = 0; i < 5; i++) {
     await page.getByLabel("Enter the PIN").fill("0000");
     await page.getByRole("button", { name: "Continue" }).click();
-    await expect(page.locator("p.text-red-700")).toBeVisible();
+    await expect(page.getByRole("alert")).toBeVisible();
   }
   await page.getByLabel("Enter the PIN").fill(d.pin);
   await page.getByRole("button", { name: "Continue" }).click();

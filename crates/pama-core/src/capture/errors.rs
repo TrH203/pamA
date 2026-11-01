@@ -277,6 +277,38 @@ pub fn from_draft(retryable: bool, message: &str) -> CodedError {
     e
 }
 
+/// De-duplicates owner notifications: at most one per error code per `window_ms` (the desktop
+/// app uses one hour).
+#[derive(Debug, Default)]
+pub struct NotifyGate {
+    last: std::collections::HashMap<ErrorCode, i64>,
+}
+
+impl NotifyGate {
+    pub const HOUR_MS: i64 = 3_600_000;
+
+    /// True when `code` should be notified at `now_ms`; records it if so.
+    pub fn allow(&mut self, code: ErrorCode, now_ms: i64, window_ms: i64) -> bool {
+        match self.last.get(&code) {
+            Some(t) if now_ms - t < window_ms => false,
+            _ => {
+                self.last.insert(code, now_ms);
+                true
+            }
+        }
+    }
+}
+
+/// Short notification text for a configuration error.
+pub fn notification_text(code: ErrorCode) -> &'static str {
+    match code {
+        ErrorCode::ProviderAuth => "A model rejected its API key; digests are paused.",
+        ErrorCode::NotLoggedIn => "This machine is not connected to its pamA server.",
+        ErrorCode::ProjectNotEnabled => "Capture is off for a project you worked in.",
+        _ => "A digest failed and needs your attention.",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -384,5 +416,16 @@ mod tests {
         assert_eq!(ErrorCode::TranscriptTooLarge.policy(), Policy::GiveUp);
         assert_eq!(ErrorCode::EmptySession.policy(), Policy::Skip);
         assert!(!ErrorCode::RateLimited.is_config());
+    }
+
+    #[test]
+    fn notifications_are_deduplicated_per_code_per_hour() {
+        let mut g = NotifyGate::default();
+        let h = NotifyGate::HOUR_MS;
+        assert!(g.allow(ErrorCode::ProviderAuth, 0, h));
+        assert!(!g.allow(ErrorCode::ProviderAuth, h - 1, h));
+        assert!(g.allow(ErrorCode::NotLoggedIn, 10, h));
+        assert!(g.allow(ErrorCode::ProviderAuth, h, h));
+        assert!(!g.allow(ErrorCode::ProviderAuth, h + 5, h));
     }
 }

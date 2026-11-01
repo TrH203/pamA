@@ -20,6 +20,17 @@ fn s<'a>(v: &'a Value, k: &str) -> &'a str {
     v[k].as_str().unwrap_or("-")
 }
 
+/// The distinct items, first occurrence kept, in order (`Vec::dedup` only drops neighbours).
+fn unique<T: PartialEq + Clone>(items: impl IntoIterator<Item = T>) -> Vec<T> {
+    let mut out: Vec<T> = Vec::new();
+    for x in items {
+        if !out.contains(&x) {
+            out.push(x);
+        }
+    }
+    out
+}
+
 fn strings(v: &Value) -> Vec<String> {
     v.as_array()
         .map(|a| {
@@ -159,10 +170,9 @@ pub fn tasks(ctx: &Ctx, action: TasksAction) -> anyhow::Result<Exit> {
                     .iter()
                     .map(|q| find_task(&all, q))
                     .collect::<Result<Vec<_>, _>>()?;
-                let ids: Vec<&str> = picked.iter().map(|t| s(t, "id")).collect();
-                let mut unique = ids.clone();
-                unique.dedup();
-                if unique.len() < 2 {
+                // A task named twice (by name and by id, say) is merged once.
+                let ids = unique(picked.iter().map(|t| s(t, "id")));
+                if ids.len() < 2 {
                     eprintln!("error: give at least two different tasks");
                     return Err(Exit::User);
                 }
@@ -208,12 +218,12 @@ pub fn tasks(ctx: &Ctx, action: TasksAction) -> anyhow::Result<Exit> {
                         ]
                     })
                     .collect();
-                let mut ids = Vec::new();
+                let mut picked = Vec::new();
                 for q in &sessions {
                     let i = resolve_or_exit("session in this task", q, &cands)?;
-                    ids.push(s(&members[i / 2], "id").to_string());
+                    picked.push(s(&members[i / 2], "id").to_string());
                 }
-                ids.dedup();
+                let ids = unique(picked);
                 let r = api
                     .post(
                         &format!("/v1/bundles/{}/split", s(&t, "id")),
@@ -583,6 +593,17 @@ pub fn search(ctx: &Ctx, query: &str, limit: u32) -> anyhow::Result<Exit> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unique_drops_repeats_anywhere_and_keeps_order() {
+        // `Vec::dedup` would keep all three: the repeat is not next to the first.
+        assert_eq!(unique(["01A", "01B", "01A"]), vec!["01A", "01B"]);
+        assert_eq!(unique(["01A", "01A"]), vec!["01A"]);
+        assert_eq!(
+            unique(vec!["s2".to_string(), "s1".into(), "s2".into()]),
+            vec!["s2", "s1"]
+        );
+    }
 
     #[test]
     fn query_strings_skip_missing_values_and_escape() {

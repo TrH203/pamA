@@ -180,6 +180,36 @@ fn failed_items_are_listed_retried_and_dropped() {
 }
 
 #[test]
+fn the_owners_task_key_goes_only_to_servers_that_read_it() {
+    let store = Store::open_in_memory().unwrap();
+    let digest = json!({
+        "digest": { "source": { "agent": "claude_code", "agent_session_id": "s2",
+                                "project_key": "github.com/acme/shop", "bundle_key": "feat/a" } },
+        "approved_at": "2026-10-20T10:00:00Z", "sync_enabled_at": "2026-10-20T09:00:00Z",
+        "bundle_name": "Refund worker", "bundle_name_source": "owner", "bundle_ref": "id:01X",
+    });
+    let body_sent = |caps: &'static [&'static str]| {
+        let (url, seen) = mock_server(caps);
+        logged_in(&store, &url);
+        store
+            .outbox_push(OutboxKind::DigestUpsert, &url, &digest)
+            .unwrap();
+        assert_eq!(
+            deliver_due(&store, &HttpRemote::new(&store)).unwrap().sent,
+            1
+        );
+        let seen = seen.lock().unwrap();
+        let (_, body) = seen.iter().find(|(p, _)| p == "/v1/sync/digests").unwrap();
+        serde_json::from_str::<Value>(body).unwrap()
+    };
+    assert_eq!(
+        body_sent(&["branch_lists", "bundle_refs"])["bundle_ref"],
+        "id:01X"
+    );
+    assert!(body_sent(&["branch_lists"]).get("bundle_ref").is_none());
+}
+
+#[test]
 fn task_changes_go_only_to_servers_that_accept_them() {
     let store = Store::open_in_memory().unwrap();
     let change = json!({

@@ -214,19 +214,70 @@ fn confirm_links(ctx: &Ctx, target: &str, links: &[Value], yes: bool, what: &str
     false
 }
 
-/// Ask the target about affected links; `None` when it cannot tell (old or unreachable server).
-fn affected(ctx: &Ctx, target: &str, source_type: &str, key: &str) -> Vec<Value> {
-    match HttpRemote::new(&ctx.store).affected_links(target, source_type, key) {
-        Ok(Some(links)) => links,
+/// Ask the target about affected links. An older server cannot tell (a note, no links); a
+/// failed check is an error the caller must not treat as "no links" (see [`check_failed`]).
+fn affected(ctx: &Ctx, target: &str, source_type: &str, key: &str) -> Result<Vec<Value>, String> {
+    affected_with(target, || {
+        HttpRemote::new(&ctx.store).affected_links(target, source_type, key)
+    })
+}
+
+fn affected_with(
+    target: &str,
+    ask: impl FnOnce() -> Result<Option<Vec<Value>>, String>,
+) -> Result<Vec<Value>, String> {
+    match ask() {
+        Ok(Some(links)) => Ok(links),
         Ok(None) => {
             eprintln!("note: {target} cannot list affected Ask Links (older server)");
-            Vec::new()
+            Ok(Vec::new())
         }
-        Err(e) => {
-            eprintln!("note: could not check Ask Links on {target}: {e}");
-            Vec::new()
+        Err(e) => Err(e),
+    }
+}
+
+/// The Ask Link check failed: fail closed. Without `--yes` nothing is turned off; with it the
+/// owner accepted the risk, so go on after a warning. Returns whether to go on.
+fn check_failed(ctx: &Ctx, target: &str, error: &str, yes: bool, what: &str) -> bool {
+    if yes {
+        eprintln!("warning: could not check Ask Links on {target}: {error}; going on (--yes)");
+        return true;
+    }
+    if ctx.json {
+        ctx.print(
+            &json!({ "confirmed": false, "source": what, "target": target, "error": error }),
+            String::new,
+        );
+    } else {
+        eprintln!(
+            "error: could not check which Ask Links on {target} would lose sources if sync is turned off for {what}: {error}"
+        );
+        eprintln!("Fix the connection and try again, or run again with --yes to go ahead anyway.");
+    }
+    false
+}
+
+/// Affected links for each `(source_type, key)` on `target`, then the confirmation. `None`:
+/// stop (the owner was told why).
+fn links_or_stop(
+    ctx: &Ctx,
+    target: &str,
+    sources: &[(&str, &str)],
+    yes: bool,
+    what: &str,
+) -> Option<Vec<Value>> {
+    let mut links = Vec::new();
+    for (kind, key) in sources {
+        match affected(ctx, target, kind, key) {
+            Ok(l) => links.extend(l),
+            Err(e) => {
+                if !check_failed(ctx, target, &e, yes, what) {
+                    return None;
+                }
+            }
         }
     }
+    confirm_links(ctx, target, &links, yes, what).then_some(links)
 }
 
 fn set(ctx: &Ctx, api: &Api, t: &SyncTarget, enabled: bool) -> anyhow::Result<Exit> {
@@ -257,10 +308,18 @@ fn set(ctx: &Ctx, api: &Api, t: &SyncTarget, enabled: bool) -> anyhow::Result<Ex
     if !enabled {
         // Where its published copy lives, and the Ask Links there that would lose sources.
         let path = format!("/v1/sync/source?type={kind}&id={id}");
-        if let Ok(src) = api.get(&path, "sync.source") {
-            if let (Some(to), Some(k)) = (src["target"].as_str(), src["source_key"].as_str()) {
-                links = affected(ctx, to, kind, k);
-                if !confirm_links(ctx, to, &links, t.yes, &what) {
+        match api.get(&path, "sync.source") {
+            Ok(src) => {
+                if let (Some(to), Some(k)) = (src["target"].as_str(), src["source_key"].as_str()) {
+                    match links_or_stop(ctx, to, &[(kind, k)], t.yes, &what) {
+                        Some(l) => links = l,
+                        None => return Ok(Exit::User),
+                    }
+                }
+            }
+            Err(e) => {
+                let target = target.as_deref().unwrap_or("the publish target");
+                if !check_failed(ctx, target, &e.to_string(), t.yes, &what) {
                     return Ok(Exit::User);
                 }
             }
@@ -337,10 +396,9 @@ fn remote_task(ctx: &Ctx, api: &Api, t: &SyncTarget, enabled: bool) -> anyhow::R
         return Ok(Exit::Ok);
     }
     let source_key = remote::task_key(project_key, key);
-    let links = affected(ctx, &server, "bundle", &source_key);
-    if !confirm_links(ctx, &server, &links, t.yes, &what) {
+    let Some(links) = links_or_stop(ctx, &server, &[("bundle", &source_key)], t.yes, &what) else {
         return Ok(Exit::User);
-    }
+    };
     remote::set_bundle_sync(&ctx.store, project_key, key, Some(false))?;
     ctx.store
         .mark_remote_bundle_deleted(&server, project_key, key)?;
@@ -424,13 +482,11 @@ fn run_remote(ctx: &Ctx, api: &Api, action: SyncAction) -> anyhow::Result<Exit> 
         }
         SyncAction::Disable(t) => {
             let keys = project_keys(t.project.as_deref().unwrap_or_default());
-            let mut links = Vec::new();
-            for k in &keys {
-                links.extend(affected(ctx, &server, "project", k));
-            }
-            if !confirm_links(ctx, &server, &links, t.yes, &format!("project {}", keys[0])) {
+            let sources: Vec<(&str, &str)> = keys.iter().map(|k| ("project", k.as_str())).collect();
+            let what = format!("project {}", keys[0]);
+            let Some(links) = links_or_stop(ctx, &server, &sources, t.yes, &what) else {
                 return Ok(Exit::User);
-            }
+            };
             for k in &keys {
                 remote::set_project_sync(&ctx.store, k, false)?;
                 ctx.store.mark_remote_project_deleted(&server, k)?;
@@ -660,5 +716,39 @@ mod tests {
         );
         assert_eq!(nothing_shared(None, 0), None);
         assert_eq!(nothing_shared(Some("https://x"), 1), None);
+    }
+
+    #[test]
+    fn a_failed_ask_link_check_is_an_error_not_an_empty_list() {
+        assert_eq!(
+            affected_with("https://t", || Err("connection refused".into())),
+            Err("connection refused".to_string())
+        );
+        assert_eq!(affected_with("https://t", || Ok(None)), Ok(Vec::new()));
+        let links = vec![json!({ "slug": "abcdefgh" })];
+        assert_eq!(
+            affected_with("https://t", || Ok(Some(links.clone()))),
+            Ok(links)
+        );
+    }
+
+    #[test]
+    fn turning_sync_off_fails_closed_when_the_check_fails() {
+        let ctx = Ctx {
+            json: true,
+            store: pama_core::store::Store::open_in_memory().unwrap(),
+            server: None,
+        };
+        // Nothing listens on port 1: the check cannot be made.
+        let target = "http://127.0.0.1:1";
+        let src = [("project", "github.com/acme/shop")];
+        assert_eq!(
+            links_or_stop(&ctx, target, &src, false, "project shop"),
+            None
+        );
+        assert_eq!(
+            links_or_stop(&ctx, target, &src, true, "project shop"),
+            Some(Vec::new())
+        );
     }
 }

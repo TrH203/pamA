@@ -31,6 +31,15 @@
 
 - [x] T030 README, `docs/self-host.md`, `docs/deploy-cloud.md` describe Publish, tasks and the new commands
 
+## Review fixes
+
+- [x] T035 Digests carry the owner's task key (`bundle_ref`, gated on `bundle_refs`): the target
+  names and files the task the owner sees after a split or merge
+- [x] T036 Merge drops pending changes of merged-away tasks and sends the merged state last;
+  merging a published task into an unpublished one queues its tombstone; merge dedupes ids
+- [x] T037 Split keeps `sync_enabled_at`; turning publish off fails closed when the Ask Link
+  check fails (needs `--yes`); `pama tasks merge|split` dedupe repeated ids
+
 ## Later (not in this slice)
 
 - [ ] T040 Web Sync page ("Sync now", failed items) and Library page

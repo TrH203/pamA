@@ -29,6 +29,7 @@ describe("app", () => {
         "changes",
         "bundle_changes",
         "affected_links",
+        "bundle_refs",
         "library",
       ],
     });

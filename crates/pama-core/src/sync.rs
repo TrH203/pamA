@@ -145,7 +145,7 @@ pub fn collect(store: &Store, local: &LocalApi) -> Result<usize, ApiError> {
     let mut acked_changes = Vec::new();
     for d in p["digests"].as_array().into_iter().flatten() {
         let target = d["target"].as_str().unwrap_or_default();
-        let payload = json!({
+        let mut payload = json!({
             "digest": d["digest"],
             "approved_at": d["approved_at"],
             "sync_enabled_at": d["sync_enabled_at"],
@@ -153,6 +153,10 @@ pub fn collect(store: &Store, local: &LocalApi) -> Result<usize, ApiError> {
             "bundle_name": d["bundle_name"],
             "bundle_name_source": d["bundle_name_source"],
         });
+        // The owner's task (differs from the branch after a split or merge, spec 007).
+        if let Some(r) = d["bundle_ref"].as_str() {
+            payload["bundle_ref"] = json!(r);
+        }
         if store
             .outbox_push(OutboxKind::DigestUpsert, target, &payload)
             .is_ok()
@@ -218,10 +222,6 @@ impl<'s> HttpRemote<'s> {
         let health: Value = resp.json().unwrap_or(Value::Null);
         self.capabilities.borrow_mut().insert(key, health.clone());
         Ok(health)
-    }
-
-    fn supports_branch_lists(&self, target: &str) -> Result<bool, DeliverError> {
-        Ok(supports_branch_lists(&self.health(target)?))
     }
 
     /// Ask `target` which of its Ask Links would lose sources if `source_type`/`source_key` were
@@ -296,7 +296,14 @@ impl Remote for HttpRemote<'_> {
             }
             // Servers that take drafts all read branch lists.
             if !draft {
-                prepare_digest_body(&mut prepared, self.supports_branch_lists(target)?);
+                let health = self.health(target)?;
+                prepare_digest_body(&mut prepared, supports_branch_lists(&health));
+                // Older servers validate strictly and would reject the owner's task key.
+                if !has_capability(&health, "bundle_refs") {
+                    if let Some(o) = prepared.as_object_mut() {
+                        o.remove("bundle_ref");
+                    }
+                }
             }
             &prepared
         } else {

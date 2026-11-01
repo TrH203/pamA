@@ -29,6 +29,12 @@ export const SyncDigestSchema = z.strictObject({
   project_name: z.string().min(1).max(200).optional(),
   bundle_name: z.string().min(1).max(200).optional(),
   bundle_name_source: z.enum(["key", "suggested", "owner"]).optional(),
+  /**
+   * The owner's portable task key (`bundleRef`): where the session is filed on the owner's
+   * machine, which differs from `source.bundle_key` after a split or merge. Sent to servers that
+   * advertise `bundle_refs`; older devices leave it out and the branch key is used.
+   */
+  bundle_ref: z.string().min(1).max(300).optional(),
 });
 
 /** A draft from a thin-client device (spec 004): reviewed on the server, auto-approve applies. */
@@ -97,7 +103,9 @@ export async function ingestDigest(
   if (!parsed.success) throw new HttpError(422, "invalid_digest", parsed.error.message);
   const raw = parsed.data;
   const src = raw.source;
-  const bundle = src.bundle_key ?? "default";
+  // The owner's task wins over the filing branch: after a split or merge they differ, and names
+  // and placement must follow the task the owner sees (spec 007).
+  const bundle = body.bundle_ref ?? src.bundle_key ?? "default";
 
   // A tombstone newer than the moment sync was enabled means this delivery is stale.
   const [stale] = await deps.db.query<{ n: number }>(
@@ -498,6 +506,8 @@ export async function redeliverBundleName(q: Queryable, bundleId: string) {
 export async function pending(deps: Pick<Deps, "db" | "rules" | "workspaceId">) {
   const digests = await deps.db.query<{
     digest_id: string;
+    bundle_id: string;
+    bundle_key: string | null;
     target: string;
     digest: unknown;
     approved_at: Date;
@@ -506,7 +516,7 @@ export async function pending(deps: Pick<Deps, "db" | "rules" | "workspaceId">) 
     bundle_name: string;
     bundle_name_source: string;
   }>(
-    `SELECT d.id AS digest_id, p.sync_target AS target, d.content AS digest, d.approved_at,
+    `SELECT d.id AS digest_id, b.id AS bundle_id, b.key AS bundle_key, p.sync_target AS target, d.content AS digest, d.approved_at,
             CASE WHEN b.sync_enabled IS NOT NULL THEN b.sync_enabled_at ELSE p.sync_enabled_at END AS sync_enabled_at,
             p.name AS project_name, b.name AS bundle_name, b.name_source AS bundle_name_source
      FROM digests d JOIN sessions s ON s.id = d.session_id
@@ -532,7 +542,11 @@ export async function pending(deps: Pick<Deps, "db" | "rules" | "workspaceId">) 
   // bundle's replica key is the masked key from its digests, so the tombstone key is masked too.
   const mask = (text: string) => deps.rules.redact(text).text;
   return {
-    digests: digests.map((d) => ({ ...d, bundle_name: mask(d.bundle_name) })),
+    digests: digests.map(({ bundle_id, bundle_key, ...d }) => ({
+      ...d,
+      bundle_name: mask(d.bundle_name),
+      bundle_ref: mask(bundleRef({ id: bundle_id, key: bundle_key })),
+    })),
     tombstones: tombstones.map((t) =>
       t.source_type === "bundle" ? { ...t, source_key: mask(t.source_key) } : t,
     ),
@@ -548,8 +562,9 @@ type BundleChangeBody = Omit<z.infer<typeof SyncBundleChangeSchema>, "outbox_id"
 
 /**
  * Owner's machine: queue the resulting state of a renamed, split or merged task for its publish
- * target (spec 007). Pending changes of one task coalesce into the latest state. Only sessions
- * with an approved digest are listed: nothing else can be on the target.
+ * target (spec 007). Pending changes of one task coalesce into the latest state, which is sent
+ * after every change queued before it. Only sessions with an approved digest are listed: nothing
+ * else can be on the target.
  */
 export async function queueBundleChange(q: Queryable, workspaceId: string, bundleId: string) {
   const [b] = await q.query<{
@@ -582,7 +597,8 @@ export async function queueBundleChange(q: Queryable, workspaceId: string, bundl
   };
   await q.query(
     `INSERT INTO sync_outgoing (id, target, source_type, source_key, payload) VALUES ($1, $2, 'bundle_change', $3, $4)
-     ON CONFLICT (target, source_type, source_key) WHERE handed_at IS NULL DO UPDATE SET payload = excluded.payload`,
+     ON CONFLICT (target, source_type, source_key) WHERE handed_at IS NULL
+     DO UPDATE SET payload = excluded.payload, created_at = now()`,
     [ulid(), b.target, b.id, JSON.stringify(payload)],
   );
   return true;

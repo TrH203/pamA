@@ -103,6 +103,64 @@ describeEachDb("receiving server: task changes", (f) => {
     expect((await tasks()).find((x) => x.key === "id:01LOCALSPLIT")?.sids).toEqual(["s2"]);
   });
 
+  it("a digest names and files the owner's task, not its branch's, after a split", async () => {
+    await send(
+      "bundles",
+      change("ob-c7", {
+        bundle_ref: "id:01LOCALSPLIT",
+        name: "Refund follow-up",
+        sessions: [{ agent: "claude_code", agent_session_id: "s2" }],
+      }),
+    );
+    // The owner renames the split task: the redelivered digest still has its branch as bundle_key.
+    const r = await send("digests", {
+      outbox_id: "ob-s2-renamed",
+      digest: digestFor("s2", "feat/a"),
+      approved_at: "2026-10-20T11:00:00Z",
+      sync_enabled_at: new Date().toISOString(),
+      bundle_name: "Refund worker",
+      bundle_name_source: "owner",
+      bundle_ref: "id:01LOCALSPLIT",
+    });
+    expect(r.status).toBe(200);
+    // A session approved later in the split task lands there too.
+    await send("digests", {
+      outbox_id: "ob-s4",
+      digest: digestFor("s4", "feat/a"),
+      approved_at: "2026-10-20T11:00:00Z",
+      sync_enabled_at: new Date().toISOString(),
+      bundle_name: "Refund worker",
+      bundle_name_source: "owner",
+      bundle_ref: "id:01LOCALSPLIT",
+    });
+    expect(await tasks()).toEqual([
+      { key: "feat/a", name: "feat/a", name_source: "key", sids: ["s1"] },
+      { key: "feat/b", name: "feat/b", name_source: "key", sids: ["s3"] },
+      {
+        key: "id:01LOCALSPLIT",
+        name: "Refund worker",
+        name_source: "owner",
+        sids: ["s2", "s4"],
+      },
+    ]);
+  });
+
+  it("refuses a delivery for a task turned off after it was sent (by the owner's task key)", async () => {
+    await send("tombstones", {
+      outbox_id: "ob-t1",
+      source_type: "bundle",
+      source_key: "github.com/acme/shop#id:01LOCALSPLIT",
+    });
+    const r = await send("digests", {
+      outbox_id: "ob-s5",
+      digest: digestFor("s5", "feat/a"),
+      approved_at: "2026-10-20T11:00:00Z",
+      sync_enabled_at: "2026-10-20T09:00:00Z",
+      bundle_ref: "id:01LOCALSPLIT",
+    });
+    expect(r.status).toBe(409);
+  });
+
   it("merge and rename: sessions join the kept task, empty tasks go, replays are no-ops", async () => {
     const merge = change("ob-c2", {
       bundle_ref: "feat/a",
@@ -262,6 +320,135 @@ describe("owner's machine: task changes for publish targets", () => {
       json: { digests: [], tombstones: [], bundle_changes: p.bundle_changes.map((c) => c.id) },
     });
     expect((await pending()).bundle_changes).toEqual([]);
+  });
+
+  type FullPending = Pending & {
+    digests: { digest_id: string; bundle_ref: string; sync_enabled_at: string | null }[];
+    tombstones: { id: string; source_type: string; source_key: string }[];
+  };
+  const full = async () => (await (await t.req("/v1/sync/pending")).json()) as FullPending;
+  const publish = () =>
+    t.req(`/v1/projects/${s.projectA}`, {
+      method: "PATCH",
+      json: { sync_enabled: true, sync_target: "https://pama.acme.vn" },
+    });
+  const digestOf = async (session: string) =>
+    (
+      await t.db.query<{ id: string }>("SELECT id FROM digests WHERE session_id = $1", [
+        s.sessions[session],
+      ])
+    )[0]?.id;
+
+  it("digests carry the owner's task key, so a split task's digests reach that task", async () => {
+    await publish();
+    const split = (await (
+      await t.req(`/v1/bundles/${s.bundleRefund}/split`, {
+        json: { session_ids: [s.sessions["refund-2"]], new_name: "Refund worker" },
+      })
+    ).json()) as { id: string };
+    const p = await full();
+    const byId = new Map(p.digests.map((d) => [d.digest_id, d.bundle_ref]));
+    expect(byId.get((await digestOf("refund-2")) as string)).toBe(`id:${split.id}`);
+    expect(byId.get((await digestOf("refund-1")) as string)).toBe("feat/refund-shipping");
+  });
+
+  it("a split task keeps the moment publishing was turned on", async () => {
+    await publish();
+    await t.req(`/v1/projects/${s.projectA}`, { method: "PATCH", json: { sync_enabled: false } });
+    // Published as a task on its own: the moment is the task's.
+    await t.req(`/v1/bundles/${s.bundleRefund}`, {
+      method: "PATCH",
+      json: { sync_enabled: true, sync_target: "https://pama.acme.vn" },
+    });
+    const split = (await (
+      await t.req(`/v1/bundles/${s.bundleRefund}/split`, {
+        json: { session_ids: [s.sessions["refund-2"]], new_name: "Refund worker" },
+      })
+    ).json()) as { id: string };
+    const rows = await t.db.query<{ id: string; sync_enabled: boolean; at: string | null }>(
+      "SELECT id, sync_enabled, sync_enabled_at::text AS at FROM bundles WHERE id = ANY($1)",
+      [[s.bundleRefund, split.id]],
+    );
+    const at = (id: string) => rows.find((r) => r.id === id);
+    expect(at(split.id)?.sync_enabled).toBe(true);
+    expect(at(split.id)?.at).not.toBeNull();
+    expect(at(split.id)?.at).toBe(at(s.bundleRefund)?.at);
+    const id = await digestOf("refund-2");
+    const d = (await full()).digests.find((x) => x.digest_id === id);
+    expect(d?.sync_enabled_at).not.toBeNull();
+  });
+
+  it("a merge drops pending changes of merged-away tasks and is sent after them", async () => {
+    await publish();
+    // The kept task's change is queued first, then one for the task merged into it.
+    await t.req(`/v1/bundles/${s.bundleRefund}`, { method: "PATCH", json: { name: "Refunds" } });
+    await t.req(`/v1/bundles/${s.bundleCheckout}`, { method: "PATCH", json: { name: "Checkout" } });
+    await t.req("/v1/bundles/merge", {
+      json: { bundle_ids: [s.bundleRefund, s.bundleCheckout], name: "Shop work" },
+    });
+    const changes = (await full()).bundle_changes;
+    expect(changes.map((c) => c.change.name)).toEqual(["Shop work"]);
+    expect(changes[0]?.change.sessions.map((x) => x.agent_session_id).sort()).toEqual([
+      "checkout-1",
+      "refund-1",
+      "refund-2",
+    ]);
+  });
+
+  it("merging a published task into an unpublished one deletes its published copy", async () => {
+    await publish();
+    const deliver = async () => {
+      const p = await full();
+      await t.req("/v1/sync/ack", {
+        json: {
+          digests: p.digests.map((d) => ({
+            digest_id: d.digest_id,
+            target: "https://pama.acme.vn",
+          })),
+          tombstones: p.tombstones.map((x) => x.id),
+          bundle_changes: p.bundle_changes.map((c) => c.id),
+        },
+      });
+    };
+    await deliver();
+    // The refund task is kept back; the checkout task is published.
+    await t.req(`/v1/bundles/${s.bundleRefund}`, {
+      method: "PATCH",
+      json: { sync_enabled: false },
+    });
+    await deliver();
+    await t.req("/v1/bundles/merge", {
+      json: { bundle_ids: [s.bundleRefund, s.bundleCheckout], name: "Shop work" },
+    });
+    const p = await full();
+    expect(p.tombstones).toEqual([
+      expect.objectContaining({
+        source_type: "bundle",
+        source_key: "github.com/acme/shop#fix/flaky-checkout-test",
+      }),
+    ]);
+    expect(p.bundle_changes).toEqual([]);
+    // Its deliveries are forgotten: publishing the kept task later sends checkout-1 again.
+    await t.req(`/v1/bundles/${s.bundleRefund}`, { method: "PATCH", json: { sync_enabled: null } });
+    const again = await full();
+    expect(again.digests.map((d) => d.digest_id)).toContain(await digestOf("checkout-1"));
+  });
+
+  it("a task named twice in a merge is not merged into itself", async () => {
+    const r = await t.req("/v1/bundles/merge", {
+      json: { bundle_ids: [s.bundleRefund, s.bundleCheckout, s.bundleRefund], name: "Shop" },
+    });
+    expect(r.status).toBe(200);
+    expect(((await r.json()) as { id: string }).id).toBe(s.bundleRefund);
+    const [b] = await t.db.query<{ n: number }>(
+      "SELECT count(*)::int AS n FROM sessions WHERE bundle_id = $1",
+      [s.bundleRefund],
+    );
+    expect(b?.n).toBe(3);
+    const same = await t.req("/v1/bundles/merge", {
+      json: { bundle_ids: [s.bundleRefund, s.bundleRefund], name: "Shop" },
+    });
+    expect(same.status).toBe(422);
   });
 
   it("tells the device where a source is published and under which key", async () => {

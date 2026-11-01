@@ -1,12 +1,9 @@
 //! `pama doctor`: check that capture, the local (or remote) server, models, permissions and
 //! offline settings are in order, and say how to fix what is not.
 
-use std::path::Path;
-
 use pama_core::capture::{KEY_CAPTURE_ALL, KEY_CAPTURE_PROJECTS};
 use pama_core::client::{Api, LocalApi, KEY_DECLARED_HOSTS, KEY_STRICT_OFFLINE};
-use pama_core::paths::home_dir;
-use pama_core::session::{claude, codex};
+use pama_core::digest::Agent;
 use serde_json::json;
 
 use super::{scan, Ctx};
@@ -17,22 +14,6 @@ struct Check {
     ok: bool,
     detail: String,
     fix: Option<String>,
-}
-
-/// A Claude settings file with a hook command that runs `pama hook claude`.
-fn has_pama_hook(p: &Path) -> bool {
-    std::fs::read_to_string(p)
-        .map(|s| {
-            s.lines()
-                .any(|l| l.contains("pama") && l.contains("hook claude"))
-        })
-        .unwrap_or(false)
-}
-
-fn file_contains(p: &Path, needle: &str) -> bool {
-    std::fs::read_to_string(p)
-        .map(|s| s.contains(needle))
-        .unwrap_or(false)
 }
 
 /// Remote mode: default server reachable and new enough, this device still logged in, sync on
@@ -46,7 +27,7 @@ fn remote_checks(ctx: &Ctx, checks: &mut Vec<Check>) {
             name: "remote server",
             ok: false,
             detail: "not logged in".into(),
-            fix: Some("`pama login --server <url>`".into()),
+            fix: Some("`pama connect <url>`".into()),
         });
         return;
     };
@@ -88,7 +69,7 @@ fn remote_checks(ctx: &Ctx, checks: &mut Vec<Check>) {
             Some(Err(e)) => e.to_string(),
             None => "no device token in the keychain".into(),
         },
-        fix: Some(format!("`pama login --server {server}`")),
+        fix: Some(format!("`pama connect {server}`")),
     });
     let synced = remote::sync_projects(store);
     checks.push(Check {
@@ -119,34 +100,43 @@ pub fn run(ctx: &Ctx, report: bool) -> anyhow::Result<Exit> {
         },
         fix: Some("run `pama init` in a project".into()),
     });
-    let user_hook = has_pama_hook(&home_dir().join(".claude/settings.json"));
-    let project_hooks = projects
-        .iter()
-        .filter(|p| has_pama_hook(&Path::new(p).join(".claude/settings.local.json")))
-        .count();
-    checks.push(Check {
-        name: "claude code hook",
-        ok: user_hook || project_hooks > 0 || claude::projects_dir().is_none_or(|d| !d.exists()),
-        detail: format!("user scope: {user_hook}, projects with hook: {project_hooks}"),
-        fix: Some(
-            "`pama init --agent claude` (missed sessions are still found by `pama scan`)".into(),
-        ),
-    });
-    let codex_dir = std::env::var_os("CODEX_HOME")
-        .map(Into::into)
-        .unwrap_or_else(|| home_dir().join(".codex"));
-    let codex_used = codex::sessions_dir().is_some_and(|d| d.exists());
-    let notify = file_contains(&codex_dir.join("config.toml"), "\"hook\", \"codex\"");
-    checks.push(Check {
-        name: "codex notify",
-        ok: !codex_used || notify,
-        detail: if codex_used {
-            format!("registered: {notify}")
-        } else {
-            "Codex not used".into()
-        },
-        fix: Some("`pama init --agent codex`".into()),
-    });
+    // Hooks per agent, in every scope: user, and each captured project's personal and shared
+    // config (hooks installed with `--project-scope` count too).
+    for a in pama_core::agents::all() {
+        let hooks = pama_core::agents::hook_locations(store, a);
+        let enabled = pama_core::agents::enabled(store, a.agent());
+        let detected = a.detected();
+        if !detected && hooks.is_empty() && !matches!(a.agent(), Agent::ClaudeCode | Agent::Codex)
+        {
+            continue; // not used here: no line for agents the owner never ran
+        }
+        checks.push(Check {
+            name: match a.agent() {
+                Agent::ClaudeCode => "claude code hook",
+                Agent::Codex => "codex notify",
+                Agent::Cursor => "cursor hook",
+                Agent::OpenCode => "opencode plugin",
+            },
+            ok: !enabled || !detected || !hooks.is_empty(),
+            detail: if !enabled {
+                "capture off for this agent".into()
+            } else if !detected {
+                format!("{} not used", a.display_name())
+            } else if hooks.is_empty() {
+                "no hook installed".into()
+            } else {
+                hooks
+                    .iter()
+                    .map(|h| h.scope.clone())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            },
+            fix: Some(format!(
+                "`pama agents enable {}` (missed sessions are still found by `pama scan`)",
+                a.cli_id()
+            )),
+        });
+    }
     let counts = store.captures(500)?;
     let failed = counts
         .iter()
@@ -361,9 +351,14 @@ fn device_model_check(
                 .send()
                 .is_ok_and(|r| r.status().is_success())
         }
+        // Registry providers without a key (LM Studio, vLLM, custom): is the endpoint up?
+        p if pama_core::providers::get(p).is_some_and(|e| !e.needs_key) => {
+            let base = store.setting("provider.chat.base_url")?;
+            pama_core::providers::test_key(store, p, base.as_deref(), None).ok
+        }
         p => {
             pama_core::secrets::init_platform_store();
-            pama_core::secrets::exists(&format!("provider.{p}.key")).unwrap_or(false)
+            pama_core::secrets::exists(&pama_core::providers::key_name(p)).unwrap_or(false)
         }
     };
     checks.push(Check {
@@ -377,7 +372,7 @@ fn device_model_check(
         fix: Some(if provider == "ollama" {
             "start Ollama and `ollama pull bge-m3` plus a chat model".into()
         } else {
-            format!("`pama config set provider.{provider}.key -` (reads the key from stdin)")
+            format!("`pama keys set {provider}` (reads the key from stdin)")
         }),
     });
     Ok(())

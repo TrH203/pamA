@@ -186,36 +186,104 @@ fn apply(ctx: &Ctx, api: &Api, a: &Apply) -> Result<Exit, ApiError> {
     Ok(Exit::User)
 }
 
+/// The device's drafting model (remote mode): where each value comes from.
+fn device_row(ctx: &Ctx) -> Value {
+    use pama_core::draft::llm::ModelConfig;
+    pama_core::secrets::init_platform_store();
+    let c = ModelConfig::from_store(&ctx.store);
+    let saved = ctx
+        .store
+        .setting("provider.chat.provider")
+        .ok()
+        .flatten()
+        .is_some();
+    let key_set = pama_core::secrets::exists(&pama_core::providers::key_name(&c.provider))
+        .unwrap_or(false);
+    let base_url = pama_core::providers::resolve(&c.provider, c.base_url.as_deref()).1;
+    json!({
+        "role": "drafting", "scope": "device", "provider": c.provider, "model": c.model,
+        "base_url": base_url, "local": c.is_local(), "key_set": key_set,
+        "origin": if saved { "saved" } else { "default" },
+    })
+}
+
+fn origin_label(o: &str) -> &str {
+    match o {
+        "env" => "from env",
+        "saved" => "saved",
+        "default" => "default",
+        "device" => "device",
+        other => other,
+    }
+}
+
+/// `/v1/models/effective` (spec 005), or the older settings view on servers without it.
+fn effective(api: &Api) -> Result<Value, ApiError> {
+    match api.get("/v1/models/effective", "model.show") {
+        Err(ApiError::Status { status: 404, .. }) => {
+            let v = api.get("/v1/models/settings", "model.show")?;
+            let mut roles = serde_json::Map::new();
+            for r in ROLES {
+                let x = &v["roles"][r];
+                roles.insert(
+                    r.into(),
+                    json!({
+                        "provider": x["provider"], "model": x["model"], "base_url": x["baseUrl"],
+                        "key_set": x["keySet"], "local": x["local"], "verified": x["verified"],
+                        "origin": x["source"], "scope": x["scope"].as_str().unwrap_or("server"),
+                    }),
+                );
+            }
+            Ok(json!({ "strict_offline": v["strict_offline"], "roles": roles }))
+        }
+        other => other,
+    }
+}
+
 fn show(ctx: &Ctx, api: &Api) -> Result<Exit, ApiError> {
-    let v = api.get("/v1/models/settings", "model.show")?;
+    let mut v = effective(api)?;
+    let remote_mode = api.remote_url().is_some();
+    if remote_mode {
+        v["device"] = device_row(ctx);
+    }
     ctx.print(&v, || {
         let mut out = String::new();
-        for r in ROLES {
-            let x = &v["roles"][r];
-            out.push_str(&format!(
-                "{:<6} {:<18} {:<5} {:<24} {:<10} key {:<8} {}\n",
-                r,
-                s(x, "provider"),
+        let line = |label: &str, x: &Value| {
+            format!(
+                "{:<9} {:<18} {:<5} {:<28} {:<9} key {:<8} {:<10} {}\n",
+                label,
+                x["preset"].as_str().unwrap_or(s(x, "provider")),
                 if x["local"].as_bool() == Some(true) {
                     "local"
                 } else {
                     "cloud"
                 },
                 s(x, "model"),
-                if x["source"] == "env" {
-                    "default"
-                } else if x["verified"].as_bool() == Some(true) {
-                    "verified"
-                } else {
-                    "unverified"
-                },
-                if x["keySet"].as_bool() == Some(true) {
+                origin_label(s(x, "origin")),
+                if x["key_set"].as_bool() == Some(true) {
                     "set"
                 } else {
                     "not set"
                 },
-                x["baseUrl"].as_str().unwrap_or(""),
-            ));
+                if x["scope"] == "workspace" {
+                    "workspace"
+                } else if x["verified"].as_bool() == Some(true) {
+                    "verified"
+                } else {
+                    ""
+                },
+                x["base_url"].as_str().unwrap_or(""),
+            )
+        };
+        if remote_mode {
+            out.push_str(&format!("server models ({}):\n", api.base_url()));
+        }
+        for r in ROLES {
+            out.push_str(&line(r, &v["roles"][r]));
+        }
+        if remote_mode {
+            out.push_str("this machine (drafts digests):\n");
+            out.push_str(&line("drafting", &v["device"]));
         }
         if v["strict_offline"].as_bool() == Some(true) {
             out.push_str("strict offline: on\n");
@@ -254,7 +322,8 @@ fn check(ctx: &Ctx, api: &Api, role: Option<String>) -> Result<Exit, ApiError> {
     Ok(if all_ok { Exit::Ok } else { Exit::Config })
 }
 
-fn setup(ctx: &Ctx, api: &Api) -> anyhow::Result<Exit> {
+fn setup(ctx: &Ctx, api: &Api, preset: Option<String>) -> anyhow::Result<Exit> {
+    use pama_core::providers;
     if !std::io::stdin().is_terminal() {
         eprintln!("error: `pama model setup` needs an interactive terminal; use `pama model set`");
         return Ok(Exit::User);
@@ -263,23 +332,72 @@ fn setup(ctx: &Ctx, api: &Api) -> anyhow::Result<Exit> {
         Ok(v) => v,
         Err(e) => return Ok(api_exit(&e)),
     };
-    for role in ["chat", "embed"] {
+    let presets: Vec<&str> = providers::registry()
+        .presets
+        .iter()
+        .map(|p| p.id.as_str())
+        .collect();
+    let preset = match preset {
+        Some(p) => Some(p),
+        None => {
+            println!("Presets:");
+            for p in &providers::registry().presets {
+                println!("  {:<20} {}", p.id, p.label);
+            }
+            let a = ask("preset (empty = choose each role)", "")?;
+            (!a.is_empty()).then_some(a)
+        }
+    };
+    let preset = match preset.as_deref() {
+        Some(id) => match providers::preset(id) {
+            Some(p) => Some(p),
+            None => {
+                eprintln!("error: unknown preset {id} ({})", presets.join(", "));
+                return Ok(Exit::User);
+            }
+        },
+        None => None,
+    };
+    let ids = providers::ids().join(", ");
+    for role in ROLES {
         let x = &cur["roles"][role];
         println!("\n{role}:");
-        let provider = ask(
-            "provider (ollama, openai-compatible, openrouter, anthropic)",
-            s(x, "provider"),
-        )?;
-        let model = ask("model", s(x, "model"))?;
-        let base_url = if provider == "anthropic" || provider == "openrouter" {
-            String::new()
-        } else {
-            ask("endpoint (empty = default)", s(x, "baseUrl"))?
+        let (provider, model) = match preset.and_then(|p| p.roles.get(role)) {
+            Some(r) => {
+                println!("  {} / {}", r.provider, r.model);
+                (r.provider.clone(), r.model.clone())
+            }
+            None => {
+                let provider = ask(&format!("provider ({ids})"), s(x, "provider"))?;
+                let suggested = providers::get(&provider)
+                    .and_then(|p| p.suggested_for(role).first().cloned());
+                let default_model = if s(x, "provider") == provider {
+                    s(x, "model").to_string()
+                } else {
+                    suggested.unwrap_or_default()
+                };
+                (provider, ask("model", &default_model)?)
+            }
         };
-        let key = if provider == "ollama" {
-            String::new()
+        let entry = providers::get(&provider);
+        if entry.is_some_and(|p| !p.supports(role)) {
+            eprintln!("{provider} cannot serve the {role} role; skipped");
+            continue;
+        }
+        let base_url = match entry.map(|p| p.locality) {
+            Some(providers::Locality::Cloud) | Some(providers::Locality::Local) if preset.is_some() => String::new(),
+            _ if provider == "anthropic" || provider == "openrouter" => String::new(),
+            _ => ask(
+                "endpoint (empty = default)",
+                entry
+                    .and_then(|p| p.default_base_url.as_deref())
+                    .unwrap_or(s(x, "baseUrl")),
+            )?,
+        };
+        let key = if entry.is_some_and(|p| p.needs_key) {
+            super::read_secret(&format!("{provider} API key (empty = keep current)"))?
         } else {
-            ask("API key (empty = keep current)", "")?
+            String::new()
         };
         if !confirm(&format!("Save {role}: {provider} / {model}?")) {
             continue;
@@ -306,21 +424,16 @@ fn run_device(ctx: &Ctx, action: ModelAction) -> anyhow::Result<Exit> {
     use pama_core::draft::llm::{DraftModel, HttpModel, ModelConfig};
     pama_core::secrets::init_platform_store();
     let show = |ctx: &Ctx| {
-        let c = ModelConfig::from_store(&ctx.store);
-        let key_set =
-            pama_core::secrets::exists(&format!("provider.{}.key", c.provider)).unwrap_or(false);
-        let v = json!({
-            "role": "drafting", "provider": c.provider, "model": c.model,
-            "base_url": c.base_url, "local": c.is_local(), "key_set": key_set,
-        });
+        let v = device_row(ctx);
         ctx.print(&v, || {
             format!(
-                "drafting  {:<18} {:<5} {:<24} key {:<8} {}",
-                c.provider,
-                if c.is_local() { "local" } else { "cloud" },
-                c.model,
-                if key_set { "set" } else { "not set" },
-                c.base_url.as_deref().unwrap_or("")
+                "drafting  {:<18} {:<5} {:<24} {:<8} key {:<8} {}",
+                s(&v, "provider"),
+                if v["local"] == true { "local" } else { "cloud" },
+                s(&v, "model"),
+                origin_label(s(&v, "origin")),
+                if v["key_set"] == true { "set" } else { "not set" },
+                v["base_url"].as_str().unwrap_or("")
             )
         });
     };
@@ -375,7 +488,7 @@ fn run_device(ctx: &Ctx, action: ModelAction) -> anyhow::Result<Exit> {
                 None => st.delete_setting("provider.chat.base_url")?,
             }
             if key_stdin {
-                pama_core::secrets::set(&format!("provider.{provider}.key"), &read_key()?)?;
+                pama_core::secrets::set(&pama_core::providers::key_name(&provider), &read_key()?)?;
             }
             show(ctx);
             Ok(Exit::Ok)
@@ -506,7 +619,7 @@ pub fn run(ctx: &Ctx, device: bool, action: ModelAction) -> anyhow::Result<Exit>
                 },
             )
         }
-        ModelAction::Setup => return setup(ctx, &api),
+        ModelAction::Setup { preset } => return setup(ctx, &api, preset),
     };
     Ok(r.unwrap_or_else(|e| api_exit(&e)))
 }

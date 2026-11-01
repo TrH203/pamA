@@ -184,6 +184,12 @@ pub fn console(ctx: &Ctx, print: bool) -> anyhow::Result<Exit> {
 
 pub fn run(ctx: &Ctx, action: ServerAction) -> anyhow::Result<Exit> {
     match action {
+        ServerAction::List => return super::connect::server_list(ctx),
+        ServerAction::Use { url } => return super::connect::server_use(ctx, &url),
+        ServerAction::Forget {
+            url,
+            discard_pending,
+        } => return super::connect::server_forget(ctx, &url, discard_pending),
         ServerAction::Start { lan } => {
             let info = ensure_started(&ctx.store, lan)?;
             ctx.print(&json!({ "url": info.url, "pid": info.pid }), || {

@@ -28,14 +28,17 @@ fn device_name() -> String {
 }
 
 pub fn login(ctx: &Ctx, no_browser: bool) -> anyhow::Result<Exit> {
+    login_to(ctx, ctx.server.clone(), no_browser)
+}
+
+/// The device login flow (browser approval) against `server` (default: $PAMA_CLOUD_URL).
+pub fn login_to(ctx: &Ctx, server: Option<String>, no_browser: bool) -> anyhow::Result<Exit> {
     pama_core::secrets::init_platform_store();
-    let Some(server) = ctx
-        .server
-        .clone()
+    let Some(server) = server
         .or_else(|| std::env::var("PAMA_CLOUD_URL").ok())
         .map(|s| remote::normalize(&s))
     else {
-        eprintln!("error: which server? `pama login --server https://pama.example.com`");
+        eprintln!("error: which server? `pama connect https://pama.example.com`");
         return Ok(Exit::User);
     };
     let flow = Login::new(&ctx.store, &server);
@@ -78,10 +81,17 @@ fn login_exit(e: &LoginError) -> Exit {
 }
 
 pub fn logout(ctx: &Ctx, discard_pending: bool) -> anyhow::Result<Exit> {
+    logout_from(ctx, ctx.server.clone(), discard_pending)
+}
+
+/// Revoke this device on `server` (default: the default server), delete its token and forget it.
+pub fn logout_from(
+    ctx: &Ctx,
+    server: Option<String>,
+    discard_pending: bool,
+) -> anyhow::Result<Exit> {
     pama_core::secrets::init_platform_store();
-    let Some(server) = ctx
-        .server
-        .clone()
+    let Some(server) = server
         .map(|s| remote::normalize(&s))
         .or_else(|| remote::default_server(&ctx.store))
     else {
@@ -153,7 +163,7 @@ pub fn set_mode(ctx: &Ctx, m: ModeArg) -> anyhow::Result<Result<(), Exit>> {
     match m {
         ModeArg::Remote => {
             if remote::default_server(&ctx.store).is_none() {
-                eprintln!("error: log in first: `pama login --server <url>`");
+                eprintln!("error: connect first: `pama connect <url>`");
                 return Ok(Err(Exit::Config));
             }
             remote::set_mode(&ctx.store, Mode::Remote)?;
@@ -236,7 +246,7 @@ pub fn init_remote(
     let wanted = mode_arg.or_else(|| if fresh && !ctx.json { ask_mode() } else { None });
     if let Some(m) = wanted {
         if m == ModeArg::Remote && remote::default_server(&ctx.store).is_none() {
-            eprintln!("error: remote mode needs a server: run `pama login --server <url>` first");
+            eprintln!("error: remote mode needs a server: run `pama connect <url>` first");
             return Ok(Err(Exit::Config));
         }
         if let Err(code) = set_mode(ctx, m)? {

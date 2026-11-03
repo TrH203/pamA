@@ -13,7 +13,7 @@
       "additionalProperties": false,
       "required": ["agent", "agent_session_id", "project_key", "ended_at"],
       "properties": {
-        "agent": { "enum": ["claude_code", "codex"] },
+        "agent": { "enum": ["claude_code", "codex", "cursor", "opencode"] },
         "agent_session_id": { "type": "string", "minLength": 1, "maxLength": 128 },
         "agent_version": { "type": "string", "maxLength": 64 },
         "project_key": { "type": "string", "description": "Normalized repo remote or path hash; never an absolute local path", "maxLength": 256 },

@@ -1,9 +1,11 @@
 //! `pama server start|stop|status`: run the local server when the desktop app is not running.
 //! The server binds to 127.0.0.1 unless `--lan` (research R12) and gets a per-launch token.
 
+use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+use fs4::fs_std::FileExt;
 use pama_core::client::LocalApi;
 use pama_core::paths;
 use pama_core::sidecar::{free_port, new_token, server_env, ServerInfo, DEFAULT_PORT};
@@ -11,6 +13,7 @@ use pama_core::store::Store;
 use serde_json::json;
 
 use super::Ctx;
+use crate::ui::{self, Mark};
 use crate::{Exit, ServerAction};
 
 /// How to launch the server: `$PAMA_SERVER_CMD` (shell command, for development), or the
@@ -45,11 +48,47 @@ pub fn running(store: &Store) -> Option<ServerInfo> {
     api.healthy().then_some(info)
 }
 
-/// Start the server if it is not running. Returns its info.
-pub fn ensure_started(store: &Store, lan: bool) -> anyhow::Result<ServerInfo> {
-    if let Some(info) = running(store) {
-        return Ok(info);
+/// Run `start` under an exclusive lock on `lock_path`, unless `check` finds the work already
+/// done, before or after the lock is taken. Two processes that both see "not running" thus
+/// start one server: the second waits for the first, then finds it healthy.
+fn start_once<T>(
+    lock_path: &Path,
+    check: impl Fn() -> Option<T>,
+    start: impl FnOnce() -> anyhow::Result<T>,
+) -> anyhow::Result<T> {
+    if let Some(t) = check() {
+        return Ok(t);
     }
+    if let Some(dir) = lock_path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(lock_path)?;
+    // Released when `file` is dropped (also when this process dies).
+    FileExt::lock_exclusive(&file)?;
+    if let Some(t) = check() {
+        return Ok(t);
+    }
+    let out = start();
+    drop(file);
+    out
+}
+
+/// Start the server if it is not running. Returns its info. Concurrent CLI callers (commands,
+/// drains started by hooks) serialise on `PAMA_HOME/server.lock`, so only one server starts
+/// and `server.json` keeps the token of the server that runs.
+pub fn ensure_started(store: &Store, lan: bool) -> anyhow::Result<ServerInfo> {
+    start_once(
+        &paths::pama_home().join("server.lock"),
+        || running(store),
+        || spawn_server(store, lan),
+    )
+}
+
+fn spawn_server(store: &Store, lan: bool) -> anyhow::Result<ServerInfo> {
     let mut cmd = server_command().ok_or_else(|| {
         anyhow::anyhow!("pama-server not found next to pama (set PAMA_SERVER_CMD for development)")
     })?;
@@ -169,7 +208,10 @@ pub fn console(ctx: &Ctx, print: bool) -> anyhow::Result<Exit> {
         }
         return Ok(Exit::Ok);
     }
-    let info = ensure_started(&ctx.store, false)?;
+    let spin = ui::spinner(ctx.json, "starting the local server…");
+    let info = ensure_started(&ctx.store, false);
+    spin.finish();
+    let info = info?;
     let link = format!("{}/#token={}", info.url, info.token);
     if print {
         ctx.print(&json!({ "url": link }), || link.clone());
@@ -191,31 +233,117 @@ pub fn run(ctx: &Ctx, action: ServerAction) -> anyhow::Result<Exit> {
             discard_pending,
         } => return super::connect::server_forget(ctx, &url, discard_pending),
         ServerAction::Start { lan } => {
-            let info = ensure_started(&ctx.store, lan)?;
+            let spin = ui::spinner(ctx.json, "starting the local server…");
+            let info = ensure_started(&ctx.store, lan);
+            spin.finish();
+            let info = info?;
             ctx.print(&json!({ "url": info.url, "pid": info.pid }), || {
-                format!("server running at {} (pid {})", info.url, info.pid)
+                format!(
+                    "{} server running at {} {}",
+                    Mark::Ok.sym(),
+                    info.url,
+                    ui::dim(&format!("(pid {})", info.pid))
+                )
             });
         }
         ServerAction::Stop => {
             let stopped = stop();
             ctx.print(&json!({ "stopped": stopped }), || {
                 if stopped {
-                    "server stopped".into()
+                    format!("{} server stopped", Mark::Ok.sym())
                 } else {
-                    "server was not running".into()
+                    format!("{} server was not running", Mark::Info.sym())
                 }
             });
         }
         ServerAction::Status => match running(&ctx.store) {
             Some(info) => ctx.print(
                 &json!({ "running": true, "url": info.url, "pid": info.pid }),
-                || format!("running at {} (pid {})", info.url, info.pid),
+                || {
+                    ui::kv(&[
+                        ("server", Mark::Ok.label("running")),
+                        ("url", info.url.clone()),
+                        ("pid", info.pid.to_string()),
+                    ])
+                },
             ),
             None => {
-                ctx.print(&json!({ "running": false }), || "not running".into());
+                ctx.print(&json!({ "running": false }), || {
+                    ui::kv(&[(
+                        "server",
+                        format!(
+                            "{} {} {}",
+                            Mark::Info.label("not running"),
+                            ui::dim("→"),
+                            ui::cmd("pama server start")
+                        ),
+                    )])
+                });
                 return Ok(Exit::Network);
             }
         },
     }
     Ok(Exit::Ok)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Barrier};
+
+    /// Eight callers race to start: exactly one runs `start`; the others wait for the lock,
+    /// re-check and see the running server (the bug: two servers, `server.json` overwritten
+    /// with the loser's token, 401s).
+    #[test]
+    fn concurrent_starts_start_one_server() {
+        let dir = tempfile::tempdir().unwrap();
+        let lock = dir.path().join("home/server.lock");
+        let started = Arc::new(AtomicUsize::new(0));
+        let barrier = Arc::new(Barrier::new(8));
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                let (lock, started, barrier) = (lock.clone(), started.clone(), barrier.clone());
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    start_once(
+                        &lock,
+                        || match started.load(Ordering::SeqCst) {
+                            0 => None,
+                            n => Some(n),
+                        },
+                        || {
+                            // A slow start: the others must wait, not start their own.
+                            std::thread::sleep(Duration::from_millis(150));
+                            Ok(started.fetch_add(1, Ordering::SeqCst) + 1)
+                        },
+                    )
+                    .unwrap()
+                })
+            })
+            .collect();
+        let seen: Vec<usize> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+        assert_eq!(started.load(Ordering::SeqCst), 1);
+        assert!(seen.iter().all(|n| *n == 1), "{seen:?}");
+    }
+
+    #[test]
+    fn a_failed_start_releases_the_lock() {
+        let dir = tempfile::tempdir().unwrap();
+        let lock = dir.path().join("server.lock");
+        let err = start_once(&lock, || None::<u32>, || anyhow::bail!("exited"));
+        assert!(err.is_err());
+        // The next caller gets the lock and can start.
+        assert_eq!(start_once(&lock, || None, || Ok(7)).unwrap(), 7);
+        // Already running: no start at all.
+        assert_eq!(
+            start_once(
+                &lock,
+                || Some(1),
+                || -> anyhow::Result<u32> { panic!("started") }
+            )
+            .unwrap(),
+            1
+        );
+    }
 }

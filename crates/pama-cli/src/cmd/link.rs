@@ -82,36 +82,33 @@ pub fn run(ctx: &Ctx, action: LinkAction) -> anyhow::Result<Exit> {
     let r = match &action {
         LinkAction::Create(a) => {
             if a.sources.is_empty() && a.suggest.is_none() {
-                eprintln!("error: give --source <ref> or --suggest \"<question>\"");
+                crate::fail!("usage", "give --source <ref> or --suggest \"<question>\"");
                 return Ok(Exit::User);
             }
             create(&api, a)
         }
         LinkAction::List => api.get("/v1/links", "link.list").map(|v| {
-            let text = v["items"]
+            use crate::ui::{self, Mark};
+            let rows: Vec<Vec<String>> = v["items"]
                 .as_array()
                 .into_iter()
                 .flatten()
                 .map(|l| {
-                    format!(
-                        "{:<12} {:<8} {:<10} {:>3} asks  {}",
-                        l["slug"].as_str().unwrap_or("?"),
-                        l["status"].as_str().unwrap_or("?"),
-                        l["access_mode"].as_str().unwrap_or("?"),
-                        l["asks"],
-                        l["title"].as_str().unwrap_or("")
-                    )
+                    vec![
+                        l["slug"].as_str().unwrap_or("?").to_string(),
+                        ui::status(l["status"].as_str().unwrap_or("?")),
+                        l["access_mode"].as_str().unwrap_or("?").to_string(),
+                        l["asks"].to_string(),
+                        l["title"].as_str().unwrap_or("").to_string(),
+                    ]
                 })
-                .collect::<Vec<_>>()
-                .join("\n");
-            (
-                v,
-                if text.is_empty() {
-                    "no links yet".into()
-                } else {
-                    text
-                },
-            )
+                .collect();
+            let text = if rows.is_empty() {
+                format!("{} no links yet", Mark::Info.sym())
+            } else {
+                ui::table(&["SLUG", "STATUS", "ACCESS", "ASKS", "TITLE"], rows)
+            };
+            (v, text)
         }),
         LinkAction::Revoke { slug } => api
             .post(
@@ -119,7 +116,7 @@ pub fn run(ctx: &Ctx, action: LinkAction) -> anyhow::Result<Exit> {
                 "link.revoke",
                 &json!({}),
             )
-            .map(|v| (v, format!("revoked {slug}"))),
+            .map(|v| (v, format!("{} revoked {slug}", crate::ui::Mark::Ok.sym()))),
     };
     match r {
         Ok((v, text)) => {

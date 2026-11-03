@@ -191,7 +191,9 @@ pub fn run(ctx: &Ctx, report: bool) -> anyhow::Result<Exit> {
     // The local server's three model roles, checked live; otherwise the device drafting model.
     let mut server_checked = false;
     if remote_mode {
+        let spin = crate::ui::spinner(ctx.json || report, "checking the server…");
         remote_checks(ctx, &mut checks);
+        spin.finish();
     } else {
         let api = LocalApi::connect(store, "cli").ok().filter(|a| a.healthy());
         checks.push(Check {
@@ -205,7 +207,9 @@ pub fn run(ctx: &Ctx, report: bool) -> anyhow::Result<Exit> {
             fix: Some("`pama server start` (or open the desktop app)".into()),
         });
         if let Some(api) = &api {
+            let spin = crate::ui::spinner(ctx.json || report, "checking models…");
             server_model_checks(api, &mut checks);
+            spin.finish();
             publish_check(ctx, api, &mut checks);
             server_checked = true;
         }
@@ -319,22 +323,31 @@ pub fn run(ctx: &Ctx, report: bool) -> anyhow::Result<Exit> {
         return Ok(if all_ok { Exit::Ok } else { Exit::Config });
     }
     ctx.print(&value, || {
-        checks
-            .iter()
-            .map(|c| {
-                let mut line = format!(
-                    "{} {:<18} {}",
-                    if c.ok { "✓" } else { "✗" },
-                    c.name,
-                    c.detail
-                );
-                if let (false, Some(f)) = (c.ok, &c.fix) {
-                    line.push_str(&format!("\n    → {f}"));
+        use crate::ui::{self, Mark};
+        let failed = checks.iter().filter(|c| !c.ok).count();
+        let mut out = vec![ui::title("pamA doctor"), String::new()];
+        for c in &checks {
+            out.push(format!(
+                "  {} {:<18} {}",
+                Mark::from_ok(c.ok).sym(),
+                c.name,
+                if c.ok {
+                    c.detail.clone()
+                } else {
+                    ui::bad(&c.detail)
                 }
-                line
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
+            ));
+            if let (false, Some(f)) = (c.ok, &c.fix) {
+                out.push(format!("      {} {f}", ui::dim("→")));
+            }
+        }
+        out.push(String::new());
+        out.push(if failed == 0 {
+            Mark::Ok.label("all checks passed")
+        } else {
+            Mark::Fail.label(&format!("{failed} check(s) need attention"))
+        });
+        out.join("\n")
     });
     Ok(if all_ok { Exit::Ok } else { Exit::Config })
 }

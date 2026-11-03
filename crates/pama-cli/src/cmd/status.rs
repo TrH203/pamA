@@ -10,6 +10,7 @@ use serde_json::{json, Value};
 
 use super::activity::{ago, short_id};
 use super::Ctx;
+use crate::ui::{self, Mark};
 use crate::Exit;
 
 const ROLES: [&str; 3] = ["chat", "small", "embed"];
@@ -107,123 +108,190 @@ pub fn run(ctx: &Ctx) -> anyhow::Result<Exit> {
     });
 
     ctx.print(&value, || {
-        let mut out = String::from("pamA status\n\nHome\n");
-        out.push_str(&format!(
-            "  data        {}\n",
-            if remote_mode {
-                "on a server (remote mode)"
-            } else {
-                "on this machine (local mode)"
-            }
-        ));
-        out.push_str(&format!(
-            "  server      {}\n",
-            match (&server_url, reachable) {
-                (Some(u), true) => format!("{u} (up)"),
-                (Some(u), false) => format!("{u} (not reachable)"),
-                (None, _) if remote_mode => "not logged in → `pama login --server <url>`".into(),
-                (None, _) => "local server not running → `pama server start`".into(),
-            }
-        ));
+        let mut out = vec![ui::title("pamA status"), String::new(), ui::heading("Home")];
+        let server_line = match (&server_url, reachable) {
+            (Some(u), true) => format!("{} {u}", Mark::Ok.label("up")),
+            (Some(u), false) => format!("{} {u}", Mark::Fail.label("not reachable")),
+            (None, _) if remote_mode => format!(
+                "{} not connected {} {}",
+                Mark::Warn.sym(),
+                ui::dim("→"),
+                ui::cmd("pama connect <url>")
+            ),
+            (None, _) => format!(
+                "{} local server not running {} {}",
+                Mark::Info.sym(),
+                ui::dim("→"),
+                ui::cmd("pama server start")
+            ),
+        };
+        out.push(ui::kv(&[
+            (
+                "data",
+                if remote_mode {
+                    "on a server (remote mode)".to_string()
+                } else {
+                    "on this machine (local mode)".to_string()
+                },
+            ),
+            ("server", server_line),
+        ]));
 
-        out.push_str("\nModels\n");
+        out.push(String::new());
+        out.push(ui::heading("Models"));
+        let mut rows: Vec<(String, String)> = Vec::new();
         match models.as_object() {
             Some(m) if !m.is_empty() => {
                 for r in ROLES {
                     if let Some(x) = m.get(r) {
-                        out.push_str(&format!(
-                            "  {:<11} {} {} ({}, {})\n",
-                            r,
-                            x["provider"].as_str().unwrap_or("-"),
-                            x["model"].as_str().unwrap_or("-"),
-                            if x["local"].as_bool() == Some(true) {
-                                "local"
-                            } else {
-                                "cloud"
-                            },
-                            match x["origin"].as_str() {
-                                Some("env") => "from env",
-                                Some("saved") | Some("settings") => "saved",
-                                Some(o) => o,
-                                None => "-",
-                            }
+                        let mark = match x["verified"].as_bool() {
+                            Some(true) => Mark::Ok.sym(),
+                            Some(false) => Mark::Warn.sym(),
+                            None => Mark::Info.sym(),
+                        };
+                        rows.push((
+                            r.to_string(),
+                            format!(
+                                "{mark} {} {} {}",
+                                x["provider"].as_str().unwrap_or("-"),
+                                x["model"].as_str().unwrap_or("-"),
+                                ui::dim(&format!(
+                                    "({}, {})",
+                                    if x["local"].as_bool() == Some(true) {
+                                        "local"
+                                    } else {
+                                        "cloud"
+                                    },
+                                    match x["origin"].as_str() {
+                                        Some("env") => "from env",
+                                        Some("saved") | Some("settings") => "saved",
+                                        Some(o) => o,
+                                        None => "-",
+                                    }
+                                ))
+                            ),
                         ));
                     }
                 }
             }
-            _ => out.push_str("  server      unknown (server not reachable)\n"),
+            _ => rows.push(("server".into(), ui::dim("unknown (server not reachable)"))),
         }
         if let Some(d) = &device_model {
-            out.push_str(&format!(
-                "  {:<11} {} {} (drafts on this machine)\n",
-                "draft",
-                d["provider"].as_str().unwrap_or("-"),
-                d["model"].as_str().unwrap_or("-")
+            rows.push((
+                "draft".into(),
+                format!(
+                    "{} {} {}",
+                    d["provider"].as_str().unwrap_or("-"),
+                    d["model"].as_str().unwrap_or("-"),
+                    ui::dim("(drafts on this machine)")
+                ),
             ));
         }
+        out.push(ui::kv(&rows));
 
-        out.push_str("\nPipeline\n");
-        out.push_str(&format!(
-            "  running     {}   queued {}\n",
-            counts.running, counts.detected
-        ));
+        out.push(String::new());
+        out.push(ui::heading("Pipeline"));
         let review = server_counts
             .as_ref()
             .and_then(|c| c["awaiting_review"].as_i64());
-        out.push_str(&format!(
-            "  review      {}\n",
-            match review {
-                Some(n) => format!("{n} digest(s) awaiting review → `pama review`"),
-                None => format!("{} drafted on this machine", counts.ready_for_review),
-            }
-        ));
-        out.push_str(&format!(
-            "  done        {} submitted, {} skipped\n",
-            counts.submitted, counts.skipped
-        ));
         let server_failed = server_counts
             .as_ref()
             .and_then(|c| c["failed"].as_i64())
             .unwrap_or(0);
-        out.push_str(&format!(
-            "  failed      {}{}\n",
-            counts.failed,
-            if server_failed > 0 {
-                format!(" (server: {server_failed} run(s))")
-            } else {
-                String::new()
-            }
-        ));
+        let mut rows: Vec<(String, String)> = vec![
+            (
+                "running".into(),
+                format!("{}   queued {}", counts.running, counts.detected),
+            ),
+            (
+                "review".into(),
+                match review {
+                    Some(n) if n > 0 => format!(
+                        "{} {n} digest(s) awaiting review {} {}",
+                        Mark::Warn.sym(),
+                        ui::dim("→"),
+                        ui::cmd("pama review")
+                    ),
+                    Some(n) => format!("{n} awaiting review"),
+                    None => format!("{} drafted on this machine", counts.ready_for_review),
+                },
+            ),
+            (
+                "done".into(),
+                format!("{} submitted, {} skipped", counts.submitted, counts.skipped),
+            ),
+            (
+                "failed".into(),
+                format!(
+                    "{}{}{}",
+                    if counts.failed > 0 || server_failed > 0 {
+                        format!("{} ", Mark::Fail.sym())
+                    } else {
+                        String::new()
+                    },
+                    counts.failed,
+                    if server_failed > 0 {
+                        format!(" (server: {server_failed} run(s))")
+                    } else {
+                        String::new()
+                    }
+                ),
+            ),
+        ];
         if let Some(a) = &latest {
             let code = a.error_code.as_deref().unwrap_or("error");
-            out.push_str(&format!(
-                "  last error  ✗ {code} ({}, capture {})\n",
-                ago(a.ended_at.unwrap_or(a.started_at)),
-                short_id(&a.capture_id)
-            ));
+            let mut v = format!(
+                "{} {} {}",
+                Mark::Fail.sym(),
+                ui::bad(code),
+                ui::dim(&format!(
+                    "({}, capture {})",
+                    ago(a.ended_at.unwrap_or(a.started_at)),
+                    short_id(&a.capture_id)
+                ))
+            );
             if let Some(m) = &a.error_detail {
-                out.push_str(&format!("              {m}\n"));
+                v.push_str(&format!("\n{m}"));
             }
             if let Some(h) = ErrorCode::parse(code).map(|c| c.hint()) {
-                out.push_str(&format!("              → {h}\n"));
+                v.push_str(&format!("\n{} {h}", ui::dim("→")));
             }
+            rows.push(("last error".into(), v));
         }
+        out.push(ui::kv(&rows));
 
-        out.push_str("\nSync\n");
-        out.push_str(&format!(
-            "  outbox      {} pending, {} sent, {} failed\n",
-            outbox.pending, outbox.sent, outbox.dead
-        ));
+        out.push(String::new());
+        out.push(ui::heading("Sync"));
+        out.push(ui::kv(&[(
+            "outbox",
+            format!(
+                "{} pending, {} sent, {}{} failed",
+                outbox.pending,
+                outbox.sent,
+                if outbox.dead > 0 {
+                    format!("{} ", Mark::Fail.sym())
+                } else {
+                    String::new()
+                },
+                outbox.dead
+            ),
+        )]));
 
         let next = if counts.failed > 0 {
-            "`pama activity --failed`"
+            ui::cmd("pama activity --failed")
         } else if review.unwrap_or(0) > 0 {
-            "`pama review`"
+            ui::cmd("pama review")
         } else {
-            "`pama activity` · `pama doctor` · `pama --help`"
+            [
+                ui::cmd("pama activity"),
+                ui::cmd("pama doctor"),
+                ui::cmd("pama --help"),
+            ]
+            .join(&ui::dim(" · "))
         };
-        out.push_str(&format!("\nNext: {next}"));
-        out
+        out.push(String::new());
+        out.push(format!("{} {next}", ui::dim("Next:")));
+        out.join("\n")
     });
     Ok(Exit::Ok)
 }

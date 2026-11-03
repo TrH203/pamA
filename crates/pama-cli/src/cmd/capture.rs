@@ -146,16 +146,23 @@ pub fn run(ctx: &Ctx, action: CaptureAction) -> anyhow::Result<Exit> {
     let rules = RuleSet::load_dir(&rules_dir())?;
     let remote_mode = remote::mode(&ctx.store) == Mode::Remote;
     let target = remote::default_server(&ctx.store);
+    // Drawn only when run by hand in a terminal; hooks start drains with stderr redirected.
+    let spin = crate::ui::spinner(ctx.json, "processing captured sessions…");
     loop {
         if ctx.store.due_captures(1)?.is_empty() {
             match ctx.store.next_due_in()? {
                 Some(ms) if !once && ms <= MAX_WAIT_MS => {
+                    spin.set_message(&format!(
+                        "waiting {}s for the next session to settle…",
+                        (ms + 999) / 1000
+                    ));
                     std::thread::sleep(Duration::from_millis(ms as u64 + 50));
                     continue;
                 }
                 _ => break,
             }
         }
+        spin.set_message("drafting digests…");
         let done = match (remote_mode, &target) {
             (false, _) => drain_local(ctx, &rules),
             (true, Some(t)) => drain_remote(ctx, &rules, t),
@@ -179,6 +186,7 @@ pub fn run(ctx: &Ctx, action: CaptureAction) -> anyhow::Result<Exit> {
             break;
         }
     }
+    spin.set_message("sending…");
     if remote_mode {
         // Deliver drafts and deletions, then pull review decisions made on the server.
         match deliver_due(&ctx.store, &HttpRemote::new(&ctx.store)) {

@@ -59,7 +59,7 @@ impl Ctx {
         } else {
             let text = human();
             if !text.is_empty() {
-                println!("{text}");
+                crate::ui::out(&text);
             }
         }
     }
@@ -67,7 +67,7 @@ impl Ctx {
 
 /// Map API failures to the exit codes of contracts/cli.md.
 pub fn api_exit(e: &ApiError) -> Exit {
-    eprintln!("error: {e}");
+    print_api_error(e);
     match e {
         ApiError::NotRunning | ApiError::Net(_) => Exit::Network,
         ApiError::NotLoggedIn(_) => Exit::Config,
@@ -76,6 +76,53 @@ pub fn api_exit(e: &ApiError) -> Exit {
         } => Exit::Config,
         ApiError::Status { status, .. } if *status >= 500 => Exit::Network,
         ApiError::Status { .. } => Exit::User,
+    }
+}
+
+/// `✗ <code>: <message>` and `→ <fix>` for an API failure.
+pub fn print_api_error(e: &ApiError) {
+    let (code, message, fix) = describe_api_error(e);
+    crate::ui::error(&code, &message, fix.as_deref());
+}
+
+fn describe_api_error(e: &ApiError) -> (String, String, Option<String>) {
+    use pama_core::capture::errors::ErrorCode;
+    match e {
+        ApiError::NotRunning => (
+            "server_down".into(),
+            "the local server is not running".into(),
+            Some("`pama server start` (or open the pamA app)".into()),
+        ),
+        ApiError::Net(n) => (
+            "network".into(),
+            n.to_string(),
+            Some("check the network and `pama status`".into()),
+        ),
+        ApiError::NotLoggedIn(url) => (
+            "not_logged_in".into(),
+            format!("not connected to {url}"),
+            Some(format!("`pama connect {url}`")),
+        ),
+        ApiError::Status { status, body } => {
+            let v: serde_json::Value = serde_json::from_str(body).unwrap_or_default();
+            let code = v["error"]["code"]
+                .as_str()
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("http_{status}"));
+            let message = v["error"]["message"]
+                .as_str()
+                .map(str::to_string)
+                .unwrap_or_else(|| e.to_string());
+            let fix = v["error"]["fix"]
+                .as_str()
+                .map(str::to_string)
+                .or_else(|| ErrorCode::parse(&code).map(|c| c.hint().to_string()))
+                .or_else(|| match status {
+                    401 | 403 => Some("`pama connect <url>` to sign this device in again".into()),
+                    _ => None,
+                });
+            (code, message, fix)
+        }
     }
 }
 
@@ -128,7 +175,7 @@ pub fn run(cli: Cli) -> anyhow::Result<Exit> {
         Command::Keys { action } => keys::run(&ctx, action),
         Command::Agents { action } => agents::run(&ctx, action),
         Command::Login { no_browser } => {
-            eprintln!("note: `pama login` is deprecated; use `pama connect <url>`");
+            crate::ui::note("`pama login` is deprecated; use `pama connect <url>`");
             login::login(&ctx, no_browser)
         }
         Command::Logout { discard_pending } => login::logout(&ctx, discard_pending),
@@ -148,7 +195,7 @@ pub fn run(cli: Cli) -> anyhow::Result<Exit> {
         Command::Reply { ask_id, text } => inbox::reply(&ctx, &ask_id, &text),
         Command::Log { link, status } => inbox::log(&ctx, link, status),
         Command::Pair { code, server } => {
-            eprintln!("note: `pama pair` is deprecated; use `pama connect {server} --code <code>`");
+            crate::ui::note("`pama pair` is deprecated; use `pama connect {server} --code <code>`");
             sync::pair(&ctx, &code, &server)
         }
         Command::Conversations { action } => conversations::run(&ctx, action),

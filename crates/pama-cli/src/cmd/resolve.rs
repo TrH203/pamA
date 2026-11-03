@@ -69,7 +69,7 @@ pub fn resolve_or_exit(kind: &str, query: &str, cands: &[Candidate]) -> Result<u
     match resolve(query, cands) {
         Resolved::One(i) => Ok(i),
         Resolved::NotFound => {
-            eprintln!("error: no {kind} matches \"{query}\"");
+            crate::fail!("not_found", "no {kind} matches \"{query}\"");
             Err(Exit::User)
         }
         Resolved::Ambiguous(ix) => {

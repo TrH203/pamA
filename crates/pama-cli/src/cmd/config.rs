@@ -57,7 +57,7 @@ pub fn run(ctx: &Ctx, action: ConfigAction) -> anyhow::Result<Exit> {
                     value
                 };
                 if value.is_empty() {
-                    eprintln!("error: empty key; nothing saved");
+                    crate::fail!("usage", "empty key; nothing saved");
                     return Ok(Exit::User);
                 }
                 pama_core::secrets::set(&key, &value)?;
@@ -67,11 +67,15 @@ pub fn run(ctx: &Ctx, action: ConfigAction) -> anyhow::Result<Exit> {
                 return Ok(Exit::Ok);
             }
             if !KNOWN.contains(&key.as_str()) {
-                eprintln!("error: unknown key {key}; known keys: {}", KNOWN.join(", "));
+                crate::fail!(
+                    "usage",
+                    "unknown key {key}; known keys: {}",
+                    KNOWN.join(", ")
+                );
                 return Ok(Exit::User);
             }
             if let Err(e) = validate(&key, &value) {
-                eprintln!("error: {e}");
+                crate::fail!("usage", "{e}");
                 return Ok(Exit::User);
             }
             ctx.store.set_setting(&key, &value)?;

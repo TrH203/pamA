@@ -38,7 +38,10 @@ pub fn login_to(ctx: &Ctx, server: Option<String>, no_browser: bool) -> anyhow::
         .or_else(|| std::env::var("PAMA_CLOUD_URL").ok())
         .map(|s| remote::normalize(&s))
     else {
-        eprintln!("error: which server? `pama connect https://pama.example.com`");
+        crate::fail!(
+            "usage",
+            "which server? `pama connect https://pama.example.com`"
+        );
         return Ok(Exit::User);
     };
     let flow = Login::new(&ctx.store, &server);
@@ -72,7 +75,7 @@ pub fn login_to(ctx: &Ctx, server: Option<String>, no_browser: bool) -> anyhow::
 }
 
 fn login_exit(e: &LoginError) -> Exit {
-    eprintln!("error: {e}");
+    crate::fail!("login_failed", "{e}");
     match e {
         LoginError::Net(_) => Exit::Network,
         LoginError::Unsupported => Exit::Config,
@@ -95,7 +98,7 @@ pub fn logout_from(
         .map(|s| remote::normalize(&s))
         .or_else(|| remote::default_server(&ctx.store))
     else {
-        eprintln!("error: not logged in to any server");
+        crate::fail!("not_logged_in", "not logged in to any server");
         return Ok(Exit::User);
     };
     // Revoke on the server first (best effort: the token is deleted locally either way).
@@ -171,7 +174,7 @@ pub fn set_mode(ctx: &Ctx, m: ModeArg) -> anyhow::Result<Result<(), Exit>> {
     match m {
         ModeArg::Remote => {
             if remote::default_server(&ctx.store).is_none() {
-                eprintln!("error: connect first: `pama connect <url>`");
+                crate::fail!("not_logged_in", "connect first: `pama connect <url>`");
                 return Ok(Err(Exit::Config));
             }
             remote::set_mode(&ctx.store, Mode::Remote)?;
@@ -254,7 +257,10 @@ pub fn init_remote(
     let wanted = mode_arg.or_else(|| if fresh && !ctx.json { ask_mode() } else { None });
     if let Some(m) = wanted {
         if m == ModeArg::Remote && remote::default_server(&ctx.store).is_none() {
-            eprintln!("error: remote mode needs a server: run `pama connect <url>` first");
+            crate::fail!(
+                "usage",
+                "remote mode needs a server: run `pama connect <url>` first"
+            );
             return Ok(Err(Exit::Config));
         }
         if let Err(code) = set_mode(ctx, m)? {

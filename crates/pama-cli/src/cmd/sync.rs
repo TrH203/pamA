@@ -17,6 +17,7 @@ use serde_json::{json, Value};
 
 use super::resolve::{candidates, resolve_or_exit};
 use super::{api_exit, Ctx};
+use crate::ui::{self, Mark};
 use crate::{Exit, SyncAction, SyncTarget};
 
 pub const KEY_DEFAULT_TARGET: &str = remote::KEY_DEFAULT_TARGET;
@@ -76,11 +77,18 @@ fn plural(n: usize, one: &str) -> String {
 
 fn outbox_line(c: &pama_core::store::OutboxCounts) -> String {
     let mut s = format!(
-        "outbox: {} pending, {} sent, {} failed",
-        c.pending, c.sent, c.dead
+        "{} {} pending, {} sent, {} failed",
+        ui::dim("outbox"),
+        c.pending,
+        c.sent,
+        c.dead
     );
     if c.dead > 0 {
-        s.push_str(" (see `pama sync failed`)");
+        s.push_str(&format!(
+            "  {} {}",
+            Mark::Fail.sym(),
+            ui::dim("→ `pama sync failed`")
+        ));
     }
     s
 }
@@ -101,14 +109,29 @@ fn status(ctx: &Ctx, api: &Api) -> anyhow::Result<Exit> {
     out["warning"] = json!(warning);
     ctx.print(&out, || {
         let mut lines = vec![match &target {
-            Some(t) => format!("Publish (one-way copy of approved digests) → {t}"),
-            None => "Publish: no server paired (`pama pair <code> --server <url>`)".into(),
+            Some(t) => format!(
+                "{} {}",
+                ui::title("Publish"),
+                ui::dim(&format!("(one-way copy of approved digests) → {t}"))
+            ),
+            None => format!(
+                "{} {} no server paired {} {}",
+                ui::title("Publish"),
+                Mark::Info.sym(),
+                ui::dim("→"),
+                ui::cmd("pama connect <url> --code <code>")
+            ),
         }];
+        lines.push(String::new());
         for p in v["projects"].as_array().into_iter().flatten() {
             let on = p["sync_enabled"].as_bool() == Some(true);
             lines.push(format!(
                 "{} {}  {}{}",
-                if on { "●" } else { "○" },
+                if on {
+                    Mark::Ok.label("on ")
+                } else {
+                    Mark::Info.label("off")
+                },
                 p["id"].as_str().unwrap_or("?"),
                 p["name"].as_str().unwrap_or("?"),
                 p["sync_target"]
@@ -126,7 +149,8 @@ fn status(ctx: &Ctx, api: &Api) -> anyhow::Result<Exit> {
         }
         if let Some(w) = &warning {
             lines.push(format!(
-                "\n! {w}: `pama sync enable --project <name>` or `--task <name>`"
+                "\n{} {w}: `pama sync enable --project <name>` or `--task <name>`",
+                Mark::Warn.sym()
             ));
         }
         lines.push(format!("\n{}", outbox_line(&counts)));
@@ -436,18 +460,32 @@ fn run_remote(ctx: &Ctx, api: &Api, action: SyncAction) -> anyhow::Result<Exit> 
                          "tasks": tasks.iter().map(|(k, on)| json!({ "task": k, "enabled": on })).collect::<Vec<_>>(),
                          "digests": by_status, "outbox": counts, "warning": warning }),
                 || {
-                    let mut lines = vec![format!("home: {server} (drafts are reviewed there)")];
+                    let mut lines = vec![
+                        format!(
+                            "{} {server} {}",
+                            ui::title("Home"),
+                            ui::dim("(drafts are reviewed there)")
+                        ),
+                        String::new(),
+                    ];
                     for p in &projects {
-                        lines.push(format!("● {p}"));
+                        lines.push(format!("{} {p}", Mark::Ok.label("on ")));
                     }
                     for (k, on) in &tasks {
                         lines.push(format!(
                             "  {} task {k}",
-                            if *on { "● on " } else { "○ off" }
+                            if *on {
+                                Mark::Ok.label("on ")
+                            } else {
+                                Mark::Info.label("off")
+                            }
                         ));
                     }
                     if let Some(w) = &warning {
-                        lines.push(format!("! {w}: `pama init --sync` in a project"));
+                        lines.push(format!(
+                            "{} {w}: `pama init --sync` in a project",
+                            Mark::Warn.sym()
+                        ));
                     }
                     let digests: Vec<String> =
                         by_status.iter().map(|(k, v)| format!("{v} {k}")).collect();
@@ -529,12 +567,15 @@ fn outbox_action(ctx: &Ctx, api: Option<&Api>, action: SyncAction) -> anyhow::Re
             } else {
                 None
             };
-            let report = match pama_core::sync::sync_now(
+            let spin = ui::spinner(ctx.json, "syncing…");
+            let report = pama_core::sync::sync_now(
                 &ctx.store,
                 local.as_ref(),
                 &HttpRemote::new(&ctx.store),
                 remote_home,
-            ) {
+            );
+            spin.finish();
+            let report = match report {
                 Ok(r) => r,
                 Err(e) => return Ok(api_exit(&e)),
             };
@@ -546,10 +587,10 @@ fn outbox_action(ctx: &Ctx, api: Option<&Api>, action: SyncAction) -> anyhow::Re
             ctx.print(&serde_json::to_value(&report)?, || {
                 let mut lines = Vec::new();
                 if remote_home.is_none() && local.is_none() {
-                    lines.push(
-                        "note: the local server is not running; only queued items were sent"
-                            .to_string(),
-                    );
+                    lines.push(format!(
+                        "{} the local server is not running; only queued items were sent\n",
+                        Mark::Warn.sym()
+                    ));
                 }
                 if report.collected > 0 {
                     lines.push(format!("queued {}", plural(report.collected, "new item")));
@@ -565,9 +606,22 @@ fn outbox_action(ctx: &Ctx, api: Option<&Api>, action: SyncAction) -> anyhow::Re
                     lines.push(format!("pulled {}", plural(p.applied, "review decision")));
                 }
                 if report.dead > 0 {
-                    lines.push(format!("{} failed (see `pama sync failed`)", report.dead));
+                    lines.push(format!(
+                        "{} {} failed (see `pama sync failed`)",
+                        Mark::Fail.sym(),
+                        report.dead
+                    ));
                 }
-                lines.join("; ")
+                let mark = if report.dead > 0 {
+                    Mark::Fail
+                } else if report.delivery.retrying > 0 {
+                    Mark::Warn
+                } else {
+                    Mark::Ok
+                };
+                let first = usize::from(remote_home.is_none() && local.is_none());
+                let (note, rest) = lines.split_at(first);
+                format!("{}{} {}", note.concat(), mark.sym(), rest.join("; "))
             });
             Ok(if report.delivery.retrying > 0 {
                 Exit::Network
@@ -589,24 +643,30 @@ fn outbox_action(ctx: &Ctx, api: Option<&Api>, action: SyncAction) -> anyhow::Re
                 .collect();
             ctx.print(&json!({ "items": value }), || {
                 if items.is_empty() {
-                    return "nothing failed".into();
+                    return Mark::Ok.label("nothing failed");
                 }
                 let mut lines: Vec<String> = items
                     .iter()
                     .map(|d| {
                         format!(
-                            "{}  {}  → {}\n    {}\n    last error: {}",
-                            d.id,
+                            "{} {}  {}  {}\n    {}\n    {} {}",
+                            Mark::Fail.sym(),
+                            ui::bold(&d.id),
                             d.kind.as_str(),
-                            d.target,
+                            ui::dim(&format!("→ {}", d.target)),
                             describe_item(d.kind, &d.payload),
-                            d.last_error.as_deref().unwrap_or("-")
+                            ui::dim("last error:"),
+                            ui::bad(d.last_error.as_deref().unwrap_or("-"))
                         )
                     })
                     .collect();
-                lines.push(
-                    "\nretry: pama sync retry <id> | --all · give up: pama sync drop <id>".into(),
-                );
+                lines.push(format!(
+                    "\n{} {} | --all {} {}",
+                    ui::dim("retry:"),
+                    ui::cmd("pama sync retry <id>"),
+                    ui::dim("· give up:"),
+                    ui::cmd("pama sync drop <id>")
+                ));
                 lines.join("\n")
             });
             Ok(Exit::Ok)
@@ -616,7 +676,7 @@ fn outbox_action(ctx: &Ctx, api: Option<&Api>, action: SyncAction) -> anyhow::Re
                 ctx.store.outbox_revive_all()?
             } else {
                 let Some(id) = id else {
-                    eprintln!("error: give an id from `pama sync failed`, or --all");
+                    crate::fail!("usage", "give an id from `pama sync failed`, or --all");
                     return Ok(Exit::User);
                 };
                 match matched(ctx, &id)? {
@@ -653,7 +713,7 @@ fn matched(ctx: &Ctx, id: &str) -> anyhow::Result<Option<String>> {
     Ok(match ctx.store.outbox_match_dead(id)? {
         OutboxMatch::One(full) => Some(full),
         OutboxMatch::None => {
-            eprintln!("error: no failed item {id} (see `pama sync failed`)");
+            crate::fail!("not_found", "no failed item {id} (see `pama sync failed`)");
             None
         }
         OutboxMatch::Many(ids) => {

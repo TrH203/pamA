@@ -1,6 +1,7 @@
 //! `pama` command-line tool. Command surface follows specs/001-pama-mvp/contracts/cli.md.
 
 mod cmd;
+mod ui;
 
 use std::process::ExitCode;
 
@@ -690,7 +691,7 @@ fn main() -> ExitCode {
     match cmd::run(cli) {
         Ok(code) => code.into(),
         Err(e) => {
-            eprintln!("error: {e:#}");
+            ui::error("error", &format!("{e:#}"), None);
             Exit::User.into()
         }
     }

@@ -40,6 +40,18 @@ pairing registers the server too, forgetting the default moves it to another con
 `home`: in remote mode its background loop drafts on the device, delivers to the server and
 pulls review decisions, and the project sync switch edits the device's per-project list.
 
+## Terminal output
+
+Commands print a short heading, aligned key–value blocks or tables, and a mark on every status
+line (`✓` ok, `✗` failed, `!` needs attention, `…` in progress, `·` info), so nothing depends on
+colour alone. Errors read `✗ <code>: <message>` with the fix on the next line (`  → …`).
+Colour and spinners appear only on a terminal: `NO_COLOR=1` turns colour off, `CLICOLOR_FORCE=1`
+keeps it when piping, and piped output has no spinners. `--json` output is unchanged and is the
+stable interface for scripts.
+
+Two commands that find the local server stopped at the same moment start it once: the start
+takes a lock (`$PAMA_HOME/server.lock`) and checks health again before launching.
+
 ## Models: which one is in effect
 
 Provider ids, default endpoints, roles, whether a key is needed and whether a provider runs

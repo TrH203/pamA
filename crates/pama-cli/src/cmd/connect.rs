@@ -5,6 +5,7 @@ use pama_core::remote::{self, Home};
 use serde_json::json;
 
 use super::Ctx;
+use crate::ui::{self, Mark};
 use crate::Exit;
 
 pub fn connect(
@@ -17,7 +18,7 @@ pub fn connect(
     match code {
         Some(code) => {
             let Some(server) = url.or_else(|| std::env::var("PAMA_CLOUD_URL").ok()) else {
-                eprintln!("error: which server? `pama connect <url> --code <code>`");
+                crate::fail!("usage", "which server? `pama connect <url> --code <code>`");
                 return Ok(Exit::User);
             };
             // Pairing makes the server the default target; in remote mode the default is also
@@ -27,10 +28,10 @@ pub fn connect(
             if let Home::Server(prev) = &home_before {
                 if remote::home(&ctx.store) != home_before {
                     remote::set_default_server(&ctx.store, prev)?;
-                    eprintln!(
-                        "note: home stays {prev}; `pama use {}` moves review and Ask Links there",
+                    ui::note(&format!(
+                        "home stays {prev}; `pama use {}` moves review and Ask Links there",
                         remote::normalize(&server)
-                    );
+                    ));
                 }
             }
             Ok(exit)
@@ -52,8 +53,10 @@ pub fn use_home(ctx: &Ctx, target: &str, yes: bool) -> anyhow::Result<Exit> {
     let to = parse_home(target);
     let p = remote::preview_switch(&ctx.store, &to)?;
     if p.needs_connect {
-        eprintln!(
-            "error: this machine is not connected to {target}; run `pama connect {target}` first"
+        ui::error(
+            "not_connected",
+            &format!("this machine is not connected to {target}"),
+            Some(&format!("run `pama connect {target}` first")),
         );
         return Ok(Exit::Config);
     }
@@ -62,20 +65,30 @@ pub fn use_home(ctx: &Ctx, target: &str, yes: bool) -> anyhow::Result<Exit> {
     if let Home::Server(u) = &p.to {
         pama_core::secrets::init_platform_store();
         if !pama_core::secrets::exists(&pama_core::sync::token_key(u)).unwrap_or(false) {
-            eprintln!("error: no device token for {u}; run `pama connect {u}` again");
+            crate::fail!(
+                "not_logged_in",
+                "no device token for {u}; run `pama connect {u}` again"
+            );
             return Ok(Exit::Config);
         }
     }
     if p.unchanged {
         ctx.print(&json!({ "home": p.to, "changed": false }), || {
-            format!("already using {}", p.to.label())
+            format!("{} already using {}", Mark::Ok.sym(), p.to.label())
         });
         return Ok(Exit::Ok);
     }
     if !ctx.json || !yes {
-        eprintln!("Switch from {} to {}:", p.from.label(), p.to.label());
+        anstream::eprintln!(
+            "{}",
+            ui::heading(&format!(
+                "Switch from {} to {}:",
+                p.from.label(),
+                p.to.label()
+            ))
+        );
         for c in &p.consequences {
-            eprintln!("  • {c}");
+            anstream::eprintln!("  {} {c}", ui::dim("•"));
         }
     }
     if !yes && !super::login::ask_yes("Switch?") {
@@ -85,7 +98,7 @@ pub fn use_home(ctx: &Ctx, target: &str, yes: bool) -> anyhow::Result<Exit> {
                 serde_json::to_string_pretty(&json!({ "preview": p, "changed": false }))?
             );
         }
-        eprintln!("not changed (use --yes to switch without asking)");
+        ui::note("not changed (use --yes to switch without asking)");
         return Ok(Exit::User);
     }
     if matches!(to, Home::Local) {
@@ -98,7 +111,7 @@ pub fn use_home(ctx: &Ctx, target: &str, yes: bool) -> anyhow::Result<Exit> {
     }
     ctx.print(
         &json!({ "home": p.to, "changed": true, "preview": p }),
-        || format!("now using {}", p.to.label()),
+        || format!("{} now using {}", Mark::Ok.sym(), p.to.label()),
     );
     Ok(Exit::Ok)
 }
@@ -124,23 +137,44 @@ pub fn server_list(ctx: &Ctx) -> anyhow::Result<Exit> {
         })
         .collect();
     ctx.print(&json!({ "home": home, "servers": rows }), || {
-        let mut out = format!("home: {}", home.label());
+        let mut out = ui::kv(&[("home", home.label())]);
         if rows.is_empty() {
-            out.push_str("\nno servers; connect one with `pama connect <url>`");
-        }
-        for r in &rows {
             out.push_str(&format!(
-                "\n{} {}{}{}",
-                if r["default"] == true { "●" } else { "○" },
-                r["url"].as_str().unwrap_or(""),
-                if r["home"] == true { "  (home)" } else { "" },
-                if r["token"] == true {
-                    ""
-                } else {
-                    "  (no token: `pama connect` again)"
-                }
+                "\n\n{} no servers; connect one with {}",
+                Mark::Info.sym(),
+                ui::cmd("pama connect <url>")
             ));
+            return out;
         }
+        let table = rows
+            .iter()
+            .map(|r| {
+                vec![
+                    r["url"].as_str().unwrap_or("").to_string(),
+                    if r["default"] == true {
+                        Mark::Ok.label("default")
+                    } else {
+                        String::new()
+                    },
+                    if r["home"] == true {
+                        "home".to_string()
+                    } else {
+                        String::new()
+                    },
+                    if r["token"] == true {
+                        Mark::Ok.label("connected")
+                    } else {
+                        format!(
+                            "{} {}",
+                            Mark::Fail.label("no token"),
+                            ui::dim("→ `pama connect` again")
+                        )
+                    },
+                ]
+            })
+            .collect();
+        out.push_str("\n\n");
+        out.push_str(&ui::table(&["SERVER", "DEFAULT", "HOME", "DEVICE"], table));
         out
     });
     Ok(Exit::Ok)
@@ -149,12 +183,15 @@ pub fn server_list(ctx: &Ctx) -> anyhow::Result<Exit> {
 pub fn server_use(ctx: &Ctx, url: &str) -> anyhow::Result<Exit> {
     let url = remote::normalize(url);
     if !remote::set_default_server(&ctx.store, &url)? {
-        eprintln!("error: not connected to {url}; run `pama connect {url}`");
+        crate::fail!(
+            "not_logged_in",
+            "not connected to {url}; run `pama connect {url}`"
+        );
         return Ok(Exit::Config);
     }
     let home = remote::home(&ctx.store);
     ctx.print(&json!({ "default": url, "home": home }), || {
-        let mut out = format!("default server: {url}");
+        let mut out = format!("{} default server: {url}", Mark::Ok.sym());
         if home == Home::Local {
             out.push_str(&format!(
                 "\nhome is still this machine; `pama use {url}` moves review and Ask Links there"
@@ -168,7 +205,7 @@ pub fn server_use(ctx: &Ctx, url: &str) -> anyhow::Result<Exit> {
 pub fn server_forget(ctx: &Ctx, url: &str, discard_pending: bool) -> anyhow::Result<Exit> {
     let url = remote::normalize(url);
     if remote::server_entry(&ctx.store, &url).is_none() {
-        eprintln!("error: not connected to {url}");
+        crate::fail!("not_logged_in", "not connected to {url}");
         return Ok(Exit::User);
     }
     super::login::logout_from(ctx, Some(url), discard_pending)

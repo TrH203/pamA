@@ -48,29 +48,9 @@ pub fn duration(ms: Option<i64>) -> String {
     }
 }
 
-/// Plain aligned table: header row, then rows; the last column is not padded.
+/// Aligned table with a bold header (see `ui::table`).
 pub fn table(header: &[&str], rows: &[Vec<String>]) -> String {
-    let n = header.len();
-    let mut widths: Vec<usize> = header.iter().map(|h| h.chars().count()).collect();
-    for r in rows {
-        for (i, c) in r.iter().enumerate().take(n) {
-            widths[i] = widths[i].max(c.chars().count());
-        }
-    }
-    let line = |cells: Vec<String>| {
-        let mut out = String::new();
-        for (i, c) in cells.iter().enumerate() {
-            if i + 1 == n {
-                out.push_str(c);
-            } else {
-                out.push_str(&format!("{c:<w$}  ", w = widths[i]));
-            }
-        }
-        out.trim_end().to_string()
-    };
-    let mut out = vec![line(header.iter().map(|h| h.to_string()).collect())];
-    out.extend(rows.iter().map(|r| line(r.clone())));
-    out.join("\n")
+    crate::ui::table(header, rows.to_vec())
 }
 
 fn project_of(c: &CapturedSession) -> String {
@@ -159,16 +139,19 @@ fn print_list(ctx: &Ctx, captures: &[CapturedSession]) -> anyhow::Result<()> {
             c.agent.as_str().replace("claude_code", "claude"),
             project_of(c),
             ago(c.ended_at),
-            status_label(c),
+            crate::ui::status_phrase(&status_label(c)),
             attempts.len().to_string(),
-            last.map(timeline).unwrap_or_else(|| "-".into()),
+            last.map(|a| crate::ui::flow(&timeline(a)))
+                .unwrap_or_else(|| "-".into()),
         ]);
         items.push(capture_json(c, &attempts));
     }
     ctx.print(&json!({ "captures": items }), || {
         if rows.is_empty() {
-            return "No captured sessions yet. Run `pama init` in a project, or `pama scan`."
-                .into();
+            return format!(
+                "{} No captured sessions yet. Run `pama init` in a project, or `pama scan`.",
+                crate::ui::Mark::Info.sym()
+            );
         }
         let mut out = table(
             &[
@@ -198,7 +181,7 @@ fn follow(ctx: &Ctx) -> anyhow::Result<Exit> {
     let mut since = now_ms();
     let mut seen: std::collections::HashMap<String, Option<String>> = Default::default();
     if !ctx.json {
-        println!("Following captures (Ctrl-C to stop)…");
+        crate::ui::out(&crate::ui::dim("Following captures (Ctrl-C to stop)…"));
     }
     loop {
         for a in ctx.store.attempts_since(since - 1, 200)? {
@@ -221,7 +204,7 @@ fn follow(ctx: &Ctx) -> anyhow::Result<Exit> {
                 short_id(&a.capture_id),
                 a.attempt,
                 c.as_ref().map(project_of).unwrap_or_default(),
-                timeline(&a),
+                crate::ui::flow(&timeline(&a)),
             );
             if a.outcome.is_some() {
                 line.push_str(&format!(" ({})", duration(a.duration_ms)));
@@ -235,7 +218,7 @@ fn follow(ctx: &Ctx) -> anyhow::Result<Exit> {
                     ));
                 }
             }
-            println!("{line}");
+            crate::ui::out(&line);
         }
         std::thread::sleep(Duration::from_secs(2));
     }
@@ -257,7 +240,7 @@ fn show(ctx: &Ctx, id: &str) -> anyhow::Result<Exit> {
             let api = match ctx.api() {
                 Ok(a) => a,
                 Err(e) => {
-                    eprintln!("error: no capture `{id}` on this device");
+                    crate::fail!("not_found", "no capture `{id}` on this device");
                     return Ok(api_exit(&e));
                 }
             };
@@ -267,7 +250,7 @@ fn show(ctx: &Ctx, id: &str) -> anyhow::Result<Exit> {
                     Ok(Exit::Ok)
                 }
                 Err(e) => {
-                    eprintln!("error: no capture or server run `{id}`");
+                    crate::fail!("not_found", "no capture or server run `{id}`");
                     Ok(api_exit(&e))
                 }
             };
@@ -283,8 +266,8 @@ fn show(ctx: &Ctx, id: &str) -> anyhow::Result<Exit> {
     v["server_run"] = run.clone().unwrap_or(Value::Null);
     ctx.print(&v, || {
         let mut out = format!(
-            "Capture {}\n  agent     {} session {}\n  project   {}{}\n  status    {}\n  ended     {}",
-            c.id,
+            "{}\n  agent     {} session {}\n  project   {}{}\n  status    {}\n  ended     {}",
+            crate::ui::title(&format!("Capture {}", c.id)),
             c.agent.as_str(),
             c.agent_session_id,
             project_of(&c),
@@ -292,19 +275,23 @@ fn show(ctx: &Ctx, id: &str) -> anyhow::Result<Exit> {
                 .as_deref()
                 .map(|b| format!(" ({b})"))
                 .unwrap_or_default(),
-            status_label(&c),
+            crate::ui::status_phrase(&status_label(&c)),
             ago(c.ended_at),
         );
         if let Some(d) = &c.digest_id {
             out.push_str(&format!("\n  digest    {d}"));
         }
         if let (Some(code), Some(msg)) = (&c.error_code, &c.error) {
-            out.push_str(&format!("\n  last error {code}: {msg}"));
+            out.push_str(&format!(
+                "\n  last error {} {}: {msg}",
+                crate::ui::Mark::Fail.sym(),
+                crate::ui::bad(code)
+            ));
             if let Some(h) = ErrorCode::parse(code).map(|e| e.hint()) {
-                out.push_str(&format!("\n  → {h}"));
+                out.push_str(&format!("\n  {} {h}", crate::ui::dim("→")));
             }
         }
-        out.push_str("\n\nAttempts");
+        out.push_str(&format!("\n\n{}", crate::ui::heading("Attempts")));
         if attempts.is_empty() {
             out.push_str("\n  none yet");
         }
@@ -313,10 +300,14 @@ fn show(ctx: &Ctx, id: &str) -> anyhow::Result<Exit> {
                 "\n  #{} {}  {}  ({})",
                 a.attempt,
                 ago(a.started_at),
-                timeline(a),
+                crate::ui::flow(&timeline(a)),
                 duration(a.duration_ms)
             ));
-            if let Some(m) = a.error_detail.as_deref().filter(|_| a.outcome.as_deref() != Some("skipped")) {
+            if let Some(m) = a
+                .error_detail
+                .as_deref()
+                .filter(|_| a.outcome.as_deref() != Some("skipped"))
+            {
                 out.push_str(&format!("\n      {m}"));
             }
             let who: Vec<&str> = [a.role.as_deref(), a.provider.as_deref(), a.model.as_deref()]
@@ -331,7 +322,7 @@ fn show(ctx: &Ctx, id: &str) -> anyhow::Result<Exit> {
             }
         }
         if let Some(r) = &run {
-            out.push_str("\n\nServer run\n");
+            out.push_str(&format!("\n\n{}\n", crate::ui::heading("Server run")));
             out.push_str(&run_text(r));
         }
         out
@@ -392,14 +383,15 @@ fn retry(ctx: &Ctx, id: Option<String>, all_failed: bool) -> anyhow::Result<Exit
         return Ok(Exit::Ok);
     }
     let Some(id) = id else {
-        eprintln!("error: give a capture id or --all-failed");
+        crate::fail!("usage", "give a capture id or --all-failed");
         return Ok(Exit::User);
     };
     match ctx.store.find_capture(&id) {
         Ok(c) => {
             if !ctx.store.retry_capture(&c.id)? {
-                eprintln!(
-                    "error: capture {} is {}, only failed or skipped captures can be retried",
+                crate::fail!(
+                    "usage",
+                    "capture {} is {}, only failed or skipped captures can be retried",
                     short_id(&c.id),
                     c.status.as_str()
                 );
@@ -420,11 +412,14 @@ fn retry(ctx: &Ctx, id: Option<String>, all_failed: bool) -> anyhow::Result<Exit
                 Ok(a) => a,
                 Err(e) => return Ok(api_exit(&e)),
             };
-            match api.post_slow(
+            let spin = crate::ui::spinner(ctx.json, &format!("retrying run {id}…"));
+            let res = api.post_slow(
                 &format!("/v1/activity/{id}/retry"),
                 "activity.retry",
                 &json!({}),
-            ) {
+            );
+            spin.finish();
+            match res {
                 Ok(v) => {
                     ctx.print(&v, || {
                         format!(
@@ -599,7 +594,10 @@ mod tests {
                 vec!["22".into(), "ok".into(), "".into()],
             ],
         );
-        assert_eq!(t, "ID  STATUS  NOTE\n1   failed  x\n22  ok");
+        assert_eq!(
+            crate::ui::plain(&t),
+            "ID  STATUS  NOTE\n1   failed  x\n22  ok"
+        );
     }
 
     #[test]

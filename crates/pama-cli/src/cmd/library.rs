@@ -7,6 +7,7 @@ use serde_json::{json, Value};
 use super::bundle_fmt::branches_text;
 use super::resolve::{candidates, resolve_or_exit, Candidate};
 use super::{api_exit, Ctx};
+use crate::ui;
 use crate::{DigestsAction, Exit, ListPage, SessionsAction, TasksAction};
 
 /// `2026-10-23T09:12:00.000Z` → `2026-10-23 09:12`.
@@ -83,16 +84,19 @@ fn find_project(api: &Api, query: &str) -> Result<Value, Exit> {
 fn task_line(t: &Value) -> String {
     let n = t["session_count"].as_u64().unwrap_or(0);
     format!(
-        "  {}  {}\n      {} · branches: {} · last {}",
-        s(t, "id"),
+        "  {}  {}\n      {}",
+        ui::dim(s(t, "id")),
         s(t, "name"),
-        if n == 1 {
-            "1 session".to_string()
-        } else {
-            format!("{n} sessions")
-        },
-        branches_text(&strings(&t["branches"])),
-        when(&t["last_activity"]),
+        ui::dim(&format!(
+            "{} · branches: {} · last {}",
+            if n == 1 {
+                "1 session".to_string()
+            } else {
+                format!("{n} sessions")
+            },
+            branches_text(&strings(&t["branches"])),
+            when(&t["last_activity"]),
+        ))
     )
 }
 
@@ -108,15 +112,20 @@ pub fn tasks(ctx: &Ctx, action: TasksAction) -> anyhow::Result<Exit> {
                 }
                 ctx.print(&json!({ "items": items }), || {
                     if items.is_empty() {
-                        return "no tasks yet: tasks appear once an agent session is captured"
-                            .into();
+                        return format!(
+                            "{} no tasks yet: tasks appear once an agent session is captured",
+                            ui::Mark::Info.sym()
+                        );
                     }
                     let mut out = Vec::new();
                     let mut last = String::new();
                     for t in &items {
                         let p = s(t, "project").to_string();
                         if p != last {
-                            out.push(p.clone());
+                            if !out.is_empty() {
+                                out.push(String::new());
+                            }
+                            out.push(ui::heading(&p));
                             last = p;
                         }
                         out.push(task_line(t));
@@ -173,7 +182,7 @@ pub fn tasks(ctx: &Ctx, action: TasksAction) -> anyhow::Result<Exit> {
                 // A task named twice (by name and by id, say) is merged once.
                 let ids = unique(picked.iter().map(|t| s(t, "id")));
                 if ids.len() < 2 {
-                    eprintln!("error: give at least two different tasks");
+                    crate::fail!("usage", "give at least two different tasks");
                     return Err(Exit::User);
                 }
                 let name = name.unwrap_or_else(|| s(&picked[0], "name").to_string());
@@ -271,9 +280,12 @@ fn page_pairs(p: &ListPage) -> [(&'static str, Option<String>); 2] {
 }
 
 fn more_line(v: &Value, cmd: &str) -> Option<String> {
-    v["next_offset"]
-        .as_u64()
-        .map(|n| format!("… {} in all; next page: {cmd} --offset {n}", v["total"]))
+    v["next_offset"].as_u64().map(|n| {
+        ui::dim(&format!(
+            "… {} in all; next page: {cmd} --offset {n}",
+            v["total"]
+        ))
+    })
 }
 
 /// A session by id, id prefix or agent session id (prefix).
@@ -338,22 +350,30 @@ pub fn sessions(ctx: &Ctx, action: SessionsAction) -> anyhow::Result<Exit> {
                 ctx.print(&v, || {
                     let items = v["items"].as_array().cloned().unwrap_or_default();
                     if items.is_empty() {
-                        return "no agent sessions match".into();
+                        return format!("{} no agent sessions match", ui::Mark::Info.sym());
                     }
-                    let mut out: Vec<String> = items
+                    let rows = items
                         .iter()
                         .map(|x| {
-                            format!(
-                                "{}  {}  {} / {}  [{}]\n    {}",
-                                s(x, "id"),
+                            vec![
+                                s(x, "id").to_string(),
                                 when(&x["ended_at"]),
-                                s(x, "project"),
-                                s(x, "bundle"),
-                                x["status"].as_str().unwrap_or("no digest"),
-                                x["goal"].as_str().unwrap_or("(no digest yet)"),
-                            )
+                                format!("{} / {}", s(x, "project"), s(x, "bundle")),
+                                match x["status"].as_str() {
+                                    Some(st) => ui::status(st),
+                                    None => ui::dim("no digest"),
+                                },
+                                x["goal"]
+                                    .as_str()
+                                    .map(str::to_string)
+                                    .unwrap_or_else(|| ui::dim("(no digest yet)")),
+                            ]
                         })
                         .collect();
+                    let mut out = vec![ui::table(
+                        &["ID", "ENDED", "PROJECT / TASK", "DIGEST", "GOAL"],
+                        rows,
+                    )];
                     out.extend(more_line(&v, "pama sessions list"));
                     out.join("\n")
                 });
@@ -493,24 +513,34 @@ pub fn digests(ctx: &Ctx, action: DigestsAction) -> anyhow::Result<Exit> {
                 ctx.print(&v, || {
                     let items = v["items"].as_array().cloned().unwrap_or_default();
                     if items.is_empty() {
-                        return "no digests match".into();
+                        return format!("{} no digests match", ui::Mark::Info.sym());
                     }
-                    let mut out: Vec<String> = items
+                    let rows = items
                         .iter()
                         .map(|d| {
-                            format!(
-                                "{}  v{} {}  {}  {} / {}\n    {} ({} decision(s))",
-                                s(d, "id"),
-                                d["version"],
-                                s(d, "status"),
+                            vec![
+                                s(d, "id").to_string(),
+                                format!("v{}", d["version"]),
+                                ui::status(s(d, "status")),
                                 when(&d["created_at"]),
-                                s(d, "project"),
-                                s(d, "bundle"),
-                                s(d, "goal"),
-                                d["decisions"]
-                            )
+                                format!("{} / {}", s(d, "project"), s(d, "bundle")),
+                                d["decisions"].to_string(),
+                                s(d, "goal").to_string(),
+                            ]
                         })
                         .collect();
+                    let mut out = vec![ui::table(
+                        &[
+                            "ID",
+                            "VER",
+                            "STATUS",
+                            "CREATED",
+                            "PROJECT / TASK",
+                            "DECISIONS",
+                            "GOAL",
+                        ],
+                        rows,
+                    )];
                     out.extend(more_line(&v, "pama digests list"));
                     out.join("\n")
                 });
@@ -554,7 +584,7 @@ fn digest_text(d: &Value) -> String {
 
 pub fn search(ctx: &Ctx, query: &str, limit: u32) -> anyhow::Result<Exit> {
     if query.trim().is_empty() {
-        eprintln!("error: give something to search for");
+        crate::fail!("usage", "give something to search for");
         return Ok(Exit::User);
     }
     done((|| {

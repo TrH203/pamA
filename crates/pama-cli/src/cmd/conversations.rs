@@ -68,7 +68,8 @@ pub(crate) fn list_path(
 }
 
 pub(crate) fn format_list(v: &Value) -> String {
-    let rows: Vec<String> = v["items"]
+    use crate::ui::{self, Mark};
+    let rows: Vec<Vec<String>> = v["items"]
         .as_array()
         .into_iter()
         .flatten()
@@ -76,39 +77,35 @@ pub(crate) fn format_list(v: &Value) -> String {
             let wait = c["needs_reply"].as_i64().unwrap_or(0);
             let source = match str_of(c, "origin") {
                 "link" => format!(
-                    "[{}] {}",
+                    "{} {}",
                     c["link_title"].as_str().unwrap_or("link"),
-                    c["asker_email"].as_str().unwrap_or("anonymous")
+                    ui::dim(c["asker_email"].as_str().unwrap_or("anonymous"))
                 ),
-                "owner_chat" => "[chat]".to_string(),
-                o => format!("[{o}]"),
+                "owner_chat" => "chat".to_string(),
+                o => o.to_string(),
             };
-            format!(
-                "{}  {}  {} turn(s){}{}  {}\n    {}",
-                str_of(c, "id"),
-                str_of(c, "last_at").get(..16).unwrap_or(""),
-                c["turns"].as_i64().unwrap_or(0),
+            vec![
+                str_of(c, "id").to_string(),
+                str_of(c, "last_at").get(..16).unwrap_or("").to_string(),
+                c["turns"].as_i64().unwrap_or(0).to_string(),
                 if wait > 0 {
-                    format!(", {wait} waiting for you")
+                    Mark::Warn.label(&format!("{wait} waiting for you"))
+                } else if str_of(c, "status") == "archived" {
+                    Mark::Info.label("archived")
                 } else {
                     String::new()
                 },
-                if str_of(c, "status") == "archived" {
-                    " (archived)"
-                } else {
-                    ""
-                },
                 source,
-                str_of(c, "title"),
-            )
+                str_of(c, "title").to_string(),
+            ]
         })
         .collect();
     if rows.is_empty() {
-        return "no conversations".into();
+        return format!("{} no conversations", Mark::Info.sym());
     }
-    let mut out = rows.join("\n");
+    let mut out = ui::table(&["ID", "LAST", "TURNS", "STATE", "FROM", "TITLE"], rows);
     if let Some(n) = v["next_offset"].as_u64() {
-        out.push_str(&format!("\n\nmore: --offset {n}"));
+        out.push_str(&format!("\n\n{}", ui::dim(&format!("more: --offset {n}"))));
     }
     out
 }
@@ -274,7 +271,10 @@ pub fn chat(ctx: &Ctx, args: ChatArgs) -> anyhow::Result<Exit> {
     // Single shot: one question, one answer (the only form with --json).
     if let Some(q) = &args.question {
         let body = chat_body(q, args.conversation.as_deref(), &args.scope);
-        return match api.post_slow("/v1/chat", "chat.ask", &body) {
+        let spin = crate::ui::spinner(ctx.json, "thinking…");
+        let res = api.post_slow("/v1/chat", "chat.ask", &body);
+        spin.finish();
+        return match res {
             Ok(v) => {
                 ctx.print(&v, || {
                     format!(
@@ -289,7 +289,10 @@ pub fn chat(ctx: &Ctx, args: ChatArgs) -> anyhow::Result<Exit> {
         };
     }
     if ctx.json {
-        eprintln!("error: --json needs a question: pama chat --json -q \"…\"");
+        crate::fail!(
+            "usage",
+            "--json needs a question: pama chat --json -q \"…\""
+        );
         return Ok(Exit::User);
     }
 
@@ -343,19 +346,22 @@ pub fn chat(ctx: &Ctx, args: ChatArgs) -> anyhow::Result<Exit> {
                             .map(|p| format!("  (PIN {p})"))
                             .unwrap_or_default()
                     ),
-                    Err(e) => eprintln!("error: {e}"),
+                    Err(e) => crate::fail!("error", "{e}"),
                 }
                 continue;
             }
             _ => {}
         }
         let body = chat_body(line, conversation.as_deref(), &args.scope);
-        match api.post_slow("/v1/chat", "chat.ask", &body) {
+        let spin = crate::ui::spinner(!tty, "thinking…");
+        let res = api.post_slow("/v1/chat", "chat.ask", &body);
+        spin.finish();
+        match res {
             Ok(v) => {
                 if let Some(id) = v["conversation_id"].as_str() {
                     conversation = Some(id.to_string());
                 }
-                println!("{}", format_answer(&v));
+                crate::ui::out(&format_answer(&v));
             }
             Err(e) => {
                 let code = api_exit(&e);
@@ -436,12 +442,22 @@ mod tests {
             }],
             "next_offset": 50
         });
-        let t = format_list(&list);
-        assert!(
-            t.contains("C1  2026-10-31T10:00  2 turn(s), 1 waiting for you  [Refunds] anonymous")
-        );
+        let t = crate::ui::plain(&format_list(&list));
+        let row = t.lines().nth(1).unwrap_or_default();
+        for cell in [
+            "C1",
+            "2026-10-31T10:00",
+            "! 1 waiting for you",
+            "Refunds anonymous",
+            "Do refunds include shipping?",
+        ] {
+            assert!(row.contains(cell), "{cell} missing: {t}");
+        }
         assert!(t.ends_with("more: --offset 50"));
-        assert_eq!(format_list(&json!({ "items": [] })), "no conversations");
+        assert_eq!(
+            crate::ui::plain(&format_list(&json!({ "items": [] }))),
+            "· no conversations"
+        );
 
         let conv = json!({
             "id": "C1", "title": "Refunds", "link_title": "Refunds",

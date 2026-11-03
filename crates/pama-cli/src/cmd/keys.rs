@@ -64,50 +64,62 @@ pub fn run(ctx: &Ctx, action: KeysAction) -> anyhow::Result<Exit> {
         KeysAction::List => {
             let v = list_value(&ctx.store);
             ctx.print(&v, || {
-                let mut out = String::new();
+                use crate::ui::{self, Mark};
+                let mut rows = Vec::new();
                 for r in v["keys"].as_array().into_iter().flatten() {
                     let stored = r["stored"] == true;
                     if !stored && r["needs_key"] != true {
                         continue;
                     }
                     let test = match &r["last_test"] {
-                        Value::Null => String::new(),
+                        Value::Null => ui::dim("not tested"),
                         t => format!(
-                            "  last test: {} ({})",
-                            if t["ok"] == true { "ok" } else { "failed" },
-                            t["at"].as_str().unwrap_or("")
+                            "{} {}",
+                            if t["ok"] == true {
+                                Mark::Ok.label("ok")
+                            } else {
+                                Mark::Fail.label("failed")
+                            },
+                            ui::dim(t["at"].as_str().unwrap_or(""))
                         ),
                     };
-                    out.push_str(&format!(
-                        "{} {:<18} {}{}{}\n",
-                        if stored { "✓" } else { "·" },
-                        r["provider"].as_str().unwrap_or(""),
+                    rows.push(vec![
+                        r["provider"].as_str().unwrap_or("").to_string(),
                         if stored {
-                            format!("stored in {}", r["where"].as_str().unwrap_or(""))
+                            Mark::Ok.label("stored")
                         } else {
-                            "no key".into()
+                            Mark::Info.label("no key")
                         },
+                        if stored {
+                            r["where"].as_str().unwrap_or("").to_string()
+                        } else {
+                            ui::dim("-")
+                        },
+                        test,
                         if r["used_by_drafting"] == true {
-                            "  (drafting model)"
+                            "drafting model".to_string()
                         } else {
-                            ""
+                            String::new()
                         },
-                        test
-                    ));
+                    ]);
                 }
-                out.push_str("set one with `pama keys set <provider>` (reads stdin)");
-                out
+                format!(
+                    "{}\n\n{} {}",
+                    ui::table(&["PROVIDER", "KEY", "WHERE", "LAST TEST", "USED BY"], rows),
+                    ui::dim("Set one with"),
+                    ui::cmd("pama keys set <provider>")
+                ) + &ui::dim(" (reads stdin)")
             });
             Ok(Exit::Ok)
         }
         KeysAction::Set { provider } => {
             if !known(&provider) {
-                eprintln!("error: unknown provider {provider}");
+                crate::fail!("usage", "unknown provider {provider}");
                 return Ok(Exit::User);
             }
             let k = super::read_secret(&format!("{provider} API key"))?;
             if k.is_empty() {
-                eprintln!("error: empty key on stdin");
+                crate::fail!("usage", "empty key on stdin");
                 return Ok(Exit::User);
             }
             secrets::set(&providers::key_name(&provider), &k)?;
@@ -141,7 +153,10 @@ pub fn run(ctx: &Ctx, action: KeysAction) -> anyhow::Result<Exit> {
             let key = secrets::get(&providers::key_name(&provider))?;
             let needs = providers::get(&provider).is_some_and(|p| p.needs_key);
             if needs && key.is_none() {
-                eprintln!("error: no {provider} key stored; `pama keys set {provider}`");
+                crate::fail!(
+                    "not_found",
+                    "no {provider} key stored; `pama keys set {provider}`"
+                );
                 return Ok(Exit::Config);
             }
             // The drafting model's endpoint when it uses this provider (custom base URLs).
@@ -155,7 +170,9 @@ pub fn run(ctx: &Ctx, action: KeysAction) -> anyhow::Result<Exit> {
                 .then(|| ctx.store.setting("provider.chat.base_url").ok().flatten())
                 .flatten()
             });
+            let spin = crate::ui::spinner(ctx.json, &format!("testing the {provider} key…"));
             let t = providers::test_key(&ctx.store, &provider, base_url.as_deref(), key.as_deref());
+            spin.finish();
             let at = pama_core::capture::worker::rfc3339(std::time::SystemTime::now());
             let record = json!({ "at": at, "ok": t.ok, "detail": t.detail });
             ctx.store
@@ -164,10 +181,10 @@ pub fn run(ctx: &Ctx, action: KeysAction) -> anyhow::Result<Exit> {
                 &json!({ "provider": provider, "ok": t.ok, "detail": t.detail, "latencyMs": t.latency_ms }),
                 || {
                     format!(
-                        "{} {}  ({} ms)",
-                        if t.ok { "✓" } else { "✗" },
+                        "{} {}  {}",
+                        crate::ui::Mark::from_ok(t.ok).sym(),
                         t.detail,
-                        t.latency_ms
+                        crate::ui::dim(&format!("({} ms)", t.latency_ms))
                     )
                 },
             );

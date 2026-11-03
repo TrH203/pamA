@@ -7,6 +7,7 @@ use pama_core::client::{Api, ApiError};
 use serde_json::{json, Value};
 
 use super::{api_exit, Ctx};
+use crate::ui;
 use crate::{Exit, ModelAction, ModelSet, SwitchTarget};
 
 const ROLES: [&str; 3] = ["chat", "small", "embed"];
@@ -15,28 +16,24 @@ fn s<'a>(v: &'a Value, k: &str) -> &'a str {
     v[k].as_str().unwrap_or("")
 }
 
-fn mark(ok: bool) -> &'static str {
-    if ok {
-        "✓"
-    } else {
-        "✗"
-    }
+fn mark(ok: bool) -> String {
+    ui::Mark::from_ok(ok).sym()
 }
 
 fn print_check(c: &Value) {
     for i in c["items"].as_array().into_iter().flatten() {
         let fix = i["fix"]
             .as_str()
-            .map(|f| format!(" — {f}"))
+            .map(|f| format!("\n      {} {f}", ui::dim("→")))
             .unwrap_or_default();
-        println!(
-            "  {} {}{fix}",
+        ui::out(&format!(
+            "    {} {}{fix}",
             mark(i["ok"].as_bool() == Some(true)),
             s(i, "detail")
-        );
+        ));
     }
     if let Some(ms) = c["latencyMs"].as_i64() {
-        println!("  {ms} ms");
+        ui::out(&format!("    {}", ui::dim(&format!("{ms} ms"))));
     }
 }
 
@@ -247,48 +244,53 @@ fn show(ctx: &Ctx, api: &Api) -> Result<Exit, ApiError> {
         v["device"] = device_row(ctx);
     }
     ctx.print(&v, || {
-        let mut out = String::new();
-        let line = |label: &str, x: &Value| {
-            format!(
-                "{:<9} {:<18} {:<5} {:<28} {:<9} key {:<8} {:<10} {}\n",
-                label,
-                x["preset"].as_str().unwrap_or(s(x, "provider")),
-                if x["local"].as_bool() == Some(true) {
-                    "local"
-                } else {
-                    "cloud"
-                },
-                s(x, "model"),
-                origin_label(s(x, "origin")),
-                if x["key_set"].as_bool() == Some(true) {
-                    "set"
-                } else {
-                    "not set"
-                },
+        let row = |label: &str, x: &Value| {
+            let local = x["local"].as_bool() == Some(true);
+            let key = if local {
+                ui::dim("-")
+            } else if x["key_set"].as_bool() == Some(true) {
+                ui::Mark::Ok.label("set")
+            } else {
+                ui::Mark::Warn.label("not set")
+            };
+            vec![
+                label.to_string(),
+                x["preset"].as_str().unwrap_or(s(x, "provider")).to_string(),
+                s(x, "model").to_string(),
+                if local { "local" } else { "cloud" }.to_string(),
+                origin_label(s(x, "origin")).to_string(),
+                key,
                 if x["scope"] == "workspace" {
-                    "workspace"
+                    ui::Mark::Info.label("workspace")
                 } else if x["verified"].as_bool() == Some(true) {
-                    "verified"
+                    ui::Mark::Ok.label("verified")
                 } else {
-                    ""
+                    ui::dim("not checked")
                 },
-                x["base_url"].as_str().unwrap_or(""),
-            )
+                ui::dim(x["base_url"].as_str().unwrap_or("")),
+            ]
         };
+        let header = [
+            "ROLE", "PROVIDER", "MODEL", "WHERE", "FROM", "KEY", "CHECK", "BASE URL",
+        ];
+        let mut out = Vec::new();
         if remote_mode {
-            out.push_str(&format!("server models ({}):\n", api.base_url()));
+            out.push(ui::heading(&format!("Server models ({})", api.base_url())));
         }
-        for r in ROLES {
-            out.push_str(&line(r, &v["roles"][r]));
-        }
+        out.push(ui::table(
+            &header,
+            ROLES.iter().map(|r| row(r, &v["roles"][r])).collect(),
+        ));
         if remote_mode {
-            out.push_str("this machine (drafts digests):\n");
-            out.push_str(&line("drafting", &v["device"]));
+            out.push(String::new());
+            out.push(ui::heading("This machine (drafts digests)"));
+            out.push(ui::table(&header, vec![row("drafting", &v["device"])]));
         }
         if v["strict_offline"].as_bool() == Some(true) {
-            out.push_str("strict offline: on\n");
+            out.push(String::new());
+            out.push(format!("{} strict offline: on", ui::Mark::Info.sym()));
         }
-        out.trim_end().to_string()
+        out.join("\n")
     });
     Ok(Exit::Ok)
 }
@@ -301,17 +303,22 @@ fn check(ctx: &Ctx, api: &Api, role: Option<String>) -> Result<Exit, ApiError> {
     let mut all_ok = true;
     let mut results = serde_json::Map::new();
     for r in roles {
-        let c = api.post("/v1/models/check", "model.check", &json!({ "role": r }))?;
-        all_ok &= c["ok"].as_bool() == Some(true);
+        let spin = ui::spinner(ctx.json, &format!("checking the {r} model…"));
+        let c = api.post("/v1/models/check", "model.check", &json!({ "role": r }));
+        spin.finish();
+        let c = c?;
+        let ok = c["ok"].as_bool() == Some(true);
+        all_ok &= ok;
         if !ctx.json {
-            println!(
-                "{r}: {}",
-                if c["ok"].as_bool() == Some(true) {
-                    "ok"
+            ui::out(&format!(
+                "{} {}",
+                ui::bold(&format!("{r:<6}")),
+                if ok {
+                    ui::Mark::Ok.label("ok")
                 } else {
-                    "problem"
+                    ui::Mark::Fail.label("problem")
                 }
-            );
+            ));
             print_check(&c);
         }
         results.insert(r.to_string(), c);
@@ -325,7 +332,10 @@ fn check(ctx: &Ctx, api: &Api, role: Option<String>) -> Result<Exit, ApiError> {
 fn setup(ctx: &Ctx, api: &Api, preset: Option<String>) -> anyhow::Result<Exit> {
     use pama_core::providers;
     if !std::io::stdin().is_terminal() {
-        eprintln!("error: `pama model setup` needs an interactive terminal; use `pama model set`");
+        crate::fail!(
+            "usage",
+            "`pama model setup` needs an interactive terminal; use `pama model set`"
+        );
         return Ok(Exit::User);
     }
     let cur = match api.get("/v1/models/settings", "model.show") {
@@ -352,7 +362,7 @@ fn setup(ctx: &Ctx, api: &Api, preset: Option<String>) -> anyhow::Result<Exit> {
         Some(id) => match providers::preset(id) {
             Some(p) => Some(p),
             None => {
-                eprintln!("error: unknown preset {id} ({})", presets.join(", "));
+                crate::fail!("usage", "unknown preset {id} ({})", presets.join(", "));
                 return Ok(Exit::User);
             }
         },
@@ -460,7 +470,10 @@ fn run_device(ctx: &Ctx, action: ModelAction) -> anyhow::Result<Exit> {
             ..
         }) => {
             if role == "embed" {
-                eprintln!("error: the device only drafts digests; embeddings run on the server");
+                crate::fail!(
+                    "usage",
+                    "the device only drafts digests; embeddings run on the server"
+                );
                 return Ok(Exit::User);
             }
             let candidate = ModelConfig {
@@ -474,7 +487,7 @@ fn run_device(ctx: &Ctx, action: ModelAction) -> anyhow::Result<Exit> {
                     "Drafting sends redacted session text to {provider}. Continue?"
                 ))
             {
-                eprintln!("error: confirm with --yes: drafting with {provider} sends redacted session text to it");
+                crate::fail!("usage", "confirm with --yes: drafting with {provider} sends redacted session text to it");
                 return Ok(Exit::User);
             }
             let st = &ctx.store;
@@ -502,6 +515,7 @@ fn run_device(ctx: &Ctx, action: ModelAction) -> anyhow::Result<Exit> {
             Ok(Exit::Ok)
         }
         ModelAction::Check { .. } => {
+            let spin = ui::spinner(ctx.json, "checking the drafting model…");
             let started = std::time::Instant::now();
             let result = HttpModel::new(&ctx.store, "cli").and_then(|m| {
                 m.complete(
@@ -511,6 +525,7 @@ fn run_device(ctx: &Ctx, action: ModelAction) -> anyhow::Result<Exit> {
                 )
             });
             let ms = started.elapsed().as_millis() as u64;
+            spin.finish();
             let ok = result.is_ok();
             let detail = match &result {
                 Ok(_) => "drafting model answers with JSON".to_string(),
@@ -520,16 +535,22 @@ fn run_device(ctx: &Ctx, action: ModelAction) -> anyhow::Result<Exit> {
                 &json!({ "ok": ok, "detail": detail, "latencyMs": ms }),
                 || {
                     format!(
-                        "drafting: {}\n  {} {detail}\n  {ms} ms",
-                        if ok { "ok" } else { "problem" },
-                        mark(ok)
+                        "{} {}\n    {} {detail}\n    {}",
+                        ui::bold("drafting"),
+                        if ok {
+                            ui::Mark::Ok.label("ok")
+                        } else {
+                            ui::Mark::Fail.label("problem")
+                        },
+                        mark(ok),
+                        ui::dim(&format!("{ms} ms"))
                     )
                 },
             );
             Ok(if ok { Exit::Ok } else { Exit::Config })
         }
         _ => {
-            eprintln!("error: with --device use show, set or check");
+            crate::fail!("usage", "with --device use show, set or check");
             Ok(Exit::User)
         }
     }
@@ -601,7 +622,7 @@ pub fn run(ctx: &Ctx, device: bool, action: ModelAction) -> anyhow::Result<Exit>
                 SwitchTarget::Local => ("ollama".to_string(), model.unwrap_or(current_model)),
                 SwitchTarget::Cloud => {
                     let Some(m) = model else {
-                        eprintln!("error: --model is required when switching to cloud");
+                        crate::fail!("usage", "--model is required when switching to cloud");
                         return Ok(Exit::User);
                     };
                     let default = if role == "embed" {

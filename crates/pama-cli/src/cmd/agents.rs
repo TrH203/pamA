@@ -23,8 +23,9 @@ fn exe() -> String {
 fn lookup(id: &str) -> Option<&'static dyn AgentAdapter> {
     let a = agents::by_id(id);
     if a.is_none() {
-        eprintln!(
-            "error: unknown agent {id} (one of: {})",
+        crate::fail!(
+            "usage",
+            "unknown agent {id} (one of: {})",
             agents::all()
                 .iter()
                 .map(|a| a.cli_id())
@@ -66,34 +67,49 @@ pub fn status_value(store: &Store) -> Value {
 fn list(ctx: &Ctx) -> Exit {
     let v = status_value(&ctx.store);
     ctx.print(&v, || {
-        let mut out = String::new();
-        for r in v["agents"].as_array().into_iter().flatten() {
-            let hooks = r["hooks"].as_array().cloned().unwrap_or_default();
-            out.push_str(&format!(
-                "{} {:<12} {:<12} {:<4} hook: {:<28} {} session(s) in 7 days, {} captured\n",
-                if r["enabled"] == true { "●" } else { "○" },
-                r["name"].as_str().unwrap_or(""),
-                if r["detected"] == true {
-                    "detected"
-                } else {
-                    "not found"
-                },
-                if r["enabled"] == true { "on" } else { "off" },
-                if hooks.is_empty() {
-                    "none (scan only)".to_string()
-                } else {
-                    hooks
-                        .iter()
-                        .map(|h| h["scope"].as_str().unwrap_or("").to_string())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                },
-                r["recent_sessions"],
-                r["captured"],
-            ));
-        }
-        out.push_str("turn one on with `pama agents enable <id> [--global|--project <dir>]`");
-        out
+        use crate::ui::{self, Mark};
+        let rows = v["agents"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|r| {
+                let hooks = r["hooks"].as_array().cloned().unwrap_or_default();
+                vec![
+                    r["id"].as_str().unwrap_or("").to_string(),
+                    r["name"].as_str().unwrap_or("").to_string(),
+                    if r["detected"] == true {
+                        Mark::Ok.label("detected")
+                    } else {
+                        Mark::Info.label("not found")
+                    },
+                    if r["enabled"] == true {
+                        Mark::Ok.label("on")
+                    } else {
+                        Mark::Info.label("off")
+                    },
+                    if hooks.is_empty() {
+                        ui::dim("none (scan only)")
+                    } else {
+                        hooks
+                            .iter()
+                            .map(|h| h["scope"].as_str().unwrap_or("").to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    },
+                    r["recent_sessions"].to_string(),
+                    r["captured"].to_string(),
+                ]
+            })
+            .collect();
+        format!(
+            "{}\n\n{} {}",
+            ui::table(
+                &["ID", "AGENT", "FOUND", "CAPTURE", "HOOK", "7 DAYS", "CAPTURED"],
+                rows
+            ),
+            ui::dim("Turn one on with"),
+            ui::cmd("pama agents enable <id> [--global|--project <dir>]")
+        )
     });
     Exit::Ok
 }
@@ -150,13 +166,13 @@ pub fn run(ctx: &Ctx, action: Option<AgentsAction>) -> anyhow::Result<Exit> {
                     changes.push(format!("hook already in {}", f.display()))
                 }
                 Err(e) => {
-                    eprintln!("warning: {e}; sessions are still found by `pama scan`");
+                    crate::ui::note(&format!("{e}; sessions are still found by `pama scan`"));
                 }
             }
             ctx.print(&json!({ "agent": a.cli_id(), "changes": changes }), || {
                 changes
                     .iter()
-                    .map(|c| format!("✓ {c}"))
+                    .map(|c| format!("{} {c}", crate::ui::Mark::Ok.sym()))
                     .collect::<Vec<_>>()
                     .join("\n")
             });
@@ -194,7 +210,7 @@ pub fn run(ctx: &Ctx, action: Option<AgentsAction>) -> anyhow::Result<Exit> {
                 }
             }
             for e in &errors {
-                eprintln!("warning: {e}");
+                crate::ui::note(&e.to_string());
             }
             ctx.print(
                 &json!({ "agent": a.cli_id(), "removed": removed, "errors": errors }),
@@ -204,7 +220,7 @@ pub fn run(ctx: &Ctx, action: Option<AgentsAction>) -> anyhow::Result<Exit> {
                     } else {
                         removed
                             .iter()
-                            .map(|f| format!("✓ hook removed from {f}"))
+                            .map(|f| format!("{} hook removed from {f}", crate::ui::Mark::Ok.sym()))
                             .collect::<Vec<_>>()
                             .join("\n")
                     }

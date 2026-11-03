@@ -5,6 +5,7 @@ use std::process::Command;
 use serde_json::{json, Value};
 
 use super::{api_exit, Ctx};
+use crate::ui::{self, Mark};
 use crate::Exit;
 
 fn edit_in_editor(content: &Value) -> anyhow::Result<Option<Value>> {
@@ -57,19 +58,23 @@ pub fn run(
             .map(|v| {
                 (
                     v.clone(),
-                    format!("approved {}", v["digest_id"].as_str().unwrap_or(&id)),
+                    format!(
+                        "{} approved {}",
+                        Mark::Ok.sym(),
+                        v["digest_id"].as_str().unwrap_or(&id)
+                    ),
                 )
             })
     } else if let Some(id) = discard {
         api.post(&format!("/v1/digests/{id}/discard"), "review", &json!({}))
-            .map(|v| (v, format!("discarded {id}")))
+            .map(|v| (v, format!("{} discarded {id}", Mark::Info.sym())))
     } else if let Some(id) = edit {
         let d = match api.get(&format!("/v1/digests/{id}"), "review") {
             Ok(d) => d,
             Err(e) => return Ok(api_exit(&e)),
         };
         let Some(content) = edit_in_editor(&d["content"])? else {
-            eprintln!("editor exited with an error; nothing changed");
+            crate::fail!("editor", "the editor exited with an error; nothing changed");
             return Ok(Exit::User);
         };
         api.post(
@@ -78,38 +83,61 @@ pub fn run(
             &json!({ "content": content }),
         )
         .map(|v| {
-            let msg = format!("approved edited digest as version {}", v["version"]);
+            let msg = format!(
+                "{} approved edited digest as version {}",
+                Mark::Ok.sym(),
+                v["version"]
+            );
             (v, msg)
         })
     } else {
         api.get("/v1/review", "review").map(|v| {
             let items = v["items"].as_array().cloned().unwrap_or_default();
             let text = if items.is_empty() {
-                "no drafts waiting for review".to_string()
+                Mark::Ok.label("no drafts waiting for review")
             } else {
-                items
-                    .iter()
-                    .map(|d| {
-                        let decisions = d["content"]["decisions"].as_array().map_or(0, Vec::len);
-                        format!(
-                            "{}  {} / {}{}{}\n    goal: {}\n    {} decision(s), {} secret(s) and {} PII item(s) removed",
-                            d["id"].as_str().unwrap_or("?"),
-                            d["project"].as_str().unwrap_or("?"),
-                            d["bundle"].as_str().unwrap_or("?"),
-                            super::bundle_fmt::branch_hint(&d["branches"]),
-                            d["device"]
-                                .as_str()
-                                .map(|n| format!("  (from {n})"))
-                                .unwrap_or_default(),
-                            d["content"]["goal"].as_str().unwrap_or(""),
-                            decisions,
-                            d["content"]["redactions"]["secret"],
-                            d["content"]["redactions"]["pii"],
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n\n")
-                    + "\n\napprove: pama review --approve <id> · edit: pama review --edit <id>"
+                let n = items.len();
+                let mut out = vec![ui::title(&format!(
+                    "{n} draft{} waiting for review",
+                    if n == 1 { "" } else { "s" }
+                ))];
+                for d in &items {
+                    let decisions = d["content"]["decisions"].as_array().map_or(0, Vec::len);
+                    out.push(String::new());
+                    out.push(format!(
+                        "{} {}  {} / {}{}{}",
+                        Mark::Warn.sym(),
+                        ui::bold(d["id"].as_str().unwrap_or("?")),
+                        d["project"].as_str().unwrap_or("?"),
+                        d["bundle"].as_str().unwrap_or("?"),
+                        super::bundle_fmt::branch_hint(&d["branches"]),
+                        d["device"]
+                            .as_str()
+                            .map(|n| ui::dim(&format!("  (from {n})")))
+                            .unwrap_or_default(),
+                    ));
+                    out.push(format!(
+                        "    {} {}",
+                        ui::dim("goal:"),
+                        d["content"]["goal"].as_str().unwrap_or("")
+                    ));
+                    out.push(format!(
+                        "    {}",
+                        ui::dim(&format!(
+                            "{decisions} decision(s), {} secret(s) and {} PII item(s) removed",
+                            d["content"]["redactions"]["secret"], d["content"]["redactions"]["pii"],
+                        ))
+                    ));
+                }
+                out.push(String::new());
+                out.push(format!(
+                    "{} {} {} {}",
+                    ui::dim("approve:"),
+                    ui::cmd("pama review --approve <id>"),
+                    ui::dim("· edit:"),
+                    ui::cmd("pama review --edit <id>")
+                ));
+                out.join("\n")
             };
             (v, text)
         })

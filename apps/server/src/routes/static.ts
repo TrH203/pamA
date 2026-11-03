@@ -101,6 +101,7 @@ export const CONSOLE_ROUTES = [
   "/home",
   "/review",
   "/conversations",
+  "/conversations/*",
   "/links",
   "/chat",
   "/library",

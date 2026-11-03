@@ -1,9 +1,17 @@
 import { LOCALES, type Locale, useI18n } from "@pama/i18n";
 import { Button, ErrorBanner, Skeleton, Textarea } from "@pama/ui";
-import { ArrowUp, ChevronDown, Link2Off, WifiOff } from "lucide-react";
+import { ArrowUp, ChevronDown, Link2Off, SquarePen, WifiOff } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { AccessGate } from "./AccessGate.tsx";
-import { type Ask, api, type Meta, PublicError } from "./api.ts";
+import {
+  type Ask,
+  api,
+  type ConversationSummary,
+  type Meta,
+  PublicError,
+  turnToAsk,
+} from "./api.ts";
+import { ConversationList } from "./ConversationList.tsx";
 import { Thread } from "./Thread.tsx";
 
 type State =
@@ -43,14 +51,46 @@ export function AskPage() {
   const [question, setQuestion] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // The open conversation (null: a new one, created by the first question) and this asker's
+  // conversations on the link; null when the server predates conversations (spec 008).
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [conversations, setConversations] = useState<ConversationSummary[] | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
+
+  const refreshList = useCallback(async () => {
+    const r = await api.conversations().catch(() => null);
+    if (r) setConversations(r.items);
+    return r?.items ?? null;
+  }, []);
+
+  const open = useCallback(async (id: string | null) => {
+    setError(null);
+    setConversationId(id);
+    if (!id) {
+      setAsks([]);
+      return;
+    }
+    const c = await api.conversation(id);
+    setAsks(c.turns.map(turnToAsk));
+  }, []);
 
   const load = useCallback(async () => {
     try {
       const meta = await api.meta();
       setState({ kind: "ready", meta });
-      const mine = await api.asks();
-      setAsks(mine.items.slice().reverse());
+      // Resume the latest conversation (also after email verification on another device).
+      const list = await api.conversations().catch((e) => {
+        if (e instanceof PublicError && e.status === 404) return null;
+        throw e;
+      });
+      if (list) {
+        setConversations(list.items);
+        const latest = list.items.find((c) => c.turns > 0);
+        await open(latest?.id ?? null);
+      } else {
+        const mine = await api.asks();
+        setAsks(mine.items.slice().reverse());
+      }
     } catch (e) {
       if (e instanceof PublicError && e.status === 401)
         setState({ kind: "gate", mode: e.access ?? "pin" });
@@ -58,7 +98,7 @@ export function AskPage() {
         setState({ kind: "inactive" });
       else setState({ kind: "offline" });
     }
-  }, []);
+  }, [open]);
 
   useEffect(() => {
     void load();
@@ -68,11 +108,16 @@ export function AskPage() {
   useEffect(() => {
     if (!asks.some((a) => a.status === "forwarded")) return;
     const id = setInterval(async () => {
+      if (conversationId) {
+        const c = await api.conversation(conversationId).catch(() => null);
+        if (c) setAsks(c.turns.map(turnToAsk));
+        return;
+      }
       const mine = await api.asks().catch(() => null);
       if (mine) setAsks(mine.items.slice().reverse());
     }, 15_000);
     return () => clearInterval(id);
-  }, [asks]);
+  }, [asks, conversationId]);
 
   // Scroll to the newest message whenever one is added.
   const count = asks.length;
@@ -89,7 +134,18 @@ export function AskPage() {
     setAsks((xs) => [...xs, temp]);
     setQuestion("");
     try {
-      const r = await api.ask(text);
+      let r: Awaited<ReturnType<typeof api.ask>>;
+      try {
+        r = await api.ask(text, conversationId ?? undefined);
+      } catch (e) {
+        // The conversation was deleted (maybe on another device): start a new one.
+        if (!(conversationId && e instanceof PublicError && e.status === 404)) throw e;
+        r = await api.ask(text);
+      }
+      if (r.conversation_id) {
+        setConversationId(r.conversation_id);
+        void refreshList();
+      }
       setAsks((xs) =>
         xs.map((a) =>
           a.id === temp.id
@@ -161,6 +217,28 @@ export function AskPage() {
         <p className="text-ui text-muted">{t.asking(meta.owner)}</p>
         <h1 className="mt-0.5 text-xl font-semibold tracking-tight sm:text-2xl">{meta.title}</h1>
         <p className="mt-2 text-ui leading-5 text-muted">{t.automated(meta.owner)}</p>
+        {conversations !== null && (conversations.length > 0 || asks.length > 0) && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <ConversationList
+              items={conversations}
+              current={conversationId}
+              onOpen={(id) => open(id).catch(() => setError(t.offline(meta.owner)))}
+              onDeleted={async (id) => {
+                const left = await refreshList();
+                if (id === conversationId) await open(left?.find((c) => c.turns > 0)?.id ?? null);
+              }}
+            />
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy || (conversationId === null && asks.length === 0)}
+              onClick={() => void open(null)}
+            >
+              <SquarePen aria-hidden />
+              {all.convo.ask.newConversation}
+            </Button>
+          </div>
+        )}
         {meta.coverage.length > 0 && (
           <details className="group mt-3 text-ui">
             <summary className="inline-flex cursor-pointer select-none list-none items-center gap-1 text-muted hover:text-fg">

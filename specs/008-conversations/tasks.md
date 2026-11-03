@@ -47,6 +47,16 @@
 ## Not in this slice
 
 - [ ] T017 CLI flags for `--from/--to`, archive and export (server routes exist)
-- [ ] T018 Web UI (console Conversations and Chat pages, Ask page conversation list, desktop popup history): separate web slice
+- [x] T018 Web UI (console Conversations and Chat pages, Ask page conversation list, desktop popup history), see Phase 7
+
+## Phase 7: Web UI (spec 008 UI slice)
+
+- [x] T024 Console `/conversations` (`apps/web/src/console/pages/conversations/ConversationsPage.tsx`): list from `GET /v1/conversations` with status (All, Needs reply = old Inbox, Open, Archived), link, source and date filters in the URL, paging, JSON/CSV export (all pages via `next_offset` / `X-Pama-Next-Offset`); `Inbox.tsx` removed
+- [x] T025 Console `/conversations/:id` (`ConversationDetail.tsx`): thread with status chips, citations linking to the Library search (`/library/search?q=<item text>`), owner replies; inline reply composer with "Suggest a reply" and Dismiss; archive/unarchive; delete with ConfirmDialog; server serves `/conversations/*` deep links
+- [x] T026 Console `/chat` (`apps/web/src/console/pages/chat/ChatPage.tsx`): chat list sidebar, multi-turn pane on `POST /v1/chat`, scope picker (searchable multi-select `ScopeCombobox`, fixed once a chat starts), citation chips, "Create Ask Link from this chat" (`POST /v1/chat/:id/link`) dialog with URL and PIN
+- [x] T027 Ask page (`apps/web/src/ask/AskPage.tsx`, `ConversationList.tsx`): resumes the latest conversation (also after email OTP on another device), follow-ups send `conversation_id`, "New conversation", list/switch/delete own conversations; falls back to `/asks` on servers without conversations; Playwright selectors unchanged
+- [x] T028 Desktop popup (`apps/web/src/desktop/Popup.tsx`, `RecentDrafts.tsx`): recent drafts from `GET /v1/draft/recent` can be reopened; scope picked with the searchable combobox (tasks and projects)
+- [x] T029 EN/VI strings in `packages/i18n/src/conversations.ts` (mounted as `convo`)
+- [x] T030 Component tests: `conversations.test.tsx`, `chat.test.tsx`, `ask/AskPage.test.tsx`, `desktop/Popup.test.tsx`
 - [x] T024 Console Settings → Retention (`apps/web/src/console/pages/settings/Retention.tsx`):
   `GET/PUT /v1/settings/retention` with validation (1–3650 days)

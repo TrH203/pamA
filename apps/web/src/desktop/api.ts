@@ -19,6 +19,29 @@ export interface Draft {
   suggested_scope: { type: "bundle"; id: string; title: string }[];
 }
 
+/** A hotkey draft recorded by the server (GET /v1/draft/recent, spec 008). */
+export interface RecentDraft {
+  ask_id: string;
+  conversation_id: string | null;
+  question: string;
+  answer: string | null;
+  reason: string | null;
+  citations: { item_id: string; label?: string }[];
+  language: string | null;
+  created_at: string;
+}
+
+/** A recent draft as the popup shows a fresh one (no confidence or scope suggestion kept). */
+export const recentToDraft = (r: RecentDraft): Draft => ({
+  ask_id: r.ask_id,
+  status: r.answer ? "answered" : "refused",
+  ...(r.answer ? { answer: r.answer } : { reason: r.reason ?? "out_of_scope" }),
+  citations: r.citations.map((c) => ({ item_id: c.item_id, label: c.label ?? "" })),
+  confidence: 0,
+  language: r.language ?? "en",
+  suggested_scope: [],
+});
+
 let tokenCache: string | null = null;
 
 async function token(): Promise<string> {
@@ -46,6 +69,8 @@ export const draftApi = {
   draft: (question: string, opts: { scope_hint?: SourceRef[]; shorter?: boolean } = {}) =>
     call<Draft>("/v1/draft", { question, ...opts }),
   bundles: () => call<{ items: { id: string; name: string; project: string }[] }>("/v1/bundles"),
+  projects: () => call<{ items: { id: string; name: string }[] }>("/v1/projects"),
+  recent: (limit = 20) => call<{ items: RecentDraft[] }>(`/v1/draft/recent?limit=${limit}`),
   syncStatus: () =>
     call<{
       projects: {

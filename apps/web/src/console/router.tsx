@@ -11,16 +11,18 @@ import {
   Outlet,
   redirect,
 } from "@tanstack/react-router";
-import { House, Library, MessageCircle } from "lucide-react";
+import { House, Library } from "lucide-react";
 import { Audit } from "./Audit.tsx";
 import { Bundles } from "./Bundles.tsx";
 import { Doctor } from "./Doctor.tsx";
-import { Inbox } from "./Inbox.tsx";
 import { Links } from "./Links.tsx";
 import { Placeholder } from "./Placeholder.tsx";
 import { ActivityLayout } from "./pages/activity/ActivityLayout.tsx";
 import { ActivityList, validateActivitySearch } from "./pages/activity/ActivityList.tsx";
 import { RunDetail } from "./pages/activity/RunDetail.tsx";
+import { ChatPage, chatSearch } from "./pages/chat/ChatPage.tsx";
+import { ConversationDetailPage } from "./pages/conversations/ConversationDetail.tsx";
+import { ConversationsPage, conversationSearch } from "./pages/conversations/ConversationsPage.tsx";
 import { Home } from "./pages/home/Home.tsx";
 import {
   Connections,
@@ -58,17 +60,6 @@ function NotFound() {
           {t.nav.home}
         </Link>
       }
-    />
-  );
-}
-
-function ChatPage() {
-  const { t } = useI18n();
-  return (
-    <Placeholder
-      title={t.pages.chat.title}
-      description={t.pages.chat.description}
-      icon={MessageCircle}
     />
   );
 }
@@ -178,13 +169,33 @@ export function makeRouter(opts: { dev?: boolean } = {}) {
     createRoute({ getParentRoute: () => settings, path: "retention", component: Retention }),
   ];
 
+  // Conversations and Chat (spec 008); the old Inbox is /conversations?status=needs_reply.
+  const conversations = createRoute({
+    getParentRoute: () => root,
+    path: "/conversations",
+    component: ConversationsPage,
+    validateSearch: conversationSearch,
+  });
+  const conversationDetail = createRoute({
+    getParentRoute: () => root,
+    path: "/conversations/$id",
+    component: ConversationDetailPage,
+  });
+  const chat = createRoute({
+    getParentRoute: () => root,
+    path: "/chat",
+    component: ChatPage,
+    validateSearch: chatSearch,
+  });
+
   const tree = root.addChildren([
     index,
     homeAlias,
     page("/review", Review),
-    page("/conversations", Inbox),
+    conversations,
+    conversationDetail,
     links,
-    page("/chat", ChatPage),
+    chat,
     library.addChildren([libraryIndex, tasks]),
     activity.addChildren([activityIndex, audit, doctor, runDetail]),
     settings.addChildren([settingsIndex, ...settingsPages]),

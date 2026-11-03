@@ -1,12 +1,13 @@
 // Hotkey popup (US3): the captured question, a cited draft, and Copy / Paste / Shorter / Edit /
 // Change scope / Create Ask Link. It never sends anything: Paste only fills the focused field.
 import { useI18n } from "@pama/i18n";
-import { Badge, Button, ErrorBanner, Notice, Select, Spinner, Textarea } from "@pama/ui";
+import { Badge, Button, ErrorBanner, Notice, Spinner, Textarea } from "@pama/ui";
 import {
   Check,
   ClipboardPaste,
   Copy,
   Crosshair,
+  History,
   Link2,
   Pencil,
   Scissors,
@@ -14,8 +15,10 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { type Draft, draftApi, type SourceRef } from "./api.ts";
+import { ScopeCombobox, type ScopeOption } from "../console/pages/chat/ScopeCombobox.tsx";
+import { type Draft, draftApi, recentToDraft, type SourceRef } from "./api.ts";
 import { type CaptureResult, ipc, onHotkey } from "./ipc.ts";
+import { RecentDrafts } from "./RecentDrafts.tsx";
 
 export function Popup() {
   const { t: all } = useI18n();
@@ -26,9 +29,9 @@ export function Popup() {
   const [text, setText] = useState("");
   const [editing, setEditing] = useState(false);
   const [scope, setScope] = useState<SourceRef[] | undefined>();
-  const [bundles, setBundles] = useState<{ id: string; name: string; project: string }[] | null>(
-    null,
-  );
+  // Scope options (tasks and projects), loaded when the scope picker opens.
+  const [scopes, setScopes] = useState<ScopeOption[] | null>(null);
+  const [showRecent, setShowRecent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [axDenied, setAxDenied] = useState(false);
@@ -59,6 +62,7 @@ export function Popup() {
       setDraft(null);
       setText("");
       setScope(undefined);
+      setShowRecent(false);
       if (c.text) void run(c.text);
     },
     [run],
@@ -125,62 +129,74 @@ export function Popup() {
         />
       </form>
 
-      <section className="min-h-0 flex-1 overflow-auto" aria-live="polite" aria-busy={busy}>
-        {busy && (
-          <p className="inline-flex items-center gap-2 text-muted">
-            <Spinner size="sm" label={null} />
-            {t.drafting}
-          </p>
-        )}
-        {error && <ErrorBanner title={all.common.error} message={error} />}
-        {!busy && !draft && !error && <p className="text-faint">{t.emptyHint}</p>}
-        {!busy && draft && !answered && (
-          <Notice tone="warning" icon={TriangleAlert}>
-            {t.refused[draft.reason ?? ""] ?? t.refused.out_of_scope}
-          </Notice>
-        )}
-        {!busy &&
-          answered &&
-          (editing ? (
-            <Textarea
-              className="h-full min-h-32 text-sm"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              aria-label={t.draft}
-            />
-          ) : (
-            <p className="whitespace-pre-wrap text-sm leading-6">{text}</p>
-          ))}
-        {!busy && answered && draft?.citations.length ? (
-          <p className="mt-3 flex flex-wrap gap-1.5">
-            {draft.citations.map((c, i) => (
-              <Badge key={c.item_id}>
-                [{i + 1}] {c.label}
-              </Badge>
+      {showRecent ? (
+        <section className="min-h-0 flex-1 overflow-auto" aria-label={all.convo.popup.recent}>
+          <RecentDrafts
+            onPick={(r) => {
+              const d = recentToDraft(r);
+              setQuestion(r.question);
+              setMethod("none");
+              setDraft(d);
+              setText(d.answer ?? "");
+              setEditing(false);
+              setError(null);
+              setShowRecent(false);
+            }}
+          />
+        </section>
+      ) : (
+        <section className="min-h-0 flex-1 overflow-auto" aria-live="polite" aria-busy={busy}>
+          {busy && (
+            <p className="inline-flex items-center gap-2 text-muted">
+              <Spinner size="sm" label={null} />
+              {t.drafting}
+            </p>
+          )}
+          {error && <ErrorBanner title={all.common.error} message={error} />}
+          {!busy && !draft && !error && <p className="text-faint">{t.emptyHint}</p>}
+          {!busy && draft && !answered && (
+            <Notice tone="warning" icon={TriangleAlert}>
+              {t.refused[draft.reason ?? ""] ?? t.refused.out_of_scope}
+            </Notice>
+          )}
+          {!busy &&
+            answered &&
+            (editing ? (
+              <Textarea
+                className="h-full min-h-32 text-sm"
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                aria-label={t.draft}
+              />
+            ) : (
+              <p className="whitespace-pre-wrap text-sm leading-6">{text}</p>
             ))}
-          </p>
-        ) : null}
-      </section>
+          {!busy && answered && draft?.citations.length ? (
+            <p className="mt-3 flex flex-wrap gap-1.5">
+              {draft.citations.map((c, i) => (
+                <Badge key={c.item_id}>
+                  [{i + 1}]{c.label ? ` ${c.label}` : ""}
+                </Badge>
+              ))}
+            </p>
+          ) : null}
+        </section>
+      )}
 
-      {bundles && (
-        <Select
-          aria-label={t.scope}
-          value={scope?.[0]?.id ?? ""}
-          onChange={(e) => {
-            const s = e.target.value
-              ? [{ type: "bundle" as const, id: e.target.value }]
-              : undefined;
+      {scopes && (
+        <ScopeCombobox
+          label={t.scope}
+          placeholder={all.convo.popup.scopeSearch}
+          emptyLabel={all.convo.popup.scopeNone}
+          allLabel={t.scopeAll}
+          options={scopes}
+          value={scope ?? []}
+          onChange={(v) => {
+            const s = v.length ? v : undefined;
             setScope(s);
             void run(question, { scope_hint: s });
           }}
-        >
-          <option value="">{t.scopeAll}</option>
-          {bundles.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.project} / {b.name}
-            </option>
-          ))}
-        </Select>
+        />
       )}
 
       <footer className="flex flex-wrap gap-2 border-t border-line pt-3">
@@ -211,11 +227,38 @@ export function Popup() {
         </Button>
         <Button
           variant="ghost"
-          aria-pressed={bundles !== null}
-          onClick={async () => setBundles(bundles ? null : (await draftApi.bundles()).items)}
+          aria-pressed={scopes !== null}
+          onClick={async () => {
+            if (scopes) return setScopes(null);
+            try {
+              const [b, p] = await Promise.all([
+                draftApi.bundles(),
+                draftApi.projects().catch(() => ({ items: [] })),
+              ]);
+              setScopes([
+                ...b.items.map((x) => ({
+                  ref: { type: "bundle" as const, id: x.id },
+                  label: x.name,
+                  hint: x.project,
+                  group: all.convo.chat.tasks,
+                })),
+                ...p.items.map((x) => ({
+                  ref: { type: "project" as const, id: x.id },
+                  label: x.name,
+                  group: all.convo.chat.projects,
+                })),
+              ]);
+            } catch (e) {
+              setError((e as Error).message);
+            }
+          }}
         >
           <Crosshair aria-hidden />
           {t.scope}
+        </Button>
+        <Button variant="ghost" aria-pressed={showRecent} onClick={() => setShowRecent((x) => !x)}>
+          <History aria-hidden />
+          {all.convo.popup.recent}
         </Button>
         <Button
           variant="ghost"

@@ -1,3 +1,4 @@
+import { convoVi } from "./conversations.ts";
 import type { Messages } from "./en.ts";
 import { pipelineVi } from "./pipeline.ts";
 import { settingsVi } from "./settings-vi.ts";
@@ -210,4 +211,5 @@ export const vi: Messages = {
     footer: "Tạo link của riêng bạn với pamA",
     you: "Bạn",
   },
+  convo: convoVi,
 };

@@ -49,6 +49,8 @@ describe("web pages", () => {
       "/",
       "/review",
       "/links",
+      "/conversations/01JC0000000000000000000001",
+      "/chat",
       "/library",
       "/library/tasks",
       "/activity/audit",

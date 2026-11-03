@@ -50,5 +50,20 @@
     `pama sync disable` command that lists the affected Ask Links). Server mode shows Sharing.
   - [ ] T040b "Send now" and failed items need a local server route that reaches the device
     outbox; the page shows `pama sync now` / `pama sync failed` with copy buttons until then
+  - [x] T040c Console Library (`apps/web/src/console/pages/library/`): `/library/tasks` (one-line
+    "what is a Task", per project, branch chips, session count, publish state in local mode,
+    inline rename, multi-select merge with confirm), `/library/tasks/:id` (split picked sessions),
+    `/library/sessions` and `/library/sessions/:id` (agent badge, times, branches, digest versions
+    with a version comparison, withdraw, delete with confirm, move to another task of the project
+    via split + merge, Ask Links using the session), `/library/digests` (status/project/task
+    filters), `/library/search?q=` (results grouped by task); replaces `console/Bundles.tsx`
+  - [x] T040d Review structured editor (spec 008a, `apps/web/src/console/pages/review/`): goal,
+    decisions (add/remove/reorder; what, why, rejected alternatives, labels), outcome, open
+    items, modules; validated against `session-digest.schema.json` limits before
+    `POST /v1/digests/:id/approve` with the edited content; shortcuts a/e/d/j/k with a visible
+    hint; replaces `console/Review.tsx` and the raw-JSON textarea
+  - [x] T040e Tests: `pages/library/library.test.tsx`, `pages/review/review.test.tsx`
+  - [ ] T040f A single "move session to task" server route (today the console splits the session
+    out and merges it into the target, two requests that are not atomic)
 - [ ] T041 Ask which projects to share right after `pama connect`
 - [ ] T042 Offer to move projects when the default server changes

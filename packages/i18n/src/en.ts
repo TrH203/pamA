@@ -1,4 +1,5 @@
 import { convoEn } from "./conversations.ts";
+import { libEn } from "./library.ts";
 import { pipelineEn } from "./pipeline.ts";
 import { settingsEn } from "./settings-en.ts";
 // English interface strings. `vi.ts` must provide every key (the type enforces it).
@@ -214,6 +215,7 @@ export const en = {
     you: "You",
   },
   convo: convoEn,
+  lib: libEn,
 };
 
 export type Messages = typeof en;

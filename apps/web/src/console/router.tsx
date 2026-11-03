@@ -1,19 +1,17 @@
 // Console routes (spec 009). URL-based so pages deep-link and the back button works; the server
 // serves console.html for each top-level section (apps/server/src/routes/static.ts).
 import { useI18n } from "@pama/i18n";
-import { buttonClass, ErrorBanner, PageHeader } from "@pama/ui";
+import { buttonClass, ErrorBanner } from "@pama/ui";
 import {
   createRootRoute,
   createRoute,
   createRouter,
   type ErrorComponentProps,
   Link,
-  Outlet,
   redirect,
 } from "@tanstack/react-router";
-import { House, Library } from "lucide-react";
+import { House } from "lucide-react";
 import { Audit } from "./Audit.tsx";
-import { Bundles } from "./Bundles.tsx";
 import { Doctor } from "./Doctor.tsx";
 import { Links } from "./Links.tsx";
 import { Placeholder } from "./Placeholder.tsx";
@@ -24,6 +22,14 @@ import { ChatPage, chatSearch } from "./pages/chat/ChatPage.tsx";
 import { ConversationDetailPage } from "./pages/conversations/ConversationDetail.tsx";
 import { ConversationsPage, conversationSearch } from "./pages/conversations/ConversationsPage.tsx";
 import { Home } from "./pages/home/Home.tsx";
+import { Digests } from "./pages/library/Digests.tsx";
+import { LibraryLayout } from "./pages/library/Library.tsx";
+import { SearchResults } from "./pages/library/SearchResults.tsx";
+import { SessionDetailRoute } from "./pages/library/SessionDetail.tsx";
+import { Sessions } from "./pages/library/Sessions.tsx";
+import { TaskDetailRoute } from "./pages/library/TaskDetail.tsx";
+import { Tasks } from "./pages/library/Tasks.tsx";
+import { Review } from "./pages/review/Review.tsx";
 import {
   Connections,
   Devices,
@@ -32,8 +38,7 @@ import {
   Retention,
   SettingsLayout,
 } from "./pages/settings/index.ts";
-import { Review } from "./Review.tsx";
-import { Shell, SubNav } from "./Shell.tsx";
+import { Shell } from "./Shell.tsx";
 
 /** A page that threw while rendering: keep the shell and offer a retry instead of a bare trace. */
 function RouteError({ error, reset }: ErrorComponentProps) {
@@ -58,40 +63,6 @@ function NotFound() {
       action={
         <Link to="/" className={buttonClass("secondary")}>
           {t.nav.home}
-        </Link>
-      }
-    />
-  );
-}
-
-function LibraryLayout() {
-  const { t } = useI18n();
-  return (
-    <>
-      <PageHeader title={t.pages.library.title} description={t.pages.library.description} />
-      <SubNav
-        label={t.pages.library.title}
-        items={[
-          { to: "/library", label: t.pages.library.title, exact: true },
-          { to: "/library/tasks", label: t.nav.tasks },
-        ]}
-      />
-      <Outlet />
-    </>
-  );
-}
-
-function LibraryIndex() {
-  const { t } = useI18n();
-  return (
-    <Placeholder
-      header={false}
-      title={t.pages.library.title}
-      description={t.pages.library.description}
-      icon={Library}
-      action={
-        <Link to="/library/tasks" className={buttonClass("secondary")}>
-          {t.nav.tasks}
         </Link>
       }
     />
@@ -131,13 +102,33 @@ export function makeRouter(opts: { dev?: boolean } = {}) {
       ...(s.new === true || s.new === "true" ? { new: true } : {}),
     }),
   });
+  // Library (spec 007): Tasks, Sessions, Digests and search; `/library` opens Tasks.
   const library = page("/library", LibraryLayout);
   const libraryIndex = createRoute({
     getParentRoute: () => library,
     path: "/",
-    component: LibraryIndex,
+    beforeLoad: () => {
+      throw redirect({ to: "/library/tasks", replace: true });
+    },
   });
-  const tasks = createRoute({ getParentRoute: () => library, path: "tasks", component: Bundles });
+  const libChild = (path: string, component: () => React.JSX.Element) =>
+    createRoute({ getParentRoute: () => library, path, component });
+  const librarySearch = createRoute({
+    getParentRoute: () => library,
+    path: "search",
+    component: SearchResults,
+    validateSearch: (s: Record<string, unknown>): { q?: string } =>
+      searchText(s.q) !== undefined ? { q: searchText(s.q) } : {},
+  });
+  const libraryRoutes = [
+    libraryIndex,
+    libChild("tasks", Tasks),
+    libChild("tasks/$id", TaskDetailRoute),
+    libChild("sessions", Sessions),
+    libChild("sessions/$id", SessionDetailRoute),
+    libChild("digests", Digests),
+    librarySearch,
+  ];
   const activity = page("/activity", ActivityLayout);
   const activityIndex = createRoute({
     getParentRoute: () => activity,
@@ -196,7 +187,7 @@ export function makeRouter(opts: { dev?: boolean } = {}) {
     conversationDetail,
     links,
     chat,
-    library.addChildren([libraryIndex, tasks]),
+    library.addChildren(libraryRoutes),
     activity.addChildren([activityIndex, audit, doctor, runDetail]),
     settings.addChildren([settingsIndex, ...settingsPages]),
   ]);

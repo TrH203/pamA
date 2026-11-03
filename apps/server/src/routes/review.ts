@@ -3,7 +3,13 @@ import { Hono } from "hono";
 import { z } from "zod";
 import type { Env } from "../app.ts";
 import { HttpError } from "../http.ts";
-import { listBundles, mergeBundles, renameBundle, splitBundle } from "../services/bundles.ts";
+import {
+  listBundles,
+  mergeBundles,
+  moveSessionsToBundle,
+  renameBundle,
+  splitBundle,
+} from "../services/bundles.ts";
 import { approveDigest, discardDigest, withdrawDigest } from "../services/digests.ts";
 import {
   queueBundleChange,
@@ -144,6 +150,14 @@ export const reviewRoutes = new Hono<Env>()
     await redeliverBundleName(db, id);
     await queueBundleChange(db, workspaceId, id);
     return c.json({ id });
+  })
+  .post("/bundles/:id/sessions", async (c) => {
+    // Move sessions into this task in one transaction (spec 007 T040f).
+    const { db, workspaceId } = c.get("deps");
+    const m = await body(c, z.strictObject({ session_ids: z.array(z.string()).min(1).max(500) }));
+    const out = await moveSessionsToBundle(db, workspaceId, c.req.param("id"), m.session_ids);
+    for (const id of [out.id, ...out.remaining]) await queueBundleChange(db, workspaceId, id);
+    return c.json(out);
   })
   .post("/bundles/:id/split", async (c) => {
     const { db, workspaceId } = c.get("deps");

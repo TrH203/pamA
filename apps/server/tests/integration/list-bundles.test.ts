@@ -113,6 +113,44 @@ describeEachDb("bundle summaries", (f) => {
     });
   });
 
+  it("moves sessions into a task in one step and deletes a task the move empties", async () => {
+    const a = await submit({ agent_session_id: "a1", bundle_key: "feat/a" });
+    await submit({ agent_session_id: "a2", bundle_key: "feat/a" });
+    const b = await submit({ agent_session_id: "b1", bundle_key: "feat/b" });
+    const c = await submit({ agent_session_id: "c1", bundle_key: "feat/c" });
+    const before = await list();
+    const target = before.find((i) => i.id === c.bundle_id);
+
+    // a1 leaves a task that keeps a2; b1 is the only session of its task.
+    const res = await t.req(`/v1/bundles/${c.bundle_id}/sessions`, {
+      json: { session_ids: [a.session_id, b.session_id] },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ id: c.bundle_id, remaining: [a.bundle_id] });
+
+    const ids = await t.db.query<{ id: string }>("SELECT id FROM bundles ORDER BY id");
+    expect(ids.map((r) => r.id).sort()).toEqual([a.bundle_id, c.bundle_id].sort());
+    const items = await list();
+    const moved = items.find((i) => i.id === c.bundle_id);
+    expect(moved).toMatchObject({ name: target?.name, name_source: "key", session_count: 3 });
+    expect(moved?.sessions.find((s) => s.id === a.session_id)?.bundle_pinned).toBe(true);
+    expect(items.find((i) => i.id === a.bundle_id)?.session_count).toBe(1);
+  });
+
+  it("rejects a move with an unknown session and changes nothing", async () => {
+    const a = await submit({ agent_session_id: "a1", bundle_key: "feat/a" });
+    const c = await submit({ agent_session_id: "c1", bundle_key: "feat/c" });
+    const res = await t.req(`/v1/bundles/${c.bundle_id}/sessions`, {
+      json: { session_ids: [a.session_id, "nope"] },
+    });
+    expect(res.status).toBe(404);
+    const [s] = await t.db.query<{ bundle_id: string }>(
+      "SELECT bundle_id FROM sessions WHERE id = $1",
+      [a.session_id],
+    );
+    expect(s?.bundle_id).toBe(a.bundle_id);
+  });
+
   it("hides empty bundles and handles sessions without branches", async () => {
     await submit({ agent_session_id: "plain", git: undefined, bundle_key: "default" });
     const [b] = await list();

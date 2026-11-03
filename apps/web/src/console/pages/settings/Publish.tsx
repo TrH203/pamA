@@ -38,7 +38,9 @@ import {
 } from "./data.ts";
 import { CopyCommand, Loaded } from "./shared.tsx";
 
-const quote = (s: string) => (/^[\w./-]+$/.test(s) ? s : `"${s.replaceAll('"', '\\"')}"`);
+/** POSIX single-quoting: nothing inside is expanded when the owner pastes the command. */
+export const shellQuote = (s: string) =>
+  /^[\w./-]+$/.test(s) ? s : `'${s.replaceAll("'", "'\\''")}'`;
 
 type Change =
   | { kind: "project"; id: string; body: { sync_enabled: boolean; sync_target?: string } }
@@ -80,7 +82,7 @@ function usePublishToggle(defaultTarget: string | undefined) {
           <span className="block">{p.stopBody(where)}</span>
           <span className="block">{p.stopListHint}</span>
           <code className="block break-all rounded-control bg-subtle px-2 py-1 font-mono text-xs text-fg">
-            pama sync disable {flag} {quote(name)}
+            pama sync disable {flag} {shellQuote(id)}
           </code>
         </span>
       ),

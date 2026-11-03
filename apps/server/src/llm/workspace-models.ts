@@ -4,6 +4,8 @@
 import type { Deps } from "../app.ts";
 import type { ProviderConfig } from "../config.ts";
 import { HttpError } from "../http.ts";
+import type { EgressGuard } from "../net/egress.ts";
+import { assertPublicHost, NotPublicError } from "../net/public-host.ts";
 import { type CheckResult, checkProvider } from "./check.ts";
 import { tagModel } from "./errors.ts";
 import { isLocal, language, type Models } from "./providers.ts";
@@ -20,13 +22,13 @@ interface Stored {
 /** Workspace → its chat override (null: none). Cleared on every write. */
 const cache = new Map<string, ProviderConfig | null>();
 
-const IP_LITERAL = /^(\d{1,3}(\.\d{1,3}){3}|\[[0-9a-f:]+\])$/i;
-
 /**
- * A tenant's endpoint is called by the server: only public HTTPS hosts, never loopback, private
- * ranges or IP literals (no server-side request forgery into the operator's network).
+ * A tenant's endpoint is called by the server: only public HTTPS hosts whose every address is a
+ * public one, never loopback, private, link-local or CGNAT ranges, single-label (compose service)
+ * names or IP literals (no server-side request forgery into the operator's network). Requests to
+ * it then go through `guard.publicOnly()`, which pins the connection and refuses redirects.
  */
-export function assertPublicEndpoint(p: ProviderConfig): void {
+export async function assertPublicEndpoint(p: ProviderConfig, guard: EgressGuard): Promise<void> {
   if (p.provider === "ollama") {
     throw new HttpError(
       422,
@@ -35,13 +37,20 @@ export function assertPublicEndpoint(p: ProviderConfig): void {
     );
   }
   if (!p.baseUrl) return;
-  const u = new URL(p.baseUrl);
-  if (u.protocol !== "https:" || IP_LITERAL.test(u.hostname) || isLocal(p)) {
-    throw new HttpError(
-      422,
-      "invalid_request",
-      "Use a public https:// endpoint for your own model.",
-    );
+  const refuse = () =>
+    new HttpError(422, "invalid_request", "Use a public https:// endpoint for your own model.");
+  let u: URL;
+  try {
+    u = new URL(p.baseUrl);
+  } catch {
+    throw refuse();
+  }
+  if (u.protocol !== "https:" || isLocal(p)) throw refuse();
+  try {
+    await assertPublicHost(u.hostname, (h) => guard.resolveHost(h));
+  } catch (e) {
+    if (e instanceof NotPublicError) throw refuse();
+    throw e;
   }
 }
 
@@ -72,7 +81,7 @@ export async function modelsFor(deps: Deps, workspaceId: string): Promise<Models
   if (!p) return deps.models;
   return {
     ...deps.models,
-    chat: tagModel(language(p, deps.guard, deps.models.fake, "llm.chat"), {
+    chat: tagModel(language(p, deps.guard.publicOnly(), deps.models.fake, "llm.chat"), {
       role: "chat",
       provider: p.provider,
       model: p.model,
@@ -114,9 +123,11 @@ export async function applyWorkspaceChat(deps: Deps, input: ApplyInput) {
     ...(r.baseUrl ? { baseUrl: r.baseUrl } : {}),
     ...(apiKey ? { apiKey } : {}),
   };
-  assertPublicEndpoint(cand);
+  await assertPublicEndpoint(cand, deps.guard);
   if (!cand.apiKey) throw new HttpError(422, "invalid_request", "An API key is required.");
-  const check: CheckResult = await checkProvider("chat", cand, deps.guard, deps.models.fake);
+  const check: CheckResult = await checkProvider("chat", cand, deps.guard, deps.models.fake, {
+    publicOnly: true,
+  });
   if (!check.ok && !input.confirm.includes("unverified")) {
     throw Object.assign(
       new HttpError(422, "check_failed", check.items.find((i) => !i.ok)?.detail ?? "check failed"),

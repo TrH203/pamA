@@ -361,6 +361,8 @@ describe("per-workspace answering model (cloud)", () => {
       apiKey: "sk-test-key",
       confirm: ["unverified"],
     };
+    // The endpoint must resolve to public addresses only (SSRF guard); no DNS in tests.
+    t.deps.guard.resolveHost = async () => [{ address: "93.184.216.34", family: 4 }];
     expect((await put(a, "chat", own)).status).toBe(200);
     expect((await view(a)).roles.chat).toMatchObject({ scope: "workspace", model: "my-model" });
     expect((await view(b)).roles.chat?.scope).toBe("server");

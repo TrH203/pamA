@@ -306,7 +306,22 @@ fn check(ctx: &Ctx, api: &Api, role: Option<String>) -> Result<Exit, ApiError> {
         let spin = ui::spinner(ctx.json, &format!("checking the {r} model…"));
         let c = api.post("/v1/models/check", "model.check", &json!({ "role": r }));
         spin.finish();
-        let c = c?;
+        // A cloud server lets a workspace check only some roles; servers before 0.2.1 answer
+        // 403 for the operator's roles. Report those as the operator's and check the rest.
+        let c = match c {
+            Err(ApiError::Status { status: 403, .. }) if role.is_none() => {
+                if !ctx.json {
+                    ui::out(&format!(
+                        "{} {}",
+                        ui::bold(&format!("{r:<6}")),
+                        ui::Mark::Info.label("operator only")
+                    ));
+                }
+                results.insert(r.to_string(), json!({ "role": r, "operator_only": true }));
+                continue;
+            }
+            c => c?,
+        };
         let ok = c["ok"].as_bool() == Some(true);
         all_ok &= ok;
         if !ctx.json {

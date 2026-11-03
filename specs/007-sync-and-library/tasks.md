@@ -63,7 +63,9 @@
     `POST /v1/digests/:id/approve` with the edited content; shortcuts a/e/d/j/k with a visible
     hint; replaces `console/Review.tsx` and the raw-JSON textarea
   - [x] T040e Tests: `pages/library/library.test.tsx`, `pages/review/review.test.tsx`
-  - [ ] T040f A single "move session to task" server route (today the console splits the session
-    out and merges it into the target, two requests that are not atomic)
+  - [x] T040f `POST /v1/bundles/:id/sessions {session_ids}` moves sessions into an existing task in
+    one transaction (`moveSessionsToBundle`): a source task the move empties is merged into the
+    target and deleted, a source that keeps sessions gives them up through split + merge (same
+    publish rules); the target keeps its name. The console's "Move to task" uses it
 - [ ] T041 Ask which projects to share right after `pama connect`
 - [ ] T042 Offer to move projects when the default server changes

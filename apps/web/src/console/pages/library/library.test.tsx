@@ -389,13 +389,12 @@ describe("Session detail", () => {
     await waitFor(() => expect(sent(fetch, "POST", "/v1/digests/d2/withdraw")).toHaveLength(1));
   });
 
-  it("moves the session to another task of the project (split, then merge)", async () => {
+  it("moves the session to another task of the project in one request", async () => {
     const fetch = stubApi([
       ["/v1/sessions/s1", detail],
       ["/v1/digests/", full("d", 1, [])],
       ["/v1/bundles", { items: bundles }],
-      ["POST /v1/bundles/b1/split", { id: "tmp" }],
-      ["POST /v1/bundles/merge", { id: "b2" }],
+      ["POST /v1/bundles/b2/sessions", { id: "b2", remaining: [] }],
     ]);
     renderAt("/library/sessions/s1");
     await userEvent.click(await screen.findByRole("button", { name: "Move to task" }));
@@ -409,13 +408,10 @@ describe("Session detail", () => {
     ).toEqual(["Checkout copy"]);
     await userEvent.click(within(dialog).getByRole("button", { name: "Move" }));
     await waitFor(() =>
-      expect(sent(fetch, "POST", "/v1/bundles/merge")).toEqual([
-        { bundle_ids: ["b2", "tmp"], name: "Checkout copy" },
-      ]),
+      expect(sent(fetch, "POST", "/v1/bundles/b2/sessions")).toEqual([{ session_ids: ["s1"] }]),
     );
-    expect(sent(fetch, "POST", "/v1/bundles/b1/split")).toEqual([
-      { session_ids: ["s1"], new_name: "Checkout copy" },
-    ]);
+    expect(sent(fetch, "POST", "/v1/bundles/merge")).toEqual([]);
+    expect(sent(fetch, "POST", "/v1/bundles/b1/split")).toEqual([]);
   });
 
   it("says when the session is gone", async () => {

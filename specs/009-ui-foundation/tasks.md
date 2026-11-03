@@ -49,7 +49,14 @@
   (read-only strict offline, declared hosts, data flow, where each part runs, CLI hints) and
   `/settings/retention`
 - [x] T031 Strings in `packages/i18n/src/settings-{en,vi}.ts`
-- [x] T032 Server: `POST /v1/models/check` for a cloud workspace owner checks only chat (own model,
-  a candidate on a public https endpoint, or the operator's without details) and never writes
-  the operator's last check (`tests/integration/tenant-model-check.test.ts`)
+- [x] T032 Server: `POST /v1/models/check` for a cloud workspace owner checks candidates only for
+  chat (own model, or a candidate on a public https endpoint); small and embed (and chat without
+  an override) return the operator's check without details, so `pama model check` on a paired
+  device still sees every role (the CLI also reports a 403 role as "operator only"). It never
+  writes the operator's last check (`tests/integration/tenant-model-check.test.ts`)
+- [x] T032a SSRF guard for workspace endpoints (`net/public-host.ts`, `EgressGuard.publicOnly()`):
+  the host is resolved and every address must be public (no loopback, private, link-local,
+  CGNAT, unique-local; no single-label or IP-literal hosts), connections are pinned to the
+  checked addresses, redirects are refused, and tenant checks never return raw error text
+  (`tests/unit/public-host.test.ts`)
 - [x] T033 Tests `console/pages/settings/settings.test.tsx` (15 cases, stubbed API)

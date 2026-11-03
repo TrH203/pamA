@@ -159,7 +159,7 @@ function MoveDialog({
   const move = useMutation({
     mutationFn: () => {
       if (!chosen) throw new Error(l.moveNone);
-      return taskApi.moveSession(session, chosen);
+      return taskApi.moveSessions(chosen.id, [session.id]);
     },
     onSuccess: async () => {
       toast.success(l.moved);

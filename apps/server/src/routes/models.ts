@@ -31,13 +31,19 @@ const CheckSchema = z.object({
 });
 
 /**
- * A cloud workspace owner checks only the chat model: their own (or a candidate on a public
- * endpoint, so the check cannot probe the operator's network), or the operator's without its
- * details. Nothing is written to the operator's last check.
+ * A cloud workspace owner checks candidates only for the chat model, and only on a public
+ * endpoint so the check cannot probe the operator's network. Without a candidate they check their
+ * own chat model, or the operator's model for the role as a read-only result without its details
+ * (so `pama model check` on a paired device sees every role). Nothing is written to the
+ * operator's last check.
  */
 async function tenantCheck(deps: Deps, b: z.infer<typeof CheckSchema>): Promise<CheckResult> {
-  if (b.role !== "chat")
-    throw new HttpError(403, "forbidden", "Only the server operator checks this model.");
+  if (b.role !== "chat") {
+    if (b.candidate)
+      throw new HttpError(403, "forbidden", "Only the server operator checks this model.");
+    const r = await checkProvider(b.role, deps.config[b.role], deps.guard, deps.models.fake);
+    return { ...r, items: [] };
+  }
   const own = await workspaceChatConfig(deps);
   if (b.candidate) {
     const r = resolveProvider(b.candidate.provider, b.candidate.baseUrl);
@@ -53,10 +59,10 @@ async function tenantCheck(deps: Deps, b: z.infer<typeof CheckSchema>): Promise<
       ...(r.baseUrl ? { baseUrl: r.baseUrl } : {}),
       ...(apiKey ? { apiKey } : {}),
     };
-    assertPublicEndpoint(cand);
-    return checkProvider("chat", cand, deps.guard, deps.models.fake);
+    await assertPublicEndpoint(cand, deps.guard);
+    return checkProvider("chat", cand, deps.guard, deps.models.fake, { publicOnly: true });
   }
-  if (own) return checkProvider("chat", own, deps.guard, deps.models.fake);
+  if (own) return checkProvider("chat", own, deps.guard, deps.models.fake, { publicOnly: true });
   const r = await checkProvider("chat", deps.config.chat, deps.guard, deps.models.fake);
   return { ...r, items: [] };
 }

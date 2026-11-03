@@ -296,15 +296,13 @@ export const taskApi = {
       json: { session_ids: sessionIds, new_name: newName },
     }),
   /**
-   * Move one session to another task of the same project. There is no single route for it: split
-   * the session out of its task, then merge that new task into the target (merge keeps the first
-   * id and its name). Sessions moved this way are pinned, like any owner move.
+   * Move sessions into another task of the same project, in one server transaction. A task the
+   * move empties is deleted; the target keeps its name. Moved sessions are pinned, like any
+   * owner move.
    */
-  async moveSession(
-    session: { id: string; bundle_id: string },
-    target: { id: string; name: string },
-  ) {
-    const tmp = await taskApi.split(session.bundle_id, [session.id], target.name);
-    return taskApi.merge([target.id, tmp.id], target.name);
-  },
+  moveSessions: (targetId: string, sessionIds: string[]) =>
+    api<{ id: string; remaining: string[] }>(
+      `/v1/bundles/${encodeURIComponent(targetId)}/sessions`,
+      { json: { session_ids: sessionIds } },
+    ),
 };

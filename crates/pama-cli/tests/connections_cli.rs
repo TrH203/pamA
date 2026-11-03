@@ -285,6 +285,8 @@ fn agents_enable_list_disable_and_uninstall() {
     );
 }
 
+// Runs a `#!/bin/sh` notifier, so Unix only.
+#[cfg(unix)]
 #[test]
 fn codex_notify_chains_an_existing_notifier() {
     let e = Env::new();
@@ -297,7 +299,6 @@ fn codex_notify_chains_an_existing_notifier() {
         format!("#!/bin/sh\necho \"$@\" > '{}'\n", marker.display()),
     )
     .unwrap();
-    #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();

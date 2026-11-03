@@ -2,6 +2,7 @@
 import { ulid } from "ulid";
 import type { Db, Queryable } from "../db/client.ts";
 import { HttpError } from "../http.ts";
+import { bundleKey, bundleRef, queueTombstone, resetDeliveries } from "./sync.ts";
 
 export async function assignBundle(
   q: Queryable,
@@ -117,7 +118,12 @@ export async function renameBundle(db: Db, workspaceId: string, id: string, name
 }
 
 /** `pin` marks the sessions as owner-placed so re-capture does not re-file them. */
-async function moveSessions(q: Queryable, sessionIds: string[], bundleId: string, pin = true) {
+export async function moveSessions(
+  q: Queryable,
+  sessionIds: string[],
+  bundleId: string,
+  pin = true,
+) {
   await q.query(
     "UPDATE sessions SET bundle_id = $2, bundle_pinned = bundle_pinned OR $3 WHERE id = ANY($1)",
     [sessionIds, bundleId, pin],
@@ -135,23 +141,34 @@ export async function splitBundle(
   sessionIds: string[],
   newName: string,
 ): Promise<string> {
-  const [b] = await owned(db, workspaceId, [id]);
-  const inBundle = await db.query<{ id: string }>(
+  return db.tx((q) => splitIn(q, workspaceId, id, sessionIds, newName));
+}
+
+async function splitIn(
+  q: Queryable,
+  workspaceId: string,
+  id: string,
+  sessionIds: string[],
+  newName: string,
+): Promise<string> {
+  await owned(q, workspaceId, [id]);
+  const inBundle = await q.query<{ id: string }>(
     "SELECT id FROM sessions WHERE bundle_id = $1 AND id = ANY($2)",
     [id, sessionIds],
   );
-  if (!sessionIds.length || inBundle.length !== sessionIds.length) {
+  if (!sessionIds.length || inBundle.length !== new Set(sessionIds).size) {
     throw new HttpError(422, "invalid_request", "sessions must belong to the bundle");
   }
-  return db.tx(async (q) => {
-    const newId = ulid();
-    await q.query(
-      "INSERT INTO bundles (id, workspace_id, project_id, name, name_source, name_updated_at, key, sync_enabled) SELECT $1, workspace_id, project_id, $2, 'owner', now(), NULL, sync_enabled FROM bundles WHERE id = $3",
-      [newId, newName, b?.id],
-    );
-    await moveSessions(q, sessionIds, newId);
-    return newId;
-  });
+  const newId = ulid();
+  // The new task keeps the publish setting of the one it came from, including when it was
+  // turned on: deliveries carry that moment for the receiver's stale-tombstone rule.
+  await q.query(
+    `INSERT INTO bundles (id, workspace_id, project_id, name, name_source, name_updated_at, key, sync_enabled, sync_enabled_at)
+     SELECT $1, workspace_id, project_id, $2, 'owner', now(), NULL, sync_enabled, sync_enabled_at FROM bundles WHERE id = $3`,
+    [newId, newName, id],
+  );
+  await moveSessions(q, sessionIds, newId);
+  return newId;
 }
 
 export async function mergeBundles(
@@ -160,27 +177,119 @@ export async function mergeBundles(
   ids: string[],
   name: string,
 ): Promise<string> {
-  const rows = await owned(db, workspaceId, ids);
+  return db.tx((q) => mergeIn(q, workspaceId, ids, name));
+}
+
+/** Merge `ids` into the first one; `name` renames it (as the owner), null keeps its name. */
+async function mergeIn(
+  q: Queryable,
+  workspaceId: string,
+  ids: string[],
+  name: string | null,
+): Promise<string> {
+  // A task named twice would otherwise be merged into itself and deleted.
+  const unique = [...new Set(ids)];
+  if (unique.length < 2) {
+    throw new HttpError(422, "invalid_request", "give at least two different bundles");
+  }
+  const rows = await owned(q, workspaceId, unique);
   if (new Set(rows.map((r) => r.project_id)).size !== 1) {
     throw new HttpError(422, "invalid_request", "bundles must belong to the same project");
   }
-  const [target, ...rest] = ids as [string, ...string[]];
-  return db.tx(async (q) => {
-    const sessions = await q.query<{ id: string }>(
-      "SELECT id FROM sessions WHERE bundle_id = ANY($1)",
-      [rest],
-    );
-    await moveSessions(
-      q,
-      sessions.map((s) => s.id),
-      target,
-    );
-    await q.query("DELETE FROM bundles WHERE id = ANY($1)", [rest]);
+  const [target, ...rest] = unique as [string, ...string[]];
+  // Published copies of merged-away tasks: when the kept task is not published to the same
+  // server, its task change will not move them, so delete them there (and forget their
+  // deliveries so publishing the kept task later sends them again).
+  const sync = await q.query<{
+    id: string;
+    key: string | null;
+    repo_key: string;
+    target: string | null;
+    enabled: boolean;
+  }>(
+    `SELECT b.id, b.key, p.repo_key, p.sync_target AS target,
+            COALESCE(b.sync_enabled, p.sync_enabled) AS enabled
+     FROM bundles b JOIN projects p ON p.id = b.project_id WHERE b.id = ANY($1)`,
+    [unique],
+  );
+  const kept = sync.find((x) => x.id === target);
+  for (const r of sync) {
+    if (r.id === target || !r.enabled || !r.target) continue;
+    if (kept?.enabled && kept.target === r.target) continue;
+    await queueTombstone(q, r.target, "bundle", bundleKey(r.repo_key, bundleRef(r)));
+    await resetDeliveries(q, "s.bundle_id = $1", r.id);
+  }
+  // Pending changes of merged-away tasks would be sent after the merge and undo it.
+  await q.query(
+    "DELETE FROM sync_outgoing WHERE handed_at IS NULL AND source_type = 'bundle_change' AND source_key = ANY($1)",
+    [rest],
+  );
+  const sessions = await q.query<{ id: string }>(
+    "SELECT id FROM sessions WHERE bundle_id = ANY($1)",
+    [rest],
+  );
+  await moveSessions(
+    q,
+    sessions.map((s) => s.id),
+    target,
+  );
+  await q.query("DELETE FROM bundles WHERE id = ANY($1)", [rest]);
+  if (name !== null) {
     await q.query(
       "UPDATE bundles SET name = $2, name_source = 'owner', name_updated_at = now() WHERE id = $1",
       [target, name],
     );
-    return target;
+  }
+  return target;
+}
+
+/**
+ * Move sessions into an existing task in one transaction (spec 007 T040f). Each source task the
+ * move empties is merged into the target and deleted; a source that keeps other sessions gives
+ * the moved ones up through a split and merge, so publish copies follow the same rules as an
+ * owner split or merge. The target keeps its name. Returns the source tasks that still exist.
+ */
+export async function moveSessionsToBundle(
+  db: Db,
+  workspaceId: string,
+  targetId: string,
+  sessionIds: string[],
+): Promise<{ id: string; remaining: string[] }> {
+  const ids = [...new Set(sessionIds)];
+  if (!ids.length) throw new HttpError(422, "invalid_request", "give at least one session");
+  return db.tx(async (q) => {
+    const [target] = await owned(q, workspaceId, [targetId]);
+    const sessions = await q.query<{ id: string; bundle_id: string; project_id: string }>(
+      `SELECT s.id, s.bundle_id, b.project_id FROM sessions s JOIN bundles b ON b.id = s.bundle_id
+       WHERE b.workspace_id = $1 AND s.id = ANY($2)`,
+      [workspaceId, ids],
+    );
+    if (sessions.length !== ids.length) {
+      throw new HttpError(404, "not_found", "session not found");
+    }
+    if (sessions.some((s) => s.project_id !== target?.project_id)) {
+      throw new HttpError(422, "invalid_request", "sessions must belong to the task's project");
+    }
+    const bySource = new Map<string, string[]>();
+    for (const s of sessions) {
+      if (s.bundle_id === targetId) continue;
+      bySource.set(s.bundle_id, [...(bySource.get(s.bundle_id) ?? []), s.id]);
+    }
+    const remaining: string[] = [];
+    for (const [source, moving] of bySource) {
+      const [{ n } = { n: 0 }] = await q.query<{ n: number }>(
+        "SELECT count(*)::int AS n FROM sessions WHERE bundle_id = $1",
+        [source],
+      );
+      if (Number(n) <= moving.length) {
+        await mergeIn(q, workspaceId, [targetId, source], null);
+      } else {
+        const part = await splitIn(q, workspaceId, source, moving, "moving");
+        await mergeIn(q, workspaceId, [targetId, part], null);
+        remaining.push(source);
+      }
+    }
+    return { id: targetId, remaining };
   });
 }
 
@@ -191,6 +300,8 @@ export interface BundleSummary {
   key: string | null;
   project_id: string;
   project: string;
+  /** The project's portable key (repo key), used by devices for per-task sync (spec 007). */
+  project_key: string;
   /** Distinct branches over the member sessions, earliest first-seen first. */
   branches: string[];
   session_count: number;
@@ -215,8 +326,9 @@ export async function listBundles(db: Db, workspaceId: string): Promise<BundleSu
     key: string | null;
     project_id: string;
     project: string;
+    project_key: string;
   }>(
-    `SELECT b.id, b.name, b.name_source, b.key, b.project_id, p.name AS project
+    `SELECT b.id, b.name, b.name_source, b.key, b.project_id, p.name AS project, p.repo_key AS project_key
      FROM bundles b JOIN projects p ON p.id = b.project_id
      WHERE b.workspace_id = $1 ORDER BY b.created_at, b.id`,
     [workspaceId],

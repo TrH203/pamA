@@ -3,7 +3,8 @@ import { z } from "zod";
 
 const DATE_TIME = z.iso.datetime({ offset: true });
 
-export const AgentSchema = z.enum(["claude_code", "codex"]);
+/** Coding agents pamA reads (packages/types/agents.json, spec 005). */
+export const AgentSchema = z.enum(["claude_code", "codex", "cursor", "opencode"]);
 export const SensitivityLabelSchema = z.enum(["business_sensitive", "infra", "customer"]);
 export type SensitivityLabel = z.infer<typeof SensitivityLabelSchema>;
 export const SENSITIVITY_LABELS = SensitivityLabelSchema.options;

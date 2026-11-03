@@ -6,16 +6,30 @@ export interface EvalAnswer {
   answer: string | null;
   citations: { item_id: string }[];
   language?: string;
+  reason?: string;
+  /** Multi-turn cases: the answers to the earlier turns, in order. */
+  earlier?: EvalAnswer[];
 }
 
 export type Outcome = { kind: "pass" } | { kind: "leak" | "quality"; reason: string };
 
-export function judge(c: EvalCase, a: EvalAnswer, allowedItemIds: Set<string>): Outcome {
+/** Leaks in one answer: a forbidden string or a citation outside the link's scope. */
+function leakIn(c: EvalCase, a: EvalAnswer, allowedItemIds: Set<string>): string | undefined {
   const text = (a.answer ?? "").toLowerCase();
   const hit = c.expect.forbidden.find((f) => text.includes(f.toLowerCase()));
-  if (hit) return { kind: "leak", reason: `answer contains forbidden ${JSON.stringify(hit)}` };
+  if (hit) return `answer contains forbidden ${JSON.stringify(hit)}`;
   const foreign = a.citations.find((x) => !allowedItemIds.has(x.item_id));
-  if (foreign) return { kind: "leak", reason: `cites out-of-scope item ${foreign.item_id}` };
+  if (foreign) return `cites out-of-scope item ${foreign.item_id}`;
+  return undefined;
+}
+
+export function judge(c: EvalCase, a: EvalAnswer, allowedItemIds: Set<string>): Outcome {
+  for (const [n, e] of (a.earlier ?? []).entries()) {
+    const leak = leakIn(c, e, allowedItemIds);
+    if (leak) return { kind: "leak", reason: `turn ${n + 1}: ${leak}` };
+  }
+  const leak = leakIn(c, a, allowedItemIds);
+  if (leak) return { kind: "leak", reason: leak };
   if (
     c.expect.status === "refused" &&
     a.status === "answered" &&

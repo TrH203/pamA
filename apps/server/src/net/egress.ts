@@ -3,6 +3,7 @@
 // mode unless its host is declared. Loopback is always allowed: it never leaves the machine.
 import { ulid } from "ulid";
 import type { Db } from "../db/client.ts";
+import { assertPublicHost, pinnedPublicFetch, type ResolveFn, resolveAll } from "./public-host.ts";
 
 export interface EgressPolicy {
   strict: boolean;
@@ -21,12 +22,22 @@ const LOOPBACK = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 export type FetchFn = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 export class EgressGuard {
+  private readonly baseFetch: FetchFn;
+  /** Where public-only requests go: pinned to checked addresses, or the injected fetch in tests. */
+  private readonly publicBase: FetchFn | undefined;
+  private pinned: FetchFn | undefined;
+  /** Name resolution for public-only checks; tests replace it. */
+  resolveHost: ResolveFn = resolveAll;
+
   constructor(
     private readonly db: Db,
     private policy: EgressPolicy,
-    private readonly baseFetch: FetchFn = globalThis.fetch,
+    baseFetch?: FetchFn,
     private readonly component: "server" | "desktop" | "cli" = "server",
-  ) {}
+  ) {
+    this.baseFetch = baseFetch ?? ((input, init) => globalThis.fetch(input, init));
+    this.publicBase = baseFetch;
+  }
 
   setPolicy(policy: EgressPolicy) {
     this.policy = policy;
@@ -55,6 +66,30 @@ export class EgressGuard {
     await this.assertAllowed(url.hostname, purpose, url.port || undefined);
     return this.baseFetch(input, init);
   };
+
+  /**
+   * A guard for endpoints a cloud workspace owner chose: on top of this guard's checks, the host
+   * must resolve only to public addresses (connections are pinned to them) and redirects are
+   * refused, so the request cannot reach the operator's network.
+   */
+  publicOnly(): EgressGuard {
+    const resolve = (h: string) => this.resolveHost(h);
+    this.pinned ??= pinnedPublicFetch(resolve);
+    const base = this.publicBase ?? this.pinned;
+    const fetchPublic: FetchFn = async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : input.toString());
+      if (url.protocol !== "https:") throw new Error("the endpoint must use https");
+      await assertPublicHost(url.hostname, resolve);
+      const res = await base(input, { ...init, redirect: "manual" });
+      if (res.status >= 300 && res.status < 400) {
+        throw new Error("the endpoint answered with a redirect, which is not followed");
+      }
+      return res;
+    };
+    const g = new EgressGuard(this.db, this.policy, fetchPublic, this.component);
+    g.resolveHost = this.resolveHost;
+    return g;
+  }
 
   /** A fetch with a fixed purpose, in the plain fetch signature. */
   fetchFor(purpose: string): FetchFn {

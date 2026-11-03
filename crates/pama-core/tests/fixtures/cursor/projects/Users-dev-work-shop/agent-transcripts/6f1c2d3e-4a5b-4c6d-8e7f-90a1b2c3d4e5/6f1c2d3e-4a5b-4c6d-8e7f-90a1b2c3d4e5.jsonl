@@ -1,0 +1,6 @@
+{"role":"user","message":{"content":[{"type":"text","text":"Add a retry to the payment webhook handler"}]}}
+{"role":"assistant","message":{"content":[{"type":"text","text":"I'll look at the handler first."},{"type":"tool_use","name":"Read","input":{"path":"src/webhook.ts"}}]}}
+{"role":"assistant","message":{"content":[{"type":"tool_use","name":"StrReplace","input":{"path":"src/webhook.ts","old_string":"await handle(e)","new_string":"await retry(() => handle(e), 3)"}},{"type":"tool_use","name":"Shell","input":{"command":"pnpm test webhook"}}]}}
+not json at all
+{"role":"assistant","message":{"content":[{"type":"thinking","thinking":"hidden"},{"type":"text","text":"Retries are in place; tests pass."}]}}
+{"type":"summary","summary":"ignored"}

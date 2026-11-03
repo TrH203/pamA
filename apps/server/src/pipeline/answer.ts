@@ -1,5 +1,8 @@
 // Answering (research R14): scoped hybrid retrieval → answer prompt (policy, owner instruction,
 // items as data, question as data) → cite-or-refuse → Layer 3 guard.
+// Multi-turn (spec 008b): earlier turns of the same conversation are context only. They are
+// passed as data, never widen the scope (retrieval still runs inside `scope`), never become
+// citable, and the Layer 3 guard checks every answer as before.
 import { embed, generateText, Output } from "ai";
 import { z } from "zod";
 import type { Deps } from "../app.ts";
@@ -42,6 +45,65 @@ export interface AnswerInput {
   threshold: number;
   /** Ask for a shorter answer (hotkey "Shorter"). */
   shorter?: boolean;
+  /** Earlier turns of the same conversation, oldest first (see `historyBlock`). */
+  history?: PriorTurn[];
+}
+
+/** One earlier turn as the asker saw it: their question and the answer shown (null if none). */
+export interface PriorTurn {
+  question: string;
+  answer: string | null;
+}
+
+/** At most this many earlier turns are given to the model (decision 9.4). */
+export const MAX_PRIOR_TURNS = 6;
+/** Rough token cap for the history block (~4 characters per token). */
+export const HISTORY_TOKEN_BUDGET = 1500;
+const TURN_CHARS = 1200;
+
+/** Tags of the prompt's data blocks; text from a turn must not open or close one. */
+const TAGS = /<\s*\/?\s*(history|turn|items|question|answer)\b[^>]*>/gi;
+const neutral = (s: string) => s.replace(TAGS, "[$1]");
+const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
+
+/**
+ * The history block for the prompt: the last MAX_PRIOR_TURNS turns, turns touching a denied topic
+ * dropped, each clipped, oldest turns dropped until the block fits the token budget. Returns ""
+ * when there is nothing to send.
+ */
+export function historyBlock(turns: PriorTurn[] = [], denyTopics: string[] = []): string {
+  const kept = turns
+    .filter((t) => !mentionsTopic(`${t.question}\n${t.answer ?? ""}`, denyTopics))
+    .slice(-MAX_PRIOR_TURNS)
+    .map(
+      (t) =>
+        `<turn>\nasker: ${clip(neutral(t.question), TURN_CHARS)}\nanswer: ${
+          t.answer ? clip(neutral(t.answer), TURN_CHARS) : "(not answered)"
+        }\n</turn>`,
+    );
+  while (kept.length && kept.join("\n").length > HISTORY_TOKEN_BUDGET * 4) kept.shift();
+  return kept.length ? `<history>\n${kept.join("\n")}\n</history>\n` : "";
+}
+
+/** A question this short may lean on the previous one ("why?", "and the fee?"). */
+export const FOLLOW_UP_MAX_WORDS = 8;
+
+/**
+ * The text retrieval searches with. The current question drives it; only a short follow-up
+ * borrows the previous question (the last earlier turn that touches no denied topic, clipped), so
+ * an earlier topic cannot pull in items for a question that stands on its own. Retrieval still
+ * runs inside the link's scope, so this only ranks in-scope items differently.
+ */
+export function retrievalQuery(
+  question: string,
+  turns: PriorTurn[] = [],
+  denyTopics: string[] = [],
+): string {
+  if (question.trim().split(/\s+/).length > FOLLOW_UP_MAX_WORDS) return question;
+  const previous = turns.findLast(
+    (t) => !mentionsTopic(`${t.question}\n${t.answer ?? ""}`, denyTopics),
+  )?.question;
+  return previous ? `${question}\n${clip(previous, 300)}` : question;
 }
 
 const OutputSchema = z.object({
@@ -84,8 +146,10 @@ export async function answerQuestion(
   const language = detectLanguage(input.question);
   if (mentionsTopic(input.question, input.denyTopics)) return refuse("denied_topic", language, []);
 
-  const { embedding } = await embed({ model: deps.models.embed, value: input.question });
-  const items = await scopedItems(deps.db, input.scope, { embedding, text: input.question, k: 8 });
+  const history = historyBlock(input.history, input.denyTopics);
+  const lookup = retrievalQuery(input.question, input.history, input.denyTopics);
+  const { embedding } = await embed({ model: deps.models.embed, value: lookup });
+  const items = await scopedItems(deps.db, input.scope, { embedding, text: lookup, k: 8 });
   if (!items.length) return refuse("out_of_scope", language, items);
 
   const prompt = loadPrompt("answer");
@@ -99,7 +163,7 @@ export async function answerQuestion(
   const { output } = await generateText({
     model: deps.models.chat,
     system,
-    prompt: `<items>\n${items.map((it, k) => itemLine(k + 1, it)).join("\n")}\n</items>\n<question>\n${input.question}\n</question>`,
+    prompt: `${history}<items>\n${items.map((it, k) => itemLine(k + 1, it)).join("\n")}\n</items>\n<question>\n${neutral(input.question)}\n</question>`,
     output: Output.object({ schema: OutputSchema }),
     temperature: 0,
   });

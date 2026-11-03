@@ -1,8 +1,31 @@
 // Desktop settings (US4): sync per source (off by default), strict offline mode with declared
-// hosts and the network log, model providers, hotkey and answer source.
+// hosts and the network log, model providers, hotkey and answer source. Restyled with the kit
+// (spec 009); behaviour is unchanged.
 
-import { BundleSummary } from "@pama/ui";
-import { useCallback, useEffect, useState } from "react";
+import { LOCALES, type Locale, useI18n } from "@pama/i18n";
+import {
+  BundleSummary,
+  Card,
+  CardHeader,
+  Checkbox,
+  EmptyState,
+  Input,
+  PageHeader,
+  Select,
+  StatusPill,
+  Switch,
+  Table,
+  TBody,
+  TD,
+  TH,
+  THead,
+  type ThemeChoice,
+  TR,
+  useTheme,
+  useToast,
+} from "@pama/ui";
+import { FolderGit2 } from "lucide-react";
+import { type ReactNode, useCallback, useEffect, useId, useState } from "react";
 import { draftApi } from "./api.ts";
 import { ipc } from "./ipc.ts";
 
@@ -25,23 +48,24 @@ interface SyncProject {
 
 type Log = Awaited<ReturnType<typeof ipc.getNetworkLog>>;
 
-function Section({
-  title,
-  children,
-  hint,
-}: {
-  title: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
+function Section({ title, children, hint }: { title: string; hint?: string; children: ReactNode }) {
   return (
-    <section className="space-y-3 rounded-lg border border-stone-200 bg-white p-4">
-      <div>
-        <h2 className="font-semibold">{title}</h2>
-        {hint && <p className="text-xs text-stone-500">{hint}</p>}
-      </div>
+    <Card className="space-y-3">
+      <CardHeader title={title} description={hint} className="mb-0" />
       {children}
-    </section>
+    </Card>
+  );
+}
+
+/** One labelled row; the value is saved when the field loses focus. */
+function Row({ label, children, id }: { label: string; children: ReactNode; id: string }) {
+  return (
+    <div className="grid gap-1.5 sm:grid-cols-[10rem_1fr] sm:items-center sm:gap-3">
+      <label htmlFor={id} className="text-ui text-muted">
+        {label}
+      </label>
+      {children}
+    </div>
   );
 }
 
@@ -56,29 +80,36 @@ function Field({
   onSave: (v: string) => void;
   secret?: boolean;
 }) {
+  const id = useId();
   const [v, setV] = useState(value);
   useEffect(() => setV(value), [value]);
   return (
-    <label className="flex items-center gap-2 text-sm">
-      <span className="w-40 shrink-0 text-stone-600">{label}</span>
-      <input
-        className="flex-1 rounded border border-stone-300 px-2 py-1"
+    <Row label={label} id={id}>
+      <Input
+        id={id}
         type={secret ? "password" : "text"}
         value={v}
         placeholder={secret && value ? "saved in the OS keychain" : ""}
         onChange={(e) => setV(e.target.value)}
         onBlur={() => v !== value && onSave(v)}
       />
-    </label>
+    </Row>
   );
 }
 
 export function Settings() {
+  const { t: all, locale, setLocale } = useI18n();
+  const t = all.desktop;
+  const toast = useToast();
+  const [theme, setTheme] = useTheme();
   const [s, setS] = useState<Record<string, string | boolean | null>>({});
   const [projects, setProjects] = useState<SyncProject[]>([]);
   const [log, setLog] = useState<Log>([]);
   const [serverLog, setServerLog] = useState<Log>([]);
-  const [msg, setMsg] = useState<string | null>(null);
+  const answerId = useId();
+  const themeId = useId();
+  const langId = useId();
+  const strictId = useId();
 
   const load = useCallback(async () => {
     setS(await ipc.getSettings());
@@ -92,46 +123,73 @@ export function Settings() {
 
   const save = async (key: string, value: string) => {
     await ipc.setSetting(key, value);
-    setMsg("Saved. Restart pamA to apply model changes.");
+    toast.success(all.common.saved, "Restart pamA to apply model changes.");
     await load();
   };
   const str = (k: string) => (typeof s[k] === "string" ? (s[k] as string) : "");
   const strict = s.strict_offline === "true";
   const hosts = str("declared_hosts");
+  const splitHosts = (v: string) =>
+    v
+      .split(",")
+      .map((h) => h.trim())
+      .filter(Boolean);
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 p-4 text-sm">
-      <h1 className="text-xl font-bold">Settings</h1>
-      {msg && <p className="rounded bg-emerald-50 p-2 text-emerald-900">{msg}</p>}
+    <div className="mx-auto max-w-3xl space-y-4 p-4">
+      <PageHeader title={t.settingsTitle} className="mb-2" />
 
-      <Section title="Hotkey">
+      <Section title={t.appearance}>
+        <Row label={all.common.theme} id={themeId}>
+          <Select
+            id={themeId}
+            value={theme}
+            onChange={(e) => setTheme(e.target.value as ThemeChoice)}
+          >
+            {(["system", "light", "dark"] as const).map((c) => (
+              <option key={c} value={c}>
+                {all.common.themes[c]}
+              </option>
+            ))}
+          </Select>
+        </Row>
+        <Row label={all.common.language} id={langId}>
+          <Select id={langId} value={locale} onChange={(e) => setLocale(e.target.value as Locale)}>
+            {LOCALES.map((l) => (
+              <option key={l} value={l}>
+                {all.common.languages[l]}
+              </option>
+            ))}
+          </Select>
+        </Row>
+      </Section>
+
+      <Section title={t.hotkey}>
         <Field
-          label="Shortcut"
+          label={t.shortcut}
           value={str("hotkey.accelerator")}
           onSave={async (v) => {
             const r = await ipc.setHotkey(v);
-            setMsg(
-              r.ok ? "Hotkey updated." : `That shortcut is taken or invalid: ${r.error ?? ""}`,
-            );
+            if (r.ok) toast.success("Hotkey updated.");
+            else toast.error("That shortcut is taken or invalid", r.error ?? undefined);
             await load();
           }}
         />
-        <label className="flex items-center gap-2">
-          <span className="w-40 text-stone-600">Answer from</span>
-          <select
-            className="rounded border border-stone-300 px-2 py-1"
+        <Row label={t.answerFrom} id={answerId}>
+          <Select
+            id={answerId}
             value={str("hotkey.answer_source") || "local"}
             onChange={(e) => save("hotkey.answer_source", e.target.value)}
           >
             <option value="local">This machine</option>
             <option value="server">Synced server</option>
             <option value="auto">Automatic</option>
-          </select>
-        </label>
+          </Select>
+        </Row>
       </Section>
 
       <Section
-        title="Models"
+        title={t.models}
         hint="Local models (Ollama, vLLM) keep everything on your machine or network."
       >
         <Field
@@ -163,7 +221,7 @@ export function Settings() {
       </Section>
 
       <Section
-        title="Sync"
+        title={t.sync}
         hint="Off by default. Only approved digests are sent; turning sync off deletes the copies on the server."
       >
         <Field
@@ -171,48 +229,56 @@ export function Settings() {
           value={str("sync.default_target")}
           onSave={(v) => save("sync.default_target", v)}
         />
-        {projects.length === 0 && <p className="text-stone-500">No projects yet.</p>}
-        <ul className="space-y-2">
+        {projects.length === 0 && (
+          <EmptyState
+            icon={FolderGit2}
+            title="No projects yet."
+            description="Projects appear here after pamA ingests your first agent session."
+          />
+        )}
+        <ul className="space-y-3">
           {projects.map((p) => (
-            <li key={p.id}>
-              <label className="flex items-center gap-2 font-medium">
-                <input
-                  type="checkbox"
+            <li key={p.id} className="rounded-control border border-line p-3">
+              <div className="flex items-center gap-2 text-ui font-medium">
+                <Checkbox
+                  id={`sync-${p.id}`}
                   checked={p.sync_enabled}
-                  onChange={async (e) => {
+                  onCheckedChange={async (checked) => {
                     try {
                       await ipc.setSync(
                         "project",
                         p.id,
-                        e.target.checked,
+                        checked === true,
                         str("sync.default_target") || undefined,
                       );
                     } catch (err) {
-                      setMsg(String(err));
+                      toast.error(String(err));
                     }
                     await load();
                   }}
                 />
-                {p.name} <span className="text-xs font-normal text-stone-400">{p.repo_key}</span>
-              </label>
-              <ul className="ml-6 mt-1 space-y-1">
+                <label htmlFor={`sync-${p.id}`}>{p.name}</label>
+                <span className="font-mono text-xs font-normal text-faint">{p.repo_key}</span>
+              </div>
+              <ul className="mt-2 space-y-2 pl-6">
                 {p.bundles.map((b) => (
-                  <li key={b.id} className="flex items-start gap-2">
-                    <select
-                      className="rounded border border-stone-300 px-1 py-0.5 text-xs"
+                  <li key={b.id} className="flex flex-wrap items-start gap-2">
+                    <Select
+                      aria-label={`Sync for ${b.name}`}
+                      className="w-36"
                       value={b.sync_enabled === null ? "inherit" : b.sync_enabled ? "on" : "off"}
                       onChange={async (e) => {
                         const v = e.target.value === "inherit" ? null : e.target.value === "on";
                         await ipc
                           .setSync("bundle", b.id, v, str("sync.default_target") || undefined)
-                          .catch((err) => setMsg(String(err)));
+                          .catch((err) => toast.error(String(err)));
                         await load();
                       }}
                     >
                       <option value="inherit">as project</option>
                       <option value="on">sync</option>
                       <option value="off">never sync</option>
-                    </select>
+                    </Select>
                     <BundleSummary bundle={b} />
                   </li>
                 ))}
@@ -223,53 +289,41 @@ export function Settings() {
       </Section>
 
       <Section
-        title="Strict offline mode"
+        title={t.strictOffline}
         hint="Blocks every connection pamA makes except to the hosts below, and logs each one. Other programs (Ollama, tunnels) are not covered."
       >
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
+        <div className="flex items-center gap-2 text-ui">
+          <Switch
+            id={strictId}
             checked={strict}
-            onChange={async (e) => {
-              await ipc.setStrictOffline(
-                e.target.checked,
-                hosts
-                  .split(",")
-                  .map((h) => h.trim())
-                  .filter(Boolean),
-              );
-              setMsg("Saved. Restart pamA to apply to the server.");
+            onCheckedChange={async (checked) => {
+              await ipc.setStrictOffline(checked, splitHosts(hosts));
+              toast.success(all.common.saved, "Restart pamA to apply to the server.");
               await load();
             }}
           />
-          Block undeclared hosts
-        </label>
+          <label htmlFor={strictId}>Block undeclared hosts</label>
+        </div>
         <Field
           label="Declared hosts"
           value={hosts}
           onSave={async (v) => {
-            await ipc.setStrictOffline(
-              strict,
-              v
-                .split(",")
-                .map((h) => h.trim())
-                .filter(Boolean),
-            );
+            await ipc.setStrictOffline(strict, splitHosts(v));
             await load();
           }}
         />
-        <h3 className="pt-2 font-medium">Network log</h3>
-        <table className="w-full text-left text-xs">
-          <thead className="text-stone-500">
+        <h3 className="pt-2 text-sm font-semibold">{t.networkLog}</h3>
+        <Table label={t.networkLog} className="text-xs">
+          <THead>
             <tr>
-              <th>When</th>
-              <th>From</th>
-              <th>Host</th>
-              <th>Purpose</th>
-              <th>Allowed</th>
+              <TH>When</TH>
+              <TH>From</TH>
+              <TH>Host</TH>
+              <TH>Purpose</TH>
+              <TH>Allowed</TH>
             </tr>
-          </thead>
-          <tbody>
+          </THead>
+          <TBody>
             {[
               ...log.map((l) => ({ ...l, at: new Date(l.at).toISOString() })),
               ...serverLog.map((l) => ({ ...l, at: String(l.at) })),
@@ -277,16 +331,22 @@ export function Settings() {
               .sort((a, b) => (a.at < b.at ? 1 : -1))
               .slice(0, 200)
               .map((l) => (
-                <tr key={`${l.component}-${l.id}`} className={l.allowed ? "" : "text-red-700"}>
-                  <td>{new Date(l.at).toLocaleString()}</td>
-                  <td>{l.component}</td>
-                  <td>{l.host}</td>
-                  <td>{l.purpose}</td>
-                  <td>{l.allowed ? "yes" : "blocked"}</td>
-                </tr>
+                <TR key={`${l.component}-${l.id}`}>
+                  <TD className="whitespace-nowrap">{new Date(l.at).toLocaleString()}</TD>
+                  <TD>{l.component}</TD>
+                  <TD className="font-mono">{l.host}</TD>
+                  <TD>{l.purpose}</TD>
+                  <TD>
+                    {l.allowed ? (
+                      <StatusPill tone="success">yes</StatusPill>
+                    ) : (
+                      <StatusPill tone="danger">blocked</StatusPill>
+                    )}
+                  </TD>
+                </TR>
               ))}
-          </tbody>
-        </table>
+          </TBody>
+        </Table>
       </Section>
     </div>
   );

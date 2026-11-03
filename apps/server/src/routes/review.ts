@@ -3,9 +3,20 @@ import { Hono } from "hono";
 import { z } from "zod";
 import type { Env } from "../app.ts";
 import { HttpError } from "../http.ts";
-import { listBundles, mergeBundles, renameBundle, splitBundle } from "../services/bundles.ts";
+import {
+  listBundles,
+  mergeBundles,
+  moveSessionsToBundle,
+  renameBundle,
+  splitBundle,
+} from "../services/bundles.ts";
 import { approveDigest, discardDigest, withdrawDigest } from "../services/digests.ts";
-import { redeliverBundleName, setBundleSync, setProjectSync } from "../services/sync.ts";
+import {
+  queueBundleChange,
+  redeliverBundleName,
+  setBundleSync,
+  setProjectSync,
+} from "../services/sync.ts";
 import { body } from "./util.ts";
 
 export const reviewRoutes = new Hono<Env>()
@@ -123,7 +134,10 @@ export const reviewRoutes = new Hono<Env>()
     if (patch.name) await renameBundle(deps.db, deps.workspaceId, id, patch.name);
     if (patch.sync_enabled !== undefined)
       await setBundleSync(deps, id, patch.sync_enabled, patch.sync_target);
-    if (patch.name) await redeliverBundleName(deps.db, id);
+    if (patch.name) {
+      await redeliverBundleName(deps.db, id);
+      await queueBundleChange(deps.db, deps.workspaceId, id);
+    }
     return c.json({ id, ...patch });
   })
   .post("/bundles/merge", async (c) => {
@@ -134,7 +148,16 @@ export const reviewRoutes = new Hono<Env>()
     );
     const id = await mergeBundles(db, workspaceId, m.bundle_ids, m.name);
     await redeliverBundleName(db, id);
+    await queueBundleChange(db, workspaceId, id);
     return c.json({ id });
+  })
+  .post("/bundles/:id/sessions", async (c) => {
+    // Move sessions into this task in one transaction (spec 007 T040f).
+    const { db, workspaceId } = c.get("deps");
+    const m = await body(c, z.strictObject({ session_ids: z.array(z.string()).min(1).max(500) }));
+    const out = await moveSessionsToBundle(db, workspaceId, c.req.param("id"), m.session_ids);
+    for (const id of [out.id, ...out.remaining]) await queueBundleChange(db, workspaceId, id);
+    return c.json(out);
   })
   .post("/bundles/:id/split", async (c) => {
     const { db, workspaceId } = c.get("deps");
@@ -145,7 +168,7 @@ export const reviewRoutes = new Hono<Env>()
         new_name: z.string().min(1).max(200),
       }),
     );
-    return c.json({
-      id: await splitBundle(db, workspaceId, c.req.param("id"), s.session_ids, s.new_name),
-    });
+    const id = await splitBundle(db, workspaceId, c.req.param("id"), s.session_ids, s.new_name);
+    await queueBundleChange(db, workspaceId, id);
+    return c.json({ id });
   });

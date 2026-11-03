@@ -1,6 +1,8 @@
-//! Device side of sync (US4, FR-024..026): collect approved digests and tombstones from the local
-//! server into the outbox, then deliver them to the target server with idempotency keys
-//! (`outbox_id`) and backoff. Delivery is exactly once: the receiver keeps a receipt per id.
+//! Device side of sync (US4, FR-024..026): collect approved digests, tombstones and task (bundle)
+//! changes from the local server into the outbox, then deliver them to the target server with
+//! idempotency keys (`outbox_id`) and backoff. Delivery is exactly once: the receiver keeps a
+//! receipt per id. In local mode this one-way copy is called **Publish** in user-facing text
+//! (spec 007); in remote mode the server is the "home" and drafts are sent to it.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -50,6 +52,10 @@ fn record_draft_reply(store: &Store, target: &str, body: &Value, reply: &Value) 
     let (Some(agent), Some(sid)) = (src["agent"].as_str(), src["agent_session_id"].as_str()) else {
         return;
     };
+    // The capture is done once the server has the digest (spec 006).
+    if let Some(id) = reply["digest_id"].as_str() {
+        let _ = store.mark_submitted(agent, sid, id);
+    }
     if let Ok(Some(mut d)) = store.remote_digest(target, agent, sid) {
         if d.status == "deleted" {
             return;
@@ -68,6 +74,13 @@ pub struct DeliverReport {
     pub sent: usize,
     pub retrying: usize,
     pub dead: usize,
+}
+
+/// Does the target server advertise `cap` in `/v1/health`?
+pub fn has_capability(health: &Value, cap: &str) -> bool {
+    health["capabilities"]
+        .as_array()
+        .is_some_and(|c| c.iter().any(|x| x == cap))
 }
 
 /// Does the target server accept `source.git.branches`? Older servers validate digests strictly
@@ -129,9 +142,10 @@ pub fn collect(store: &Store, local: &LocalApi) -> Result<usize, ApiError> {
     let p = local.get("/v1/sync/pending", "sync.pending")?;
     let mut acked_digests = Vec::new();
     let mut acked_tombstones = Vec::new();
+    let mut acked_changes = Vec::new();
     for d in p["digests"].as_array().into_iter().flatten() {
         let target = d["target"].as_str().unwrap_or_default();
-        let payload = json!({
+        let mut payload = json!({
             "digest": d["digest"],
             "approved_at": d["approved_at"],
             "sync_enabled_at": d["sync_enabled_at"],
@@ -139,6 +153,10 @@ pub fn collect(store: &Store, local: &LocalApi) -> Result<usize, ApiError> {
             "bundle_name": d["bundle_name"],
             "bundle_name_source": d["bundle_name_source"],
         });
+        // The owner's task (differs from the branch after a split or merge, spec 007).
+        if let Some(r) = d["bundle_ref"].as_str() {
+            payload["bundle_ref"] = json!(r);
+        }
         if store
             .outbox_push(OutboxKind::DigestUpsert, target, &payload)
             .is_ok()
@@ -156,13 +174,23 @@ pub fn collect(store: &Store, local: &LocalApi) -> Result<usize, ApiError> {
             acked_tombstones.push(t["id"].clone());
         }
     }
-    let n = acked_digests.len() + acked_tombstones.len();
+    // Task renames, splits and merges (spec 007): queued after the digests they refer to.
+    for c in p["bundle_changes"].as_array().into_iter().flatten() {
+        let target = c["target"].as_str().unwrap_or_default();
+        if store
+            .outbox_push(OutboxKind::BundleChange, target, &c["change"])
+            .is_ok()
+        {
+            acked_changes.push(c["id"].clone());
+        }
+    }
+    let n = acked_digests.len() + acked_tombstones.len() + acked_changes.len();
     if n > 0 {
-        local.post(
-            "/v1/sync/ack",
-            "sync.ack",
-            &json!({ "digests": acked_digests, "tombstones": acked_tombstones }),
-        )?;
+        let mut ack = json!({ "digests": acked_digests, "tombstones": acked_tombstones });
+        if !acked_changes.is_empty() {
+            ack["bundle_changes"] = json!(acked_changes);
+        }
+        local.post("/v1/sync/ack", "sync.ack", &ack)?;
     }
     Ok(n)
 }
@@ -170,31 +198,67 @@ pub fn collect(store: &Store, local: &LocalApi) -> Result<usize, ApiError> {
 /// HTTPS delivery to a pamA server, through the egress guard, with the paired device token.
 pub struct HttpRemote<'s> {
     client: GuardedClient<'s>,
-    /// `branch_lists` support per target, learned once from `/v1/health`.
-    branch_lists: RefCell<HashMap<String, bool>>,
+    /// Capabilities per target, learned once from `/v1/health`.
+    capabilities: RefCell<HashMap<String, Value>>,
 }
 
 impl<'s> HttpRemote<'s> {
     pub fn new(store: &'s Store) -> Self {
         Self {
             client: GuardedClient::new(policy_from(store), store, "desktop"),
-            branch_lists: RefCell::new(HashMap::new()),
+            capabilities: RefCell::new(HashMap::new()),
         }
     }
 
-    fn supports_branch_lists(&self, target: &str) -> Result<bool, DeliverError> {
+    fn health(&self, target: &str) -> Result<Value, DeliverError> {
         let key = target.trim_end_matches('/').to_string();
-        if let Some(known) = self.branch_lists.borrow().get(&key) {
-            return Ok(*known);
+        if let Some(known) = self.capabilities.borrow().get(&key) {
+            return Ok(known.clone());
         }
         let resp = self
             .client
             .get(&format!("{key}/v1/health"), "sync.health", None)
             .map_err(|e| DeliverError::Retryable(e.to_string()))?;
         let health: Value = resp.json().unwrap_or(Value::Null);
-        let known = supports_branch_lists(&health);
-        self.branch_lists.borrow_mut().insert(key, known);
-        Ok(known)
+        self.capabilities.borrow_mut().insert(key, health.clone());
+        Ok(health)
+    }
+
+    /// Ask `target` which of its Ask Links would lose sources if `source_type`/`source_key` were
+    /// deleted there (before turning sync off, spec 007). `Ok(None)`: the server is too old to
+    /// tell.
+    pub fn affected_links(
+        &self,
+        target: &str,
+        source_type: &str,
+        source_key: &str,
+    ) -> Result<Option<Vec<Value>>, String> {
+        let target = target.trim_end_matches('/');
+        let health = self.health(target).map_err(|e| match e {
+            DeliverError::Retryable(m) | DeliverError::Rejected(m) => m,
+        })?;
+        if !has_capability(&health, "affected_links") {
+            return Ok(None);
+        }
+        let token = crate::secrets::get(&token_key(target))
+            .ok()
+            .flatten()
+            .ok_or_else(|| format!("not logged in to {target} (pama login)"))?;
+        let mut url = reqwest::Url::parse(&format!("{target}/v1/sync/affected-links"))
+            .map_err(|e| e.to_string())?;
+        url.query_pairs_mut()
+            .append_pair("source_type", source_type)
+            .append_pair("source_key", source_key);
+        let resp = self
+            .client
+            .get(url.as_str(), "sync.affected_links", Some(&token))
+            .map_err(|e| e.to_string())?;
+        let status = resp.status().as_u16();
+        if !(200..300).contains(&status) {
+            return Err(format!("server returned {status}"));
+        }
+        let v: Value = resp.json().map_err(|e| e.to_string())?;
+        Ok(Some(v["links"].as_array().cloned().unwrap_or_default()))
     }
 }
 
@@ -214,7 +278,14 @@ impl Remote for HttpRemote<'_> {
             OutboxKind::DigestUpsert if draft => "/v1/sync/drafts",
             OutboxKind::DigestUpsert => "/v1/sync/digests",
             OutboxKind::SourceTombstone => "/v1/sync/tombstones",
-            OutboxKind::BundleChange => return Err(DeliverError::Rejected("unsupported".into())),
+            OutboxKind::BundleChange => {
+                if !has_capability(&self.health(target)?, "bundle_changes") {
+                    return Err(DeliverError::Rejected(format!(
+                        "{target} is too old to receive task renames, splits and merges; upgrade it, then `pama sync retry --all`"
+                    )));
+                }
+                "/v1/sync/bundles"
+            }
         };
         let url = format!("{}{path}", target.trim_end_matches('/'));
         let mut prepared;
@@ -225,7 +296,14 @@ impl Remote for HttpRemote<'_> {
             }
             // Servers that take drafts all read branch lists.
             if !draft {
-                prepare_digest_body(&mut prepared, self.supports_branch_lists(target)?);
+                let health = self.health(target)?;
+                prepare_digest_body(&mut prepared, supports_branch_lists(&health));
+                // Older servers validate strictly and would reject the owner's task key.
+                if !has_capability(&health, "bundle_refs") {
+                    if let Some(o) = prepared.as_object_mut() {
+                        o.remove("bundle_ref");
+                    }
+                }
             }
             &prepared
         } else {
@@ -234,6 +312,7 @@ impl Remote for HttpRemote<'_> {
         let purpose = match kind {
             OutboxKind::DigestUpsert if draft => "sync.draft",
             OutboxKind::DigestUpsert => "sync.digest",
+            OutboxKind::BundleChange => "sync.bundle",
             _ => "sync.tombstone",
         };
         // Check the egress policy first so a blocked host never needs a token.
@@ -268,4 +347,86 @@ pub fn sync_once(store: &Store) -> crate::store::Result<DeliverReport> {
         let _ = collect(store, &local);
     }
     deliver_due(store, &HttpRemote::new(store))
+}
+
+/// What `pama sync now` did (spec 007).
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
+pub struct SyncNowReport {
+    /// Items taken from the local server into the outbox (local mode, Publish).
+    pub collected: usize,
+    pub delivery: DeliverReport,
+    /// Review decisions pulled back from the home server (remote mode).
+    pub pulled: Option<crate::remote::PullReport>,
+    /// Items still waiting (backoff) and items given up on, after this run.
+    pub pending: i64,
+    pub dead: i64,
+}
+
+/// Run sync right away, ignoring backoff: collect from the local server (local mode), deliver
+/// everything pending, and pull review decisions back (remote mode, `remote` = the home server).
+pub fn sync_now(
+    store: &Store,
+    local: Option<&LocalApi<'_>>,
+    remote: &impl Remote,
+    home: Option<&crate::client::Api<'_>>,
+) -> Result<SyncNowReport, ApiError> {
+    let mut r = SyncNowReport::default();
+    if let Some(local) = local {
+        r.collected = collect(store, local)?;
+    }
+    let store_err = |e: crate::store::StoreError| ApiError::Status {
+        status: 0,
+        body: e.to_string(),
+    };
+    store.outbox_retry_now().map_err(store_err)?;
+    r.delivery = deliver_due(store, remote).map_err(store_err)?;
+    if let Some(home) = home {
+        r.pulled = Some(crate::remote::pull_changes(store, home, true)?);
+    }
+    let counts = store.outbox_counts().map_err(store_err)?;
+    r.pending = counts.pending;
+    r.dead = counts.dead;
+    Ok(r)
+}
+
+/// One line describing an outbox item for people (`pama sync failed`).
+pub fn describe_item(kind: OutboxKind, payload: &Value) -> String {
+    match kind {
+        OutboxKind::DigestUpsert => {
+            let src = &payload["digest"]["source"];
+            let what = if is_draft(payload) { "draft" } else { "digest" };
+            let goal = payload["digest"]["goal"].as_str().unwrap_or_default();
+            let goal: String = goal.chars().take(60).collect();
+            format!(
+                "{what} {} / {}: {goal}",
+                src["project_key"].as_str().unwrap_or("?"),
+                payload["bundle_name"]
+                    .as_str()
+                    .or(src["bundle_key"].as_str())
+                    .unwrap_or("?"),
+            )
+        }
+        OutboxKind::SourceTombstone => {
+            let t = payload["source_type"].as_str().unwrap_or("?");
+            let t = if t == "bundle" { "task" } else { t };
+            format!(
+                "delete {t} {}",
+                payload["source_key"].as_str().unwrap_or("?")
+            )
+        }
+        OutboxKind::BundleChange => format!(
+            "task change {} / {} ({} session(s))",
+            payload["project_key"].as_str().unwrap_or("?"),
+            payload["name"].as_str().unwrap_or("?"),
+            payload["sessions"].as_array().map_or(0, Vec::len),
+        ),
+    }
+}
+
+/// Connected to a server but nothing is shared with it yet (spec 007): the warning shown by
+/// `pama doctor` and `pama sync status` in both modes. `connected`: a server is known (remote
+/// mode: logged in; local mode: a publish target is set). `shared`: sources sent to it.
+pub fn nothing_shared(connected: Option<&str>, shared: usize) -> Option<String> {
+    let server = connected?;
+    (shared == 0).then(|| format!("connected to {server} but nothing is shared yet"))
 }

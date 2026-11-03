@@ -6,6 +6,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./providers.json": "./providers.json",
+    "./agents.json": "./agents.json",
     "./schema/*": "./schema/*",
     "./fixtures/*": "./fixtures/*"
   },

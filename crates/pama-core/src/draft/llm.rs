@@ -48,66 +48,54 @@ impl ModelConfig {
         }
     }
 
-    /// True when the model runs on this machine or the LAN.
+    /// True when the model runs on this machine or the LAN (shared registry rule).
     pub fn is_local(&self) -> bool {
-        if self.provider == "ollama" {
-            return true;
-        }
-        if self.provider == "anthropic" || self.provider == "openrouter" {
-            return false;
-        }
-        let host = self
-            .base_url
-            .as_deref()
-            .and_then(|u| crate::net::host_port(u).ok())
-            .map(|(h, _)| h)
-            .unwrap_or_default();
-        host == "localhost"
-            || host.starts_with("127.")
-            || host.starts_with("10.")
-            || host.starts_with("192.168.")
-            || host.ends_with(".local")
-            || host.ends_with(".lan")
+        crate::providers::is_local(&self.provider, self.base_url.as_deref())
     }
 }
 
 pub struct HttpModel<'s> {
     pub config: ModelConfig,
+    /// Wire protocol of the provider (registry presets such as `lmstudio` speak
+    /// `openai-compatible`).
+    protocol: String,
     key: Option<String>,
     client: GuardedClient<'s>,
 }
 
 impl<'s> HttpModel<'s> {
     pub fn new(store: &'s Store, component: &'static str) -> Result<Self, DraftError> {
-        let config = ModelConfig::from_store(store);
-        let key = crate::secrets::get(&format!("provider.{}.key", config.provider))
+        let mut config = ModelConfig::from_store(store);
+        let key = crate::secrets::get(&crate::providers::key_name(&config.provider))
             .ok()
             .flatten();
-        match config.provider.as_str() {
-            "anthropic" if key.is_none() => {
-                return Err(DraftError::Fatal(
-                    "no Anthropic API key: `pama config set provider.anthropic.key -`".into(),
-                ))
-            }
-            "openai-compatible" if config.base_url.is_none() => {
+        let (protocol, base_url) =
+            crate::providers::resolve(&config.provider, config.base_url.as_deref());
+        let needs_key = crate::providers::get(&config.provider).is_some_and(|p| p.needs_key);
+        if needs_key && key.is_none() {
+            return Err(DraftError::Fatal(format!(
+                "no {} API key: `pama keys set {}`",
+                config.provider, config.provider
+            )));
+        }
+        match protocol.as_str() {
+            "openai-compatible" if base_url.is_none() => {
                 return Err(DraftError::Fatal(
                     "openai-compatible drafting needs provider.chat.base_url".into(),
-                ))
-            }
-            "openrouter" if key.is_none() => {
-                return Err(DraftError::Fatal(
-                    "no OpenRouter API key: `pama config set provider.openrouter.key -`".into(),
                 ))
             }
             "anthropic" | "openai-compatible" | "openrouter" | "ollama" => {}
             other => {
                 return Err(DraftError::Fatal(format!(
-                    "unknown drafting provider `{other}` (anthropic, openai-compatible, openrouter, ollama)"
+                    "unknown drafting provider `{other}` ({})",
+                    crate::providers::ids().join(", ")
                 )))
             }
         }
+        config.base_url = base_url;
         Ok(Self {
             config,
+            protocol,
             key,
             client: GuardedClient::new(policy_from(store), store, component),
         })
@@ -164,7 +152,7 @@ impl DraftModel for HttpModel<'_> {
     }
 
     fn complete(&self, system: &str, user: &str, schema: &Value) -> Result<Value, DraftError> {
-        match self.config.provider.as_str() {
+        match self.protocol.as_str() {
             "anthropic" => {
                 let url = format!("{}/v1/messages", self.base(ANTHROPIC_DEFAULT));
                 self.check(&url)?;
@@ -199,7 +187,7 @@ impl DraftModel for HttpModel<'_> {
                     .ok_or_else(|| DraftError::Fatal("model did not return the digest".into()))
             }
             "openai-compatible" | "openrouter" => {
-                let default = if self.config.provider == "openrouter" {
+                let default = if self.protocol == "openrouter" {
                     OPENROUTER_DEFAULT
                 } else {
                     ""

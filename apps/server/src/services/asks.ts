@@ -3,11 +3,13 @@ import { ulid } from "ulid";
 import type { Deps } from "../app.ts";
 import { HttpError } from "../http.ts";
 import type { AnswerResult } from "../pipeline/answer.ts";
+import { touchConversation } from "./conversations.ts";
 
 export async function recordAsk(
   deps: Pick<Deps, "db" | "workspaceId">,
   a: {
-    origin: "link" | "hotkey";
+    origin: "link" | "hotkey" | "owner_chat";
+    conversationId?: string;
     linkSlug?: string;
     visitorId?: string;
     question: string;
@@ -17,8 +19,8 @@ export async function recordAsk(
   const id = ulid();
   const r = a.result;
   await deps.db.query(
-    `INSERT INTO asks (id, workspace_id, origin, link_slug, visitor_id, question, language, status, reason, answer, citations, confidence, guard, draft_answer)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+    `INSERT INTO asks (id, workspace_id, origin, link_slug, visitor_id, question, language, status, reason, answer, citations, confidence, guard, draft_answer, conversation_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
     [
       id,
       deps.workspaceId,
@@ -40,8 +42,10 @@ export async function recordAsk(
       r.confidence,
       r.guard ? JSON.stringify(r.guard) : null,
       r.draft ?? null,
+      a.conversationId ?? null,
     ],
   );
+  if (a.conversationId) await touchConversation(deps.db, a.conversationId, a.question);
   return id;
 }
 

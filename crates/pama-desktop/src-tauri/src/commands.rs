@@ -220,19 +220,41 @@ pub fn set_sync<R: Runtime>(
     app: AppHandle<R>,
     scope: String,
     id: String,
-    enabled: bool,
+    enabled: Option<bool>,
     target: Option<String>,
 ) -> CmdResult<Ok> {
     let state = app.state::<AppState>();
     let store = state.store.lock().unwrap();
+    // Remote mode (spec 005): sync is a per-project list on this device, as in the CLI.
+    if let pama_core::remote::Home::Server(server) = pama_core::remote::home(&store) {
+        if scope != "project" {
+            return Err("in remote mode sync is per project".into());
+        }
+        let on = enabled.ok_or("a project is either synced or not")?;
+        pama_core::remote::set_project_sync(&store, &id, on).map_err(|e| e.to_string())?;
+        if !on {
+            store
+                .mark_remote_project_deleted(&server, &id)
+                .map_err(|e| e.to_string())?;
+            store
+                .outbox_push(
+                    pama_core::store::OutboxKind::SourceTombstone,
+                    &server,
+                    &serde_json::json!({ "source_type": "project", "source_key": id }),
+                )
+                .map_err(|e| e.to_string())?;
+        }
+        return Ok(Ok { ok: true });
+    }
     let path = match scope.as_str() {
+        "project" if enabled.is_none() => return Err("a project is either synced or not".into()),
         "project" => format!("/v1/projects/{id}"),
         "bundle" => format!("/v1/bundles/{id}"),
         _ => return Err("scope must be project or bundle".into()),
     };
     let target = target.or(store.setting("sync.default_target").ok().flatten());
     let mut body = serde_json::json!({ "sync_enabled": enabled });
-    if enabled {
+    if enabled == Some(true) {
         body["sync_target"] = serde_json::json!(target);
     }
     let api = pama_core::client::LocalApi::connect(&store, "desktop").map_err(|e| e.to_string())?;

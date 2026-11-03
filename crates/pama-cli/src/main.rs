@@ -1,6 +1,7 @@
 //! `pama` command-line tool. Command surface follows specs/001-pama-mvp/contracts/cli.md.
 
 mod cmd;
+mod ui;
 
 use std::process::ExitCode;
 
@@ -27,8 +28,9 @@ impl From<Exit> for ExitCode {
 pub struct Cli {
     #[command(flatten)]
     pub global: Global,
+    /// Without a command, `pama` prints `pama status`.
     #[command(subcommand)]
-    pub command: Command,
+    pub command: Option<Command>,
 }
 
 #[derive(Debug, Args, Clone)]
@@ -49,6 +51,9 @@ pub struct Global {
 pub enum AgentArg {
     Claude,
     Codex,
+    Cursor,
+    Opencode,
+    /// Claude Code and Codex, plus Cursor and OpenCode when they are used on this machine.
     All,
 }
 
@@ -74,8 +79,38 @@ pub enum Command {
         #[arg(long)]
         sync: bool,
     },
-    /// Connect this machine to a remote pamA server (browser approval). Give the server with
-    /// `--server <url>` (default: $PAMA_CLOUD_URL).
+    /// Connect this machine to a pamA server (browser approval) and make it home.
+    Connect {
+        /// Server URL (default: --server or $PAMA_CLOUD_URL).
+        url: Option<String>,
+        /// Print the approval link instead of opening a browser.
+        #[arg(long)]
+        no_browser: bool,
+        /// Use a pairing code from the server's console instead of browser approval (servers
+        /// without device login; the server becomes the default sync target).
+        #[arg(long)]
+        code: Option<String>,
+    },
+    /// Switch where this machine's work lives: `local` or a connected server URL.
+    Use {
+        /// `local` or a server URL.
+        target: String,
+        /// Switch without asking.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Provider API keys in the OS keychain (values are never printed).
+    Keys {
+        #[command(subcommand)]
+        action: KeysAction,
+    },
+    /// Coding agents pamA reads: detection, hooks and per-agent capture.
+    Agents {
+        #[command(subcommand)]
+        action: Option<AgentsAction>,
+    },
+    /// Deprecated: use `pama connect <url>`.
+    #[command(hide = true)]
     Login {
         /// Print the approval link instead of opening a browser.
         #[arg(long)]
@@ -127,12 +162,42 @@ pub enum Command {
         #[arg(long)]
         status: Option<String>,
     },
-    /// Per-source sync control.
+    /// Ask Link conversations and your own chats: list, show, reply, delete.
+    Conversations {
+        #[command(subcommand)]
+        action: ConversationsAction,
+    },
+    /// Chat with your own agent over your approved work (interactive; `-q` asks one question).
+    Chat(ChatArgs),
+    /// What is shared and where: Publish (local mode, a one-way copy of approved digests to a
+    /// server) or the drafts sent to your home server (remote mode).
     Sync {
         #[command(subcommand)]
         action: SyncAction,
     },
-    /// Pair this device with a server.
+    /// Tasks: agent sessions grouped by the work they belong to (by git branch at first).
+    Tasks {
+        #[command(subcommand)]
+        action: TasksAction,
+    },
+    /// Agent sessions pamA has read, with their digests.
+    Sessions {
+        #[command(subcommand)]
+        action: SessionsAction,
+    },
+    /// Digests by status (draft, approved, discarded, withdrawn).
+    Digests {
+        #[command(subcommand)]
+        action: DigestsAction,
+    },
+    /// Search approved digest items across all projects.
+    Search {
+        query: Vec<String>,
+        #[arg(long, default_value_t = 20)]
+        limit: u32,
+    },
+    /// Deprecated: use `pama connect <url> --code <code>`.
+    #[command(hide = true)]
     Pair {
         code: String,
         #[arg(long)]
@@ -163,6 +228,32 @@ pub enum Command {
         #[arg(long, hide = true)]
         report: bool,
     },
+    /// Overview: where data goes, models, digest pipeline and sync (also bare `pama`).
+    Status,
+    /// Digest pipeline activity: captured sessions and each attempt's stages and errors.
+    Activity {
+        /// Only failed captures.
+        #[arg(long)]
+        failed: bool,
+        /// Keep printing attempts as they happen.
+        #[arg(long)]
+        follow: bool,
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+        #[command(subcommand)]
+        action: Option<ActivityAction>,
+    },
+    /// Show the device log, or the local server's log with `pama logs server`.
+    Logs {
+        #[arg(value_enum, default_value = "device")]
+        source: LogSource,
+        /// Lines to show.
+        #[arg(short = 'n', long, default_value_t = 50)]
+        lines: usize,
+        /// Keep printing new lines.
+        #[arg(short, long)]
+        follow: bool,
+    },
     /// Read or change settings.
     Config {
         #[command(subcommand)]
@@ -174,6 +265,27 @@ pub enum Command {
         #[command(subcommand)]
         action: CaptureAction,
     },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ActivityAction {
+    /// One capture (or server run) with every attempt.
+    Show { id: String },
+    /// Try a failed capture again now (or resume a failed server run).
+    Retry {
+        #[arg(required_unless_present = "all_failed")]
+        id: Option<String>,
+        #[arg(long, conflicts_with = "id")]
+        all_failed: bool,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum LogSource {
+    /// Hooks, capture and sync on this machine (~/.pama/pama.log).
+    Device,
+    /// The local server (~/.pama/server.log).
+    Server,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -196,8 +308,63 @@ pub enum CaptureAction {
 pub enum HookAgent {
     /// Claude Code hook (JSON on stdin).
     Claude,
-    /// Codex hook (stdin) or notify (JSON in argv).
-    Codex { json: Option<String> },
+    /// Codex hook (stdin) or notify (JSON in argv; `--chain <argv…>` runs another notifier).
+    Codex {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// Cursor hook (JSON on stdin).
+    Cursor,
+    /// OpenCode plugin (JSON in argv).
+    Opencode { json: Option<String> },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum KeysAction {
+    /// Which providers have a key, and where it is stored.
+    List,
+    /// Store a provider's key (read from stdin, never from arguments).
+    Set {
+        #[arg(value_parser = clap::builder::PossibleValuesParser::new(pama_core::providers::ids()))]
+        provider: String,
+    },
+    /// Check that the provider accepts the stored key.
+    Test {
+        #[arg(value_parser = clap::builder::PossibleValuesParser::new(pama_core::providers::ids()))]
+        provider: String,
+        /// Endpoint to test against (default: the provider's, or the drafting model's).
+        #[arg(long)]
+        base_url: Option<String>,
+    },
+    /// Delete a provider's key from the keychain.
+    Remove {
+        #[arg(value_parser = clap::builder::PossibleValuesParser::new(pama_core::providers::ids()))]
+        provider: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum AgentsAction {
+    /// List agents: detected, capture on/off, hooks, recent sessions (default).
+    List,
+    /// Turn capture on for an agent and install its hook.
+    Enable {
+        /// claude, codex, cursor or opencode.
+        id: String,
+        /// Install the hook for every project (user scope).
+        #[arg(long, conflicts_with = "project")]
+        global: bool,
+        /// Install the hook in this project (default: the current directory).
+        #[arg(long)]
+        project: Option<String>,
+        /// Use the committed project config (e.g. `.claude/settings.json`).
+        #[arg(long)]
+        shared: bool,
+    },
+    /// Turn capture off for an agent (hooks stay but are ignored).
+    Disable { id: String },
+    /// Remove pamA's hooks for an agent everywhere (user scope and captured projects).
+    Uninstall { id: String },
 }
 
 #[derive(Debug, Subcommand)]
@@ -209,6 +376,7 @@ pub enum LinkAction {
 
 #[derive(Debug, Args)]
 pub struct LinkCreate {
+    /// `task:<id>`, `project:<id>`, `session:<id>` or a bare task id; repeat for more.
     #[arg(long = "source")]
     pub sources: Vec<String>,
     #[arg(long)]
@@ -229,25 +397,203 @@ pub struct LinkCreate {
     pub allow: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum ConversationStatusArg {
+    Open,
+    Archived,
+    /// Has a question forwarded to you and not answered yet (the inbox).
+    NeedsReply,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum ConversationOriginArg {
+    Link,
+    OwnerChat,
+    Hotkey,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ConversationsAction {
+    /// List conversations, newest first.
+    List {
+        /// Only this Ask Link (slug).
+        #[arg(long)]
+        link: Option<String>,
+        /// Only this verified asker email.
+        #[arg(long)]
+        asker: Option<String>,
+        #[arg(long, value_enum)]
+        status: Option<ConversationStatusArg>,
+        #[arg(long, value_enum)]
+        origin: Option<ConversationOriginArg>,
+        #[arg(long, default_value_t = 50)]
+        limit: u32,
+        #[arg(long, default_value_t = 0)]
+        offset: u32,
+    },
+    /// Show every turn of a conversation with citations and replies.
+    Show { id: String },
+    /// Reply in a conversation (to the question waiting for you, or `--ask <id>`).
+    Reply {
+        id: String,
+        text: String,
+        #[arg(long = "ask")]
+        ask_id: Option<String>,
+    },
+    /// Delete a conversation (hidden at once, purged by the next retention run).
+    Delete { id: String },
+}
+
+#[derive(Debug, Args)]
+pub struct ChatArgs {
+    /// Ask one question and exit (required with --json).
+    #[arg(short = 'q', long = "question")]
+    pub question: Option<String>,
+    /// Limit the chat to sources: `bundle:<id>`, `project:<id>`, `session:<id>` (repeatable).
+    #[arg(long = "scope")]
+    pub scope: Vec<String>,
+    /// Continue an earlier chat.
+    #[arg(long = "conversation", conflicts_with = "scope")]
+    pub conversation: Option<String>,
+}
+
 #[derive(Debug, Subcommand)]
 pub enum SyncAction {
+    /// Projects and tasks being shared, the server, the queue and failed items.
     Status,
+    /// Start sharing a project or task (local mode: Publish to the paired server).
     Enable(SyncTarget),
+    /// Stop sharing a project or task; its copies on the server are deleted. Lists the Ask Links
+    /// that would lose sources first and asks for --yes.
     Disable(SyncTarget),
+    /// Send everything waiting now (and, in remote mode, pull review decisions back).
+    Now,
+    /// Items the server refused or that ran out of retries, with the last error.
+    Failed,
+    /// Try failed items again.
+    Retry {
+        /// An id (or id prefix) from `pama sync failed`.
+        #[arg(required_unless_present = "all")]
+        id: Option<String>,
+        #[arg(long, conflicts_with = "id")]
+        all: bool,
+    },
+    /// Give up on a failed item.
+    Drop { id: String },
 }
 
 #[derive(Debug, Args)]
 pub struct SyncTarget {
+    /// Project name, id, repo key or directory.
     #[arg(long, conflicts_with = "bundle")]
     pub project: Option<String>,
-    #[arg(long)]
+    /// Task name or id.
+    #[arg(long = "task", visible_alias = "bundle")]
     pub bundle: Option<String>,
+    /// Server to publish to (local mode; default: the paired server).
     #[arg(long)]
     pub target: Option<String>,
+    /// Go ahead even if Ask Links lose sources.
+    #[arg(long)]
+    pub yes: bool,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum TasksAction {
+    /// Tasks per project.
+    List {
+        /// Project name or id.
+        #[arg(long)]
+        project: Option<String>,
+    },
+    /// One task with its sessions.
+    Show { task: String },
+    /// Give a task a new name.
+    Rename { task: String, name: String },
+    /// Merge tasks into the first one.
+    Merge {
+        #[arg(num_args = 2.., required = true)]
+        tasks: Vec<String>,
+        /// Name of the merged task (default: the first task's name).
+        #[arg(long)]
+        name: Option<String>,
+    },
+    /// Move sessions of a task into a new task.
+    Split {
+        task: String,
+        /// Session id (or prefix, or agent session id) to move; repeat for more.
+        #[arg(long = "session", required = true)]
+        sessions: Vec<String>,
+        #[arg(long)]
+        name: String,
+    },
+}
+
+#[derive(Debug, Args)]
+pub struct ListPage {
+    #[arg(long, default_value_t = 50)]
+    pub limit: u32,
+    #[arg(long, default_value_t = 0)]
+    pub offset: u32,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SessionsAction {
+    /// Agent sessions, newest first.
+    List {
+        #[arg(long)]
+        project: Option<String>,
+        #[arg(long)]
+        task: Option<String>,
+        #[arg(long, value_parser = ["claude_code", "codex"])]
+        agent: Option<String>,
+        #[arg(long, value_parser = ["draft", "approved", "discarded", "withdrawn", "none"])]
+        status: Option<String>,
+        #[command(flatten)]
+        page: ListPage,
+    },
+    /// One session: agent, times, branches, capture status, digest versions, links using it.
+    Show { session: String },
+    /// Delete a session and its digests (and its published copy).
+    Delete {
+        session: String,
+        #[arg(long)]
+        yes: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum DigestsAction {
+    List {
+        #[arg(long, value_parser = ["draft", "approved", "discarded", "withdrawn", "superseded"])]
+        status: Option<String>,
+        #[arg(long)]
+        project: Option<String>,
+        #[arg(long)]
+        task: Option<String>,
+        #[command(flatten)]
+        page: ListPage,
+    },
+    Show {
+        digest: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]
 pub enum ServerAction {
+    /// Servers this machine is connected to.
+    List,
+    /// Make a connected server the default (and home, in server mode).
+    Use {
+        url: String,
+    },
+    /// Disconnect from a server and forget it.
+    Forget {
+        url: String,
+        /// Drop drafts and deletions not yet delivered to that server.
+        #[arg(long)]
+        discard_pending: bool,
+    },
     Start {
         /// Bind on the LAN instead of 127.0.0.1.
         #[arg(long)]
@@ -299,8 +645,12 @@ pub enum ModelAction {
         #[arg(value_parser = ROLES)]
         role: String,
     },
-    /// Guided setup (interactive terminal).
-    Setup,
+    /// Guided setup (interactive terminal), optionally from a preset.
+    Setup {
+        /// offline, openrouter, openai or anthropic-deepinfra.
+        #[arg(long)]
+        preset: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -313,7 +663,7 @@ pub enum SwitchTarget {
 pub struct ModelSet {
     #[arg(value_parser = ROLES)]
     pub role: String,
-    #[arg(long, value_parser = ["ollama", "openai-compatible", "openrouter", "anthropic"])]
+    #[arg(long, value_parser = clap::builder::PossibleValuesParser::new(pama_core::providers::ids()))]
     pub provider: String,
     #[arg(long)]
     pub model: String,
@@ -341,7 +691,7 @@ fn main() -> ExitCode {
     match cmd::run(cli) {
         Ok(code) => code.into(),
         Err(e) => {
-            eprintln!("error: {e:#}");
+            ui::error("error", &format!("{e:#}"), None);
             Exit::User.into()
         }
     }

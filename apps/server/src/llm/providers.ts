@@ -11,7 +11,9 @@ import {
 import { createOllama } from "ollama-ai-provider-v2";
 import type { Config, ProviderConfig } from "../config.ts";
 import type { EgressGuard } from "../net/egress.ts";
+import { tagModel } from "./errors.ts";
 import { FakeModels } from "./fake.ts";
+import { isLocalProvider } from "./registry.ts";
 
 export interface Models {
   /** Answers and drafts. */
@@ -30,11 +32,9 @@ export const OPENROUTER_DEFAULT = "https://openrouter.ai/api/v1";
 /** OpenRouter's optional app attribution headers. */
 const OPENROUTER_HEADERS = { "HTTP-Referer": "https://github.com/TrH203/pamA", "X-Title": "pamA" };
 
+/** True when the model runs on this machine or the LAN (shared registry rule, spec 005). */
 export function isLocal(p: ProviderConfig): boolean {
-  if (p.provider === "fake" || p.provider === "ollama") return true;
-  if (p.provider === "anthropic" || p.provider === "openrouter") return false;
-  const host = p.baseUrl ? new URL(p.baseUrl).hostname : "";
-  return /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)|\.local$|\.lan$/.test(host);
+  return isLocalProvider(p.provider, p.baseUrl);
 }
 
 export function language(
@@ -129,10 +129,21 @@ export function createModels(
   const usesFake = [config.chat, config.small, config.embed].some((p) => p.provider === "fake");
   const fake = usesFake ? new FakeModels() : undefined;
   return {
-    chat: language(config.chat, guard, fake, "llm.chat"),
-    small: language(config.small, guard, fake, "llm.small"),
-    embed: embedding(config.embed, guard, fake),
+    chat: tag(language(config.chat, guard, fake, "llm.chat"), "chat", config.chat),
+    small: tag(language(config.small, guard, fake, "llm.small"), "small", config.small),
+    embed: tag(embedding(config.embed, guard, fake), "embed", config.embed),
     local: [config.chat, config.small, config.embed].every(isLocal),
     fake,
   };
+}
+
+/** Fake models stay unwrapped so tests see their raw behaviour. */
+function tag<M extends LanguageModel | EmbeddingModel>(
+  model: M,
+  role: "chat" | "small" | "embed",
+  p: ProviderConfig,
+): M {
+  return p.provider === "fake"
+    ? model
+    : tagModel(model, { role, provider: p.provider, model: p.model });
 }

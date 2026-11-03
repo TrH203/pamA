@@ -1,39 +1,45 @@
 // The conversation: each question with its automated answer (cited) or refusal (forwardable),
 // and the owner's reply when there is one.
-import { AutomatedBadge } from "@pama/ui";
+import { useI18n } from "@pama/i18n";
+import { AutomatedBadge, Badge, Button, Spinner } from "@pama/ui";
+import { CircleHelp, Forward, MessageSquareReply, ThumbsDown, ThumbsUp } from "lucide-react";
 import { useState } from "react";
 import { type Ask, api } from "./api.ts";
-import { t } from "./i18n.ts";
 
 function Feedback({ ask }: { ask: Ask }) {
+  const { t } = useI18n();
   const [sent, setSent] = useState(ask.useful !== null && ask.useful !== undefined);
-  if (sent) return <p className="text-xs text-stone-400">{t.thanks}</p>;
+  if (sent) return <p className="text-xs text-faint">{t.ask.thanks}</p>;
   const send = async (useful: boolean) => {
     setSent(true);
     await api.feedback(ask.id, useful).catch(() => setSent(false));
   };
   return (
-    <div className="flex items-center gap-2 text-xs text-stone-500">
-      <span>{t.useful}</span>
-      <button
-        type="button"
-        className="rounded px-1.5 py-0.5 hover:bg-stone-100"
-        aria-label="Useful"
+    <div className="flex items-center gap-1 text-xs text-muted">
+      <span className="mr-1">{t.ask.useful}</span>
+      <Button
+        size="icon"
+        variant="ghost"
+        className="size-7"
+        aria-label={t.ask.usefulYes}
         onClick={() => send(true)}
       >
-        👍
-      </button>
-      <button
-        type="button"
-        className="rounded px-1.5 py-0.5 hover:bg-stone-100"
-        aria-label="Not useful"
+        <ThumbsUp aria-hidden />
+      </Button>
+      <Button
+        size="icon"
+        variant="ghost"
+        className="size-7"
+        aria-label={t.ask.usefulNo}
         onClick={() => send(false)}
       >
-        👎
-      </button>
+        <ThumbsDown aria-hidden />
+      </Button>
     </div>
   );
 }
+
+const bubble = "rounded-card border px-4 py-3";
 
 function AskView({
   ask,
@@ -44,6 +50,8 @@ function AskView({
   owner: string;
   onChange: (a: Ask) => void;
 }) {
+  const { t: all } = useI18n();
+  const t = all.ask;
   const [busy, setBusy] = useState(false);
   const forward = async () => {
     setBusy(true);
@@ -57,31 +65,31 @@ function AskView({
   return (
     <li className="space-y-3">
       <div className="flex justify-end">
-        <p className="max-w-[85%] rounded-2xl rounded-br-sm bg-stone-900 px-4 py-2 text-white">
+        <p className="max-w-[85%] whitespace-pre-wrap rounded-card rounded-br-sm bg-accent px-4 py-2.5 text-sm leading-6 text-accent-contrast">
+          <span className="sr-only">{t.you}: </span>
           {ask.question}
         </p>
       </div>
-      <div className="max-w-[90%] space-y-2">
+      <div className="max-w-[92%] space-y-2">
         {ask.status === "pending" && (
-          <p className="animate-pulse text-sm text-stone-500">{t.asking_now}</p>
+          <p className="inline-flex items-center gap-2 text-sm text-muted">
+            <Spinner size="sm" label={null} />
+            {t.asking_now}
+          </p>
         )}
         {ask.answer && (
-          <div className="space-y-2 rounded-2xl rounded-bl-sm border border-stone-200 bg-white px-4 py-3">
-            <AutomatedBadge owner={owner} />
-            <p className="whitespace-pre-wrap leading-relaxed">{ask.answer}</p>
+          <div className={`${bubble} space-y-3 rounded-bl-sm border-line bg-surface`}>
+            <AutomatedBadge owner={owner} label={t.automatedBadge(owner)} />
+            <p className="whitespace-pre-wrap text-sm leading-6">{ask.answer}</p>
             {!!ask.citations?.length && (
-              <p className="flex flex-wrap items-center gap-1 text-xs text-stone-500">
+              <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted">
                 <span>{t.sources}:</span>
                 {ask.citations.map((c, i) => (
-                  <span
-                    key={c.item_id}
-                    className="rounded bg-stone-100 px-1.5 py-0.5"
-                    title={c.item_id}
-                  >
+                  <Badge key={c.item_id} title={c.item_id}>
                     [{i + 1}] {c.label}
-                  </span>
+                  </Badge>
                 ))}
-              </p>
+              </div>
             )}
             {ask.status === "answered" && <Feedback ask={ask} />}
           </div>
@@ -90,22 +98,29 @@ function AskView({
           ask.status === "forwarded" ||
           ask.status === "owner_answered") &&
           !ask.answer && (
-            <div className="rounded-2xl rounded-bl-sm border border-amber-200 bg-amber-50 px-4 py-3 text-sm">
-              <p>{t.refused[ask.reason ?? "out_of_scope"] ?? t.refused.out_of_scope}</p>
+            <div
+              className={`${bubble} space-y-2 rounded-bl-sm border-transparent bg-warning-soft text-sm text-warning-ink`}
+            >
+              <p className="flex items-start gap-2">
+                <CircleHelp aria-hidden className="mt-0.5 size-4 shrink-0" />
+                <span>{t.refused[ask.reason ?? "out_of_scope"] ?? t.refused.out_of_scope}</span>
+              </p>
               {ask.status === "refused" && (
-                <button type="button" disabled={busy} onClick={forward} className="btn mt-2">
+                <Button size="sm" loading={busy} onClick={forward}>
+                  <Forward aria-hidden />
                   {t.forward(owner)}
-                </button>
+                </Button>
               )}
-              {ask.status === "forwarded" && (
-                <p className="mt-1 text-stone-600">{t.forwarded(owner)}</p>
-              )}
+              {ask.status === "forwarded" && <p className="pl-6">{t.forwarded(owner)}</p>}
             </div>
           )}
         {ask.owner_reply && (
-          <div className="rounded-2xl rounded-bl-sm border border-emerald-200 bg-emerald-50 px-4 py-3">
-            <p className="text-xs font-medium text-emerald-900">{t.ownerReply(owner)}</p>
-            <p className="whitespace-pre-wrap">{ask.owner_reply}</p>
+          <div className={`${bubble} rounded-bl-sm border-transparent bg-success-soft`}>
+            <p className="mb-1 flex items-center gap-1.5 text-xs font-medium text-success-ink">
+              <MessageSquareReply aria-hidden className="size-3.5" />
+              {t.ownerReply(owner)}
+            </p>
+            <p className="whitespace-pre-wrap text-sm leading-6">{ask.owner_reply}</p>
           </div>
         )}
       </div>

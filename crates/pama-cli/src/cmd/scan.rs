@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use pama_core::capture::scan::{default_dirs, scan};
+use pama_core::capture::scan::scan;
 use serde_json::json;
 
 use super::{parse_duration, Ctx};
@@ -20,13 +20,15 @@ pub fn run(ctx: &Ctx, since: Option<String>) -> anyhow::Result<Exit> {
         Some(s) => match parse_duration(s) {
             Some(n) => Duration::from_secs(n),
             None => {
-                eprintln!("error: --since takes a duration like 30m, 12h or 7d");
+                crate::fail!("usage", "--since takes a duration like 30m, 12h or 7d");
                 return Ok(Exit::User);
             }
         },
     };
-    let (claude, codex) = default_dirs();
-    let r = scan(&ctx.store, claude.as_deref(), codex.as_deref(), since, IDLE)?;
+    let spin = crate::ui::spinner(ctx.json, "scanning agent transcripts…");
+    let r = scan(&ctx.store, since, IDLE);
+    spin.finish();
+    let r = r?;
     let at = pama_core::store::now_ms();
     ctx.store.set_setting(
         KEY_LAST_SCAN,
@@ -37,8 +39,10 @@ pub fn run(ctx: &Ctx, since: Option<String>) -> anyhow::Result<Exit> {
     }
     ctx.print(&json!({ "seen": r.seen, "enqueued": r.enqueued }), || {
         format!(
-            "{} ended sessions found, {} new queued for digesting",
-            r.seen, r.enqueued
+            "{} {} ended sessions found, {} new queued for digesting",
+            crate::ui::Mark::Ok.sym(),
+            r.seen,
+            r.enqueued
         )
     });
     Ok(Exit::Ok)

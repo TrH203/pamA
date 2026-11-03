@@ -1,0 +1,33 @@
+{
+  "$comment": "Shared cases for the provider registry (spec 005): the server (apps/server/tests/unit/provider-registry.test.ts) and the device (crates/pama-core/src/providers.rs) must agree on every row.",
+  "is_local": [
+    { "provider": "ollama", "base_url": "https://ollama.example.com", "local": true },
+    { "provider": "ollama", "base_url": null, "local": true },
+    { "provider": "anthropic", "base_url": null, "local": false },
+    { "provider": "openrouter", "base_url": null, "local": false },
+    { "provider": "openai", "base_url": null, "local": false },
+    { "provider": "deepinfra", "base_url": null, "local": false },
+    { "provider": "openai-compatible", "base_url": null, "local": false },
+    { "provider": "openai-compatible", "base_url": "http://localhost:1/v1", "local": true },
+    { "provider": "openai-compatible", "base_url": "http://127.0.0.1:8000/v1", "local": true },
+    { "provider": "openai-compatible", "base_url": "http://10.1.2.3/v1", "local": true },
+    { "provider": "openai-compatible", "base_url": "http://192.168.1.2/v1", "local": true },
+    { "provider": "openai-compatible", "base_url": "http://172.16.0.1/v1", "local": true },
+    { "provider": "openai-compatible", "base_url": "http://172.31.9.9/v1", "local": true },
+    { "provider": "openai-compatible", "base_url": "http://gpu.local/v1", "local": true },
+    { "provider": "openai-compatible", "base_url": "http://box.lan/v1", "local": true },
+    { "provider": "openai-compatible", "base_url": "http://172.32.0.1/v1", "local": false },
+    { "provider": "openai-compatible", "base_url": "https://api.example.com/v1", "local": false },
+    { "provider": "openai-compatible", "base_url": "http://11.0.0.1/v1", "local": false },
+    { "provider": "lmstudio", "base_url": null, "local": true },
+    { "provider": "vllm", "base_url": null, "local": true },
+    { "provider": "vllm", "base_url": "https://vllm.example.com/v1", "local": false }
+  ],
+  "preset_for": [
+    { "provider": "openai-compatible", "base_url": "https://api.deepinfra.com/v1/openai/", "preset": "deepinfra" },
+    { "provider": "openai-compatible", "base_url": "http://127.0.0.1:1234/v1", "preset": "lmstudio" },
+    { "provider": "openai-compatible", "base_url": "https://x.example/v1", "preset": "openai-compatible" },
+    { "provider": "ollama", "base_url": null, "preset": "ollama" }
+  ],
+  "ids": ["ollama", "lmstudio", "vllm", "openai", "anthropic", "openrouter", "deepinfra", "openai-compatible"]
+}

@@ -28,9 +28,12 @@ fn is_secret(key: &str) -> bool {
 fn validate(key: &str, value: &str) -> Result<(), String> {
     match key {
         "provider.chat.provider" | "provider.embed.provider"
-            if !["anthropic", "openai-compatible", "openrouter", "ollama"].contains(&value) =>
+            if !pama_core::providers::ids().contains(&value) =>
         {
-            Err("provider must be anthropic, openai-compatible, openrouter or ollama".into())
+            Err(format!(
+                "provider must be one of {}",
+                pama_core::providers::ids().join(", ")
+            ))
         }
         "hotkey.answer_source" if !["local", "server", "auto"].contains(&value) => {
             Err("answer_source must be local, server or auto".into())
@@ -47,6 +50,16 @@ pub fn run(ctx: &Ctx, action: ConfigAction) -> anyhow::Result<Exit> {
     match action {
         ConfigAction::Set { key, value } => {
             if is_secret(&key) {
+                let value = if value == "-" {
+                    super::read_secret(&key)?
+                } else {
+                    eprintln!("warning: keys passed as arguments end up in shell history; prefer `pama config set {key} -`");
+                    value
+                };
+                if value.is_empty() {
+                    crate::fail!("usage", "empty key; nothing saved");
+                    return Ok(Exit::User);
+                }
                 pama_core::secrets::set(&key, &value)?;
                 ctx.print(&json!({ "key": key, "stored": "keychain" }), || {
                     format!("{key} saved to the OS keychain")
@@ -54,11 +67,15 @@ pub fn run(ctx: &Ctx, action: ConfigAction) -> anyhow::Result<Exit> {
                 return Ok(Exit::Ok);
             }
             if !KNOWN.contains(&key.as_str()) {
-                eprintln!("error: unknown key {key}; known keys: {}", KNOWN.join(", "));
+                crate::fail!(
+                    "usage",
+                    "unknown key {key}; known keys: {}",
+                    KNOWN.join(", ")
+                );
                 return Ok(Exit::User);
             }
             if let Err(e) = validate(&key, &value) {
-                eprintln!("error: {e}");
+                crate::fail!("usage", "{e}");
                 return Ok(Exit::User);
             }
             ctx.store.set_setting(&key, &value)?;

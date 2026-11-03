@@ -29,6 +29,8 @@ export const workspaces = pgTable(
     embedDim: integer("embed_dim").notNull().default(1024),
     /** 0.7 for cloud models, 0.8 for local models. */
     answerThreshold: real("answer_threshold").notNull().default(0.7),
+    /** Days asks and conversations are kept (migration 0013; was a fixed 180). */
+    askRetentionDays: integer("ask_retention_days").notNull().default(180),
     createdAt: ts("created_at").notNull().defaultNow(),
   },
   (t) => [
@@ -37,6 +39,7 @@ export const workspaces = pgTable(
       sql`${t.defaultDenyLabels} <@ ARRAY['business_sensitive','infra','customer']::text[]`,
     ),
     check("workspaces_threshold_range", sql`${t.answerThreshold} BETWEEN 0 AND 1`),
+    check("workspaces_ask_retention_days", sql`${t.askRetentionDays} BETWEEN 1 AND 3650`),
   ],
 );
 

@@ -1,7 +1,7 @@
 -- Device store (data-model.md). Raw transcripts are never copied: only path and hash.
 CREATE TABLE IF NOT EXISTS captured_session (
   id                TEXT PRIMARY KEY,
-  agent             TEXT NOT NULL CHECK (agent IN ('claude_code', 'codex')),
+  agent             TEXT NOT NULL CHECK (agent IN ('claude_code', 'codex', 'cursor', 'opencode')),
   agent_session_id  TEXT NOT NULL,
   transcript_path   TEXT NOT NULL,
   transcript_sha256 TEXT,
@@ -60,3 +60,24 @@ CREATE TABLE IF NOT EXISTS remote_digest (
   updated_at        INTEGER NOT NULL,
   PRIMARY KEY (target, agent, agent_session_id)
 );
+
+-- Pipeline observability (spec 006): one row per processing attempt of a capture. Re-enqueueing a
+-- capture never deletes its attempts.
+CREATE TABLE IF NOT EXISTS capture_attempt (
+  id           TEXT PRIMARY KEY,
+  capture_id   TEXT NOT NULL,
+  attempt      INTEGER NOT NULL,
+  stage        TEXT NOT NULL,
+  outcome      TEXT,
+  started_at   INTEGER NOT NULL,
+  ended_at     INTEGER,
+  duration_ms  INTEGER,
+  error_code   TEXT,
+  error_detail TEXT,
+  role         TEXT,
+  provider     TEXT,
+  model        TEXT,
+  digest_id    TEXT,
+  run_id       TEXT
+);
+CREATE INDEX IF NOT EXISTS capture_attempt_capture ON capture_attempt (capture_id, started_at);

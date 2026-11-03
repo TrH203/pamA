@@ -67,7 +67,7 @@ it("masks branch and bundle names in what the sync worker receives", async () =>
       tombstones: { source_key: string; source_type: string }[];
     };
   // Sync is off by default: nothing is listed at all.
-  expect(await pending()).toEqual({ digests: [], tombstones: [] });
+  expect(await pending()).toEqual({ digests: [], tombstones: [], bundle_changes: [] });
 
   await t.req(`/v1/digests/${d.digest_id}/approve`, { json: {} });
   const [p] = await t.db.query<{ id: string }>("SELECT id FROM projects");

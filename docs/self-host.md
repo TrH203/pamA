@@ -48,18 +48,24 @@ pama.example.com {
 2. With email set up, the quickest way is `pama login --server https://pama.example.com` on your
    machine (approve in the browser). It also lets the machine work in remote mode: only `pama`
    installed, review and links on this server (see [cloud server](deploy-cloud.md#3-owners-connect)).
-   Otherwise create a pairing code: console › Devices, or
+   Otherwise create a pairing code (the console has no Devices page yet):
    `curl -X POST -H "Authorization: Bearer $PAMA_OWNER_TOKEN" https://pama.example.com/v1/devices/pairing-code`
 3. On your machine: `pama pair <CODE> --server https://pama.example.com`
-4. Choose what to share: `pama sync status`, then `pama sync enable --project <id>`.
-   Only approved digests leave your machine; raw transcripts never do.
+4. Choose what to publish: `pama sync status`, then `pama sync enable --project <name>` (or
+   `--task <name>` for one task). Only approved digests leave your machine; raw transcripts never
+   do. Approving a digest publishes it right away; `pama sync now` sends anything still waiting,
+   `pama sync failed` shows items the server refused and `pama sync retry --all` resends them.
+   `pama doctor` warns when the machine is connected but nothing is published yet.
 
 ## Security notes
 
 - The database is only reachable inside the compose network. The server connects as the
   non-superuser `pama_server`; answers read digest items as `pama_app` with row-level security.
 - `PAMA_STRICT_OFFLINE=true` with `PAMA_DECLARED_HOSTS` blocks every other outbound connection.
-- Turning sync off on a laptop deletes that source's copies here and takes its links down.
+- Turning Publish off on a laptop deletes that source's copies here and takes its links down.
+  `pama sync disable` first lists the Ask Links that would lose sources and asks for `--yes`.
+- Renaming, merging or splitting a task on the laptop (`pama tasks rename|merge|split`) reaches
+  this server too, so links scoped to a task keep pointing at the right sessions.
 
 ## Backups
 
@@ -79,7 +85,9 @@ docker compose -f deploy/docker-compose.yml up -d --build   # migrations run at 
 **Upgrade the server before the devices that sync to it.** Newer devices send a session's branch
 list (`source.git.branches`) only to servers that advertise `branch_lists` in `/v1/health`
 (`"capabilities": ["branch_lists"]`); an older server keeps working but sees only the single branch
-a session is filed under.
+a session is filed under. Task renames, merges and splits are delivered only to servers that
+advertise `bundle_changes`; an older server marks them failed (`pama sync failed`) until it is
+upgraded and they are retried.
 
 ## pamA Cloud
 

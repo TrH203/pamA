@@ -81,7 +81,7 @@ export const sessions = pgTable(
     bundleId: text("bundle_id")
       .notNull()
       .references(() => bundles.id),
-    agent: text("agent", { enum: ["claude_code", "codex"] }).notNull(),
+    agent: text("agent", { enum: ["claude_code", "codex", "cursor", "opencode"] }).notNull(),
     agentSessionId: text("agent_session_id").notNull(),
     startedAt: ts("started_at"),
     endedAt: ts("ended_at"),
@@ -97,7 +97,9 @@ export const sessions = pgTable(
   },
   (t) => [
     uniqueIndex("sessions_agent_session").on(t.workspaceId, t.agent, t.agentSessionId),
-    check("sessions_agent", sql`${t.agent} IN ('claude_code','codex')`),
+    // Library lists (spec 007, migration 0012).
+    index("sessions_ws_ended").on(t.workspaceId, t.endedAt, t.id),
+    check("sessions_agent", sql`${t.agent} IN ('claude_code','codex','cursor','opencode')`),
   ],
 );
 
@@ -155,6 +157,7 @@ export const digests = pgTable(
   (t) => [
     uniqueIndex("digests_session_version").on(t.sessionId, t.version),
     uniqueIndex("digests_session_hash").on(t.sessionId, t.digestHash),
+    index("digests_ws_status").on(t.workspaceId, t.status, t.createdAt),
     check(
       "digests_status",
       sql`${t.status} IN ('draft','approved','superseded','discarded','withdrawn')`,

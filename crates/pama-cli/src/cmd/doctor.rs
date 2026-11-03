@@ -1,12 +1,9 @@
 //! `pama doctor`: check that capture, the local (or remote) server, models, permissions and
 //! offline settings are in order, and say how to fix what is not.
 
-use std::path::Path;
-
 use pama_core::capture::{KEY_CAPTURE_ALL, KEY_CAPTURE_PROJECTS};
 use pama_core::client::{Api, LocalApi, KEY_DECLARED_HOSTS, KEY_STRICT_OFFLINE};
-use pama_core::paths::home_dir;
-use pama_core::session::{claude, codex};
+use pama_core::digest::Agent;
 use serde_json::json;
 
 use super::{scan, Ctx};
@@ -17,22 +14,6 @@ struct Check {
     ok: bool,
     detail: String,
     fix: Option<String>,
-}
-
-/// A Claude settings file with a hook command that runs `pama hook claude`.
-fn has_pama_hook(p: &Path) -> bool {
-    std::fs::read_to_string(p)
-        .map(|s| {
-            s.lines()
-                .any(|l| l.contains("pama") && l.contains("hook claude"))
-        })
-        .unwrap_or(false)
-}
-
-fn file_contains(p: &Path, needle: &str) -> bool {
-    std::fs::read_to_string(p)
-        .map(|s| s.contains(needle))
-        .unwrap_or(false)
 }
 
 /// Remote mode: default server reachable and new enough, this device still logged in, sync on
@@ -46,7 +27,7 @@ fn remote_checks(ctx: &Ctx, checks: &mut Vec<Check>) {
             name: "remote server",
             ok: false,
             detail: "not logged in".into(),
-            fix: Some("`pama login --server <url>`".into()),
+            fix: Some("`pama connect <url>`".into()),
         });
         return;
     };
@@ -88,14 +69,42 @@ fn remote_checks(ctx: &Ctx, checks: &mut Vec<Check>) {
             Some(Err(e)) => e.to_string(),
             None => "no device token in the keychain".into(),
         },
-        fix: Some(format!("`pama login --server {server}`")),
+        fix: Some(format!("`pama connect {server}`")),
     });
     let synced = remote::sync_projects(store);
+    let tasks = remote::bundle_sync_overrides(store)
+        .into_iter()
+        .filter(|(_, on)| *on)
+        .count();
+    let warning = pama_core::sync::nothing_shared(Some(&server), synced.len() + tasks);
     checks.push(Check {
-        name: "sync projects",
-        ok: !synced.is_empty(),
-        detail: format!("{} project(s) send drafts", synced.len()),
-        fix: Some("`pama init --sync` in a project".into()),
+        name: "sharing",
+        ok: warning.is_none(),
+        detail: warning.unwrap_or_else(|| {
+            format!(
+                "{} project(s) and {tasks} task(s) send drafts",
+                synced.len()
+            )
+        }),
+        fix: Some("`pama init --sync` in a project, or `pama sync enable --project <dir>`".into()),
+    });
+}
+
+/// Local mode: paired with a server for Publish but nothing published to it (spec 007).
+fn publish_check(ctx: &Ctx, api: &LocalApi, checks: &mut Vec<Check>) {
+    let Ok(Some(target)) = ctx.store.setting(pama_core::remote::KEY_DEFAULT_TARGET) else {
+        return;
+    };
+    let Ok(status) = api.get("/v1/sync/status", "doctor") else {
+        return;
+    };
+    let shared = super::sync::published_count(&status);
+    let warning = pama_core::sync::nothing_shared(Some(&target), shared);
+    checks.push(Check {
+        name: "publish",
+        ok: warning.is_none(),
+        detail: warning.unwrap_or_else(|| format!("{shared} project(s)/task(s) → {target}")),
+        fix: Some("`pama sync enable --project <name>` (or `--task <name>`)".into()),
     });
 }
 
@@ -119,34 +128,42 @@ pub fn run(ctx: &Ctx, report: bool) -> anyhow::Result<Exit> {
         },
         fix: Some("run `pama init` in a project".into()),
     });
-    let user_hook = has_pama_hook(&home_dir().join(".claude/settings.json"));
-    let project_hooks = projects
-        .iter()
-        .filter(|p| has_pama_hook(&Path::new(p).join(".claude/settings.local.json")))
-        .count();
-    checks.push(Check {
-        name: "claude code hook",
-        ok: user_hook || project_hooks > 0 || claude::projects_dir().is_none_or(|d| !d.exists()),
-        detail: format!("user scope: {user_hook}, projects with hook: {project_hooks}"),
-        fix: Some(
-            "`pama init --agent claude` (missed sessions are still found by `pama scan`)".into(),
-        ),
-    });
-    let codex_dir = std::env::var_os("CODEX_HOME")
-        .map(Into::into)
-        .unwrap_or_else(|| home_dir().join(".codex"));
-    let codex_used = codex::sessions_dir().is_some_and(|d| d.exists());
-    let notify = file_contains(&codex_dir.join("config.toml"), "\"hook\", \"codex\"");
-    checks.push(Check {
-        name: "codex notify",
-        ok: !codex_used || notify,
-        detail: if codex_used {
-            format!("registered: {notify}")
-        } else {
-            "Codex not used".into()
-        },
-        fix: Some("`pama init --agent codex`".into()),
-    });
+    // Hooks per agent, in every scope: user, and each captured project's personal and shared
+    // config (hooks installed with `--project-scope` count too).
+    for a in pama_core::agents::all() {
+        let hooks = pama_core::agents::hook_locations(store, a);
+        let enabled = pama_core::agents::enabled(store, a.agent());
+        let detected = a.detected();
+        if !detected && hooks.is_empty() && !matches!(a.agent(), Agent::ClaudeCode | Agent::Codex) {
+            continue; // not used here: no line for agents the owner never ran
+        }
+        checks.push(Check {
+            name: match a.agent() {
+                Agent::ClaudeCode => "claude code hook",
+                Agent::Codex => "codex notify",
+                Agent::Cursor => "cursor hook",
+                Agent::OpenCode => "opencode plugin",
+            },
+            ok: !enabled || !detected || !hooks.is_empty(),
+            detail: if !enabled {
+                "capture off for this agent".into()
+            } else if !detected {
+                format!("{} not used", a.display_name())
+            } else if hooks.is_empty() {
+                "no hook installed".into()
+            } else {
+                hooks
+                    .iter()
+                    .map(|h| h.scope.clone())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            },
+            fix: Some(format!(
+                "`pama agents enable {}` (missed sessions are still found by `pama scan`)",
+                a.cli_id()
+            )),
+        });
+    }
     let counts = store.captures(500)?;
     let failed = counts
         .iter()
@@ -171,8 +188,12 @@ pub fn run(ctx: &Ctx, report: bool) -> anyhow::Result<Exit> {
         },
         fix: None,
     });
+    // The local server's three model roles, checked live; otherwise the device drafting model.
+    let mut server_checked = false;
     if remote_mode {
+        let spin = crate::ui::spinner(ctx.json || report, "checking the server…");
         remote_checks(ctx, &mut checks);
+        spin.finish();
     } else {
         let api = LocalApi::connect(store, "cli").ok().filter(|a| a.healthy());
         checks.push(Check {
@@ -185,40 +206,17 @@ pub fn run(ctx: &Ctx, report: bool) -> anyhow::Result<Exit> {
             },
             fix: Some("`pama server start` (or open the desktop app)".into()),
         });
+        if let Some(api) = &api {
+            let spin = crate::ui::spinner(ctx.json || report, "checking models…");
+            server_model_checks(api, &mut checks);
+            spin.finish();
+            publish_check(ctx, api, &mut checks);
+            server_checked = true;
+        }
     }
-    let provider = store
-        .setting("provider.chat.provider")?
-        .unwrap_or_else(|| "ollama".into());
-    let models_ok = match provider.as_str() {
-        "ollama" => {
-            let base = store
-                .setting("provider.chat.base_url")?
-                .unwrap_or_else(|| "http://127.0.0.1:11434".into());
-            reqwest::blocking::Client::new()
-                .get(format!("{base}/api/tags"))
-                .timeout(std::time::Duration::from_secs(3))
-                .send()
-                .is_ok_and(|r| r.status().is_success())
-        }
-        p => {
-            pama_core::secrets::init_platform_store();
-            pama_core::secrets::exists(&format!("provider.{p}.key")).unwrap_or(false)
-        }
-    };
-    checks.push(Check {
-        name: if remote_mode {
-            "drafting model"
-        } else {
-            "models"
-        },
-        ok: models_ok,
-        detail: format!("chat provider: {provider}"),
-        fix: Some(if provider == "ollama" {
-            "start Ollama and `ollama pull bge-m3` plus a chat model".into()
-        } else {
-            format!("`pama config set provider.{provider}.key <key>`")
-        }),
-    });
+    if !server_checked {
+        device_model_check(store, remote_mode, &mut checks)?;
+    }
 
     // Permissions and offline settings.
     #[cfg(target_os = "macos")]
@@ -230,6 +228,9 @@ pub fn run(ctx: &Ctx, report: bool) -> anyhow::Result<Exit> {
     });
     let strict = store.setting(KEY_STRICT_OFFLINE)?.as_deref() == Some("true");
     let hosts = store.setting(KEY_DECLARED_HOSTS)?.unwrap_or_default();
+    let provider = store
+        .setting("provider.chat.provider")?
+        .unwrap_or_else(|| "ollama".into());
     checks.push(Check {
         name: "strict offline",
         ok: !strict || !hosts.is_empty() || provider == "ollama",
@@ -250,7 +251,33 @@ pub fn run(ctx: &Ctx, report: bool) -> anyhow::Result<Exit> {
         name: "sync outbox",
         ok: outbox.dead == 0,
         detail: format!("{} pending, {} failed", outbox.pending, outbox.dead),
-        fix: Some("`pama sync status`; failed items were rejected by the server".into()),
+        fix: Some(
+            "`pama sync failed` shows why; `pama sync retry --all` after fixing, or `pama sync drop <id>`"
+                .into(),
+        ),
+    });
+    // Spec 006: device capture state stays on the device; doctor reports it from the store.
+    let pipeline = store.capture_counts()?;
+    let latest = store.latest_failed_attempt()?;
+    let latest_code = latest
+        .as_ref()
+        .and_then(|a| a.error_code.as_deref())
+        .and_then(pama_core::capture::errors::ErrorCode::parse);
+    checks.push(Check {
+        name: "digest pipeline",
+        ok: pipeline.failed == 0,
+        detail: match (pipeline.failed, latest_code) {
+            (0, _) => format!(
+                "{} submitted, {} queued",
+                pipeline.submitted, pipeline.detected
+            ),
+            (n, Some(c)) => format!("{n} failed capture(s), latest: {c}"),
+            (n, None) => format!("{n} failed capture(s)"),
+        },
+        fix: Some(match latest_code {
+            Some(c) => format!("{} Then `pama activity retry --all-failed`.", c.hint()),
+            None => "`pama activity --failed`".into(),
+        }),
     });
 
     let all_ok = checks.iter().all(|c| c.ok);
@@ -296,22 +323,124 @@ pub fn run(ctx: &Ctx, report: bool) -> anyhow::Result<Exit> {
         return Ok(if all_ok { Exit::Ok } else { Exit::Config });
     }
     ctx.print(&value, || {
-        checks
-            .iter()
-            .map(|c| {
-                let mut line = format!(
-                    "{} {:<18} {}",
-                    if c.ok { "✓" } else { "✗" },
-                    c.name,
-                    c.detail
-                );
-                if let (false, Some(f)) = (c.ok, &c.fix) {
-                    line.push_str(&format!("\n    → {f}"));
+        use crate::ui::{self, Mark};
+        let failed = checks.iter().filter(|c| !c.ok).count();
+        let mut out = vec![ui::title("pamA doctor"), String::new()];
+        for c in &checks {
+            out.push(format!(
+                "  {} {:<18} {}",
+                Mark::from_ok(c.ok).sym(),
+                c.name,
+                if c.ok {
+                    c.detail.clone()
+                } else {
+                    ui::bad(&c.detail)
                 }
-                line
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
+            ));
+            if let (false, Some(f)) = (c.ok, &c.fix) {
+                out.push(format!("      {} {f}", ui::dim("→")));
+            }
+        }
+        out.push(String::new());
+        out.push(if failed == 0 {
+            Mark::Ok.label("all checks passed")
+        } else {
+            Mark::Fail.label(&format!("{failed} check(s) need attention"))
+        });
+        out.join("\n")
     });
     Ok(if all_ok { Exit::Ok } else { Exit::Config })
+}
+
+/// Live check of the server's chat, small and embedding models (`POST /v1/models/check`).
+fn server_model_checks(api: &LocalApi, checks: &mut Vec<Check>) {
+    for (role, name) in [
+        ("chat", "chat model"),
+        ("small", "small model"),
+        ("embed", "embedding model"),
+    ] {
+        let check = match api.post(
+            "/v1/models/check",
+            "doctor.models",
+            &json!({ "role": role }),
+        ) {
+            Ok(r) => {
+                let ok = r["ok"].as_bool().unwrap_or(false);
+                let failed = r["items"]
+                    .as_array()
+                    .and_then(|items| items.iter().find(|i| i["ok"] == false));
+                Check {
+                    name,
+                    ok,
+                    detail: failed
+                        .and_then(|i| i["detail"].as_str())
+                        .map(str::to_string)
+                        .unwrap_or_else(|| match r["latencyMs"].as_u64() {
+                            Some(ms) => format!("ok ({ms} ms)"),
+                            None => "ok".into(),
+                        }),
+                    fix: Some(
+                        failed
+                            .and_then(|i| i["fix"].as_str())
+                            .map(str::to_string)
+                            .unwrap_or_else(|| format!("`pama model check {role}`")),
+                    ),
+                }
+            }
+            Err(e) => Check {
+                name,
+                ok: false,
+                detail: format!("check failed: {e}"),
+                fix: Some(format!("`pama model check {role}`")),
+            },
+        };
+        checks.push(check);
+    }
+}
+
+/// Without a reachable server: is the device's own drafting model usable?
+fn device_model_check(
+    store: &pama_core::store::Store,
+    remote_mode: bool,
+    checks: &mut Vec<Check>,
+) -> anyhow::Result<()> {
+    let provider = store
+        .setting("provider.chat.provider")?
+        .unwrap_or_else(|| "ollama".into());
+    let models_ok = match provider.as_str() {
+        "ollama" => {
+            let base = store
+                .setting("provider.chat.base_url")?
+                .unwrap_or_else(|| "http://127.0.0.1:11434".into());
+            reqwest::blocking::Client::new()
+                .get(format!("{base}/api/tags"))
+                .timeout(std::time::Duration::from_secs(3))
+                .send()
+                .is_ok_and(|r| r.status().is_success())
+        }
+        // Registry providers without a key (LM Studio, vLLM, custom): is the endpoint up?
+        p if pama_core::providers::get(p).is_some_and(|e| !e.needs_key) => {
+            let base = store.setting("provider.chat.base_url")?;
+            pama_core::providers::test_key(store, p, base.as_deref(), None).ok
+        }
+        p => {
+            pama_core::secrets::init_platform_store();
+            pama_core::secrets::exists(&pama_core::providers::key_name(p)).unwrap_or(false)
+        }
+    };
+    checks.push(Check {
+        name: if remote_mode {
+            "drafting model"
+        } else {
+            "models"
+        },
+        ok: models_ok,
+        detail: format!("chat provider: {provider}"),
+        fix: Some(if provider == "ollama" {
+            "start Ollama and `ollama pull bge-m3` plus a chat model".into()
+        } else {
+            format!("`pama keys set {provider}` (reads the key from stdin)")
+        }),
+    });
+    Ok(())
 }

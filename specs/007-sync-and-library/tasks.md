@@ -43,5 +43,12 @@
 ## Later (not in this slice)
 
 - [ ] T040 Web Sync page ("Sync now", failed items) and Library page
+  - [x] T040a Console Settings → Publish (`apps/web/src/console/pages/settings/Publish.tsx`): projects
+    and tasks published and their server, per-project and per-task switches (task override or
+    "follows project"), pending queue counts, "connected but nothing is published" banner, and a
+    confirm before turning publish off (target from `GET /v1/sync/source`, the
+    `pama sync disable` command that lists the affected Ask Links). Server mode shows Sharing.
+  - [ ] T040b "Send now" and failed items need a local server route that reaches the device
+    outbox; the page shows `pama sync now` / `pama sync failed` with copy buttons until then
 - [ ] T041 Ask which projects to share right after `pama connect`
 - [ ] T042 Offer to move projects when the default server changes

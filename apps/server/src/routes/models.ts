@@ -1,9 +1,11 @@
 // Owner API for model settings (spec 003, contracts/http-api.md).
 import { Hono } from "hono";
 import { z } from "zod";
-import type { Env } from "../app.ts";
+import type { Deps, Env } from "../app.ts";
+import type { ProviderConfig } from "../config.ts";
 import { errorBody, HttpError } from "../http.ts";
-import { checkProvider } from "../llm/check.ts";
+import { type CheckResult, checkProvider } from "../llm/check.ts";
+import { resolveProvider } from "../llm/registry.ts";
 import {
   ApplySchema,
   applySettings,
@@ -16,6 +18,7 @@ import {
 } from "../llm/settings.ts";
 import {
   applyWorkspaceChat,
+  assertPublicEndpoint,
   revertWorkspaceChat,
   workspaceChatConfig,
   workspaceChatView,
@@ -26,6 +29,37 @@ const CheckSchema = z.object({
   role: z.enum(["chat", "small", "embed"]),
   candidate: ApplySchema.omit({ confirm: true }).optional(),
 });
+
+/**
+ * A cloud workspace owner checks only the chat model: their own (or a candidate on a public
+ * endpoint, so the check cannot probe the operator's network), or the operator's without its
+ * details. Nothing is written to the operator's last check.
+ */
+async function tenantCheck(deps: Deps, b: z.infer<typeof CheckSchema>): Promise<CheckResult> {
+  if (b.role !== "chat")
+    throw new HttpError(403, "forbidden", "Only the server operator checks this model.");
+  const own = await workspaceChatConfig(deps);
+  if (b.candidate) {
+    const r = resolveProvider(b.candidate.provider, b.candidate.baseUrl);
+    const provider = r.provider as ProviderConfig["provider"];
+    const apiKey =
+      b.candidate.apiKey ??
+      (own?.provider === provider && (own.baseUrl ?? "") === (r.baseUrl ?? "")
+        ? own.apiKey
+        : undefined);
+    const cand: ProviderConfig = {
+      provider,
+      model: b.candidate.model,
+      ...(r.baseUrl ? { baseUrl: r.baseUrl } : {}),
+      ...(apiKey ? { apiKey } : {}),
+    };
+    assertPublicEndpoint(cand);
+    return checkProvider("chat", cand, deps.guard, deps.models.fake);
+  }
+  if (own) return checkProvider("chat", own, deps.guard, deps.models.fake);
+  const r = await checkProvider("chat", deps.config.chat, deps.guard, deps.models.fake);
+  return { ...r, items: [] };
+}
 
 export const modelRoutes = new Hono<Env>()
   // Spec 005: each role's model and its origin (saved, env, default). Tenants see the operator's
@@ -55,6 +89,7 @@ export const modelRoutes = new Hono<Env>()
   .post("/models/check", async (c) => {
     const deps = c.get("deps");
     const b = await body(c, CheckSchema);
+    if (tenant(c)) return c.json(await tenantCheck(deps, b));
     if (!b.candidate) return c.json(await runCheck(deps, b.role, deps.config[b.role]));
     const cand = candidateOf(deps, b.role, { ...b.candidate, confirm: [] });
     return c.json(await checkProvider(b.role, cand, deps.guard, deps.models.fake));

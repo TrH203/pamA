@@ -37,3 +37,19 @@
 - [x] T019 tsc, vitest, vite build, biome for apps/web, packages/ui, packages/i18n; apps/server tsc + vitest
 - [ ] T020 Run the Playwright e2e suite against a live dev server (not run in this slice; needs the server + browsers)
 - [ ] T021 Translate the remaining English-only hint strings inside individual screens (titles, nav and Ask are translated; some per-screen helper text is still EN)
+
+## Settings pages (spec 005 UI, spec 007 Publish, spec 008 Retention)
+
+- [x] T030 `console/pages/settings/*` replaces Settings/Models/Placement: `/settings/connections`
+  (where data lives, model per role with origin badge, last check, Check and Change; the save
+  gates data_leaves/reindex/unverified are confirm dialogs; providers from
+  `packages/types/providers.json`; a cloud workspace owner edits only chat),
+  `/settings/devices` (list, revoke, pairing code with the `pama connect <url> --code` command),
+  `/settings/publish` (Publish in local mode, Sharing on a server), `/settings/privacy`
+  (read-only strict offline, declared hosts, data flow, where each part runs, CLI hints) and
+  `/settings/retention`
+- [x] T031 Strings in `packages/i18n/src/settings-{en,vi}.ts`
+- [x] T032 Server: `POST /v1/models/check` for a cloud workspace owner checks only chat (own model,
+  a candidate on a public https endpoint, or the operator's without details) and never writes
+  the operator's last check (`tests/integration/tenant-model-check.test.ts`)
+- [x] T033 Tests `console/pages/settings/settings.test.tsx` (15 cases, stubbed API)

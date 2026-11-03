@@ -22,8 +22,15 @@ import { ActivityLayout } from "./pages/activity/ActivityLayout.tsx";
 import { ActivityList, validateActivitySearch } from "./pages/activity/ActivityList.tsx";
 import { RunDetail } from "./pages/activity/RunDetail.tsx";
 import { Home } from "./pages/home/Home.tsx";
+import {
+  Connections,
+  Devices,
+  Privacy,
+  Publish,
+  Retention,
+  SettingsLayout,
+} from "./pages/settings/index.ts";
 import { Review } from "./Review.tsx";
-import { Settings } from "./Settings.tsx";
 import { Shell, SubNav } from "./Shell.tsx";
 
 /** A page that threw while rendering: keep the shell and offer a retry instead of a bare trace. */
@@ -154,21 +161,22 @@ export function makeRouter(opts: { dev?: boolean } = {}) {
   });
   const audit = createRoute({ getParentRoute: () => activity, path: "audit", component: Audit });
   const doctor = createRoute({ getParentRoute: () => activity, path: "doctor", component: Doctor });
+  // Settings (spec 005/007/008): a layout with one URL per sub-page; /settings opens Connections.
+  const settings = page("/settings", SettingsLayout);
   const settingsIndex = createRoute({
-    getParentRoute: () => root,
-    path: "/settings",
-    beforeLoad: ({ location }) => {
-      if (location.pathname.replace(/\/$/, "") === "/settings")
-        throw redirect({ to: "/settings/connections", replace: true });
+    getParentRoute: () => settings,
+    path: "/",
+    beforeLoad: () => {
+      throw redirect({ to: "/settings/connections", replace: true });
     },
   });
-  const connections = createRoute({
-    getParentRoute: () => root,
-    path: "/settings/connections",
-    component: Settings,
-    validateSearch: (s: Record<string, unknown>): { section?: "placement" | "models" } =>
-      s.section === "models" || s.section === "placement" ? { section: s.section } : {},
-  });
+  const settingsPages = [
+    createRoute({ getParentRoute: () => settings, path: "connections", component: Connections }),
+    createRoute({ getParentRoute: () => settings, path: "devices", component: Devices }),
+    createRoute({ getParentRoute: () => settings, path: "publish", component: Publish }),
+    createRoute({ getParentRoute: () => settings, path: "privacy", component: Privacy }),
+    createRoute({ getParentRoute: () => settings, path: "retention", component: Retention }),
+  ];
 
   const tree = root.addChildren([
     index,
@@ -179,8 +187,7 @@ export function makeRouter(opts: { dev?: boolean } = {}) {
     page("/chat", ChatPage),
     library.addChildren([libraryIndex, tasks]),
     activity.addChildren([activityIndex, audit, doctor, runDetail]),
-    settingsIndex,
-    connections,
+    settings.addChildren([settingsIndex, ...settingsPages]),
   ]);
   return createRouter({
     routeTree: tree,

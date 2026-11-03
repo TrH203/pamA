@@ -1,5 +1,6 @@
 import type { Messages } from "./en.ts";
 import { pipelineVi } from "./pipeline.ts";
+import { settingsVi } from "./settings-vi.ts";
 
 // Vietnamese. Product nouns follow docs/plans/v0.2-overhaul.md §2 (Task, Digest, Ask Link…).
 export const vi: Messages = {
@@ -110,12 +111,7 @@ export const vi: Messages = {
       description: "Các kiểm tra giống `pama doctor`, kèm trạng thái capture.",
       rerunFailed: "Không chạy lại được các kiểm tra",
     },
-    settings: {
-      title: "Cài đặt",
-      description: "Thành phần nào chạy ở đâu và model nào trả lời.",
-      placement: "Nơi chạy",
-      models: "Model",
-    },
+    settings: settingsVi,
     login: {
       title: "Đăng nhập pamA",
       hint: "Chúng tôi sẽ gửi bạn một link đăng nhập dùng một lần.",

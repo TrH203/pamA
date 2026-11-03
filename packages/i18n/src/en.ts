@@ -1,4 +1,5 @@
 import { pipelineEn } from "./pipeline.ts";
+import { settingsEn } from "./settings-en.ts";
 // English interface strings. `vi.ts` must provide every key (the type enforces it).
 // Digests and answers follow their own language; these are only the UI around them.
 
@@ -111,12 +112,7 @@ export const en = {
       description: "The same checks as `pama doctor`, plus capture state.",
       rerunFailed: "Couldn't re-run the checks",
     },
-    settings: {
-      title: "Settings",
-      description: "Where things run and which models answer.",
-      placement: "Where things run",
-      models: "Models",
-    },
+    settings: settingsEn,
     login: {
       title: "Sign in to pamA",
       hint: "We'll email you a one-time sign-in link.",

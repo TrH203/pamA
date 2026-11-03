@@ -48,3 +48,5 @@
 
 - [ ] T017 CLI flags for `--from/--to`, archive and export (server routes exist)
 - [ ] T018 Web UI (console Conversations and Chat pages, Ask page conversation list, desktop popup history): separate web slice
+- [x] T024 Console Settings → Retention (`apps/web/src/console/pages/settings/Retention.tsx`):
+  `GET/PUT /v1/settings/retention` with validation (1–3650 days)

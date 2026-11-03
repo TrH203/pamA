@@ -1,4 +1,5 @@
 import type { Messages } from "./en.ts";
+import { pipelineVi } from "./pipeline.ts";
 
 // Vietnamese. Product nouns follow docs/plans/v0.2-overhaul.md §2 (Task, Digest, Ask Link…).
 export const vi: Messages = {
@@ -133,6 +134,7 @@ export const vi: Messages = {
       open: "Mở console",
     },
   },
+  pipeline: pipelineVi,
   desktop: {
     onlyInApp: "Trang này chỉ chạy bên trong ứng dụng pamA trên máy.",
     question: "Câu hỏi",

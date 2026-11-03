@@ -39,6 +39,15 @@
 - [x] T024 Empty-session guard counts tool calls as agent activity (FR-006; unit tests in `capture/worker.rs`)
 - [x] T025 Later retries on CLI-only installs: owner commands start a drain when a retry is due (`capture::kick_due`); drains recover interrupted captures and refresh their lock; desktop records drafting-model errors on due captures (`Store::fail_due`)
 
+## Phase 6: Console UI (Home, Activity, live events)
+
+- [x] T026 Home at `/` (`apps/web/src/console/pages/home/Home.tsx`): pipeline card (running / awaiting review / failed), needs attention (open failed runs + failing doctor checks) with Retry and Settings/Doctor links, recent runs, quick links; `/home` redirects to `/`
+- [x] T027 Activity runs table (`pages/activity/ActivityList.tsx`) from `GET /v1/activity` with status/since filters in the URL and cursor "Load more"
+- [x] T028 Run detail `/activity/:id` (`RunDetail.tsx`): stage timeline (device stages → server stages → approved → published), coded error with its message, role/provider/model and fix hint, Retry with 409 `conflict`/`superseded`/`retry_on_device` explained, server-log hint; Audit and Doctor stay as `/activity/audit` and `/activity/doctor`
+- [x] T029 `useEvents()` (`pages/activity/useEvents.ts`): SSE `/v1/events` updates the query cache (run.updated, review.count, inbox.count), reconnects with capped exponential backoff and falls back to 30 s polling; sidebar badges for Review, Conversations and Activity (failed)
+- [x] T030 Review empty state from the pipeline ("2 sessions are being drafted · 1 session failed" + View)
+- [x] T031 EN/VI strings in `packages/i18n/src/pipeline.ts`; component tests `activity.test.tsx`, `events.test.tsx`, `home/home.test.tsx` (mocked fetch and EventSource)
+
 ## Deferred
 
 - [ ] T020 Async `202 {run_id}` digest endpoint over the job queue (plan §4.1; optional, not done)

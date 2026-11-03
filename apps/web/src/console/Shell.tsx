@@ -38,6 +38,8 @@ import {
 } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { queries } from "../lib/query.ts";
+import { activityQueries } from "./pages/activity/api.ts";
+import { useEvents, usePollInterval } from "./pages/activity/useEvents.ts";
 
 type NavKey =
   | "home"
@@ -50,7 +52,7 @@ type NavKey =
   | "settings";
 
 export const NAV: { key: NavKey; to: string; icon: LucideIcon }[] = [
-  { key: "home", to: "/home", icon: House },
+  { key: "home", to: "/", icon: House },
   { key: "review", to: "/review", icon: ClipboardCheck },
   { key: "conversations", to: "/conversations", icon: MessagesSquare },
   { key: "links", to: "/links", icon: Link2 },
@@ -73,9 +75,12 @@ function readCollapsed(): boolean {
 function useCounts(): Partial<Record<NavKey, number>> {
   const review = useQuery({ ...queries.review, refetchInterval: 60_000 });
   const inbox = useQuery({ ...queries.inbox, refetchInterval: 60_000 });
+  // Failed runs; live through /v1/events, polled while the stream is down.
+  const runs = useQuery({ ...activityQueries.summary, refetchInterval: usePollInterval() });
   return {
     review: review.data?.items.length,
     conversations: inbox.data?.items.length,
+    activity: runs.data?.counts.failed,
   };
 }
 
@@ -94,15 +99,15 @@ function NavList({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: (
         const label = t.nav[key];
         const active = sectionOf(to) === current;
         const count = counts[key];
+        const countLabel = (n: number) =>
+          key === "activity" ? t.pipeline.nav.failed(n) : t.nav.waiting(n);
         const link = (
           <Link
             to={to}
             onClick={onNavigate}
             aria-current={active ? "page" : undefined}
             // Collapsed, the link shows only an icon: its name carries the label and the count.
-            aria-label={
-              collapsed ? (count ? `${label}, ${t.nav.waiting(count)}` : label) : undefined
-            }
+            aria-label={collapsed ? (count ? `${label}, ${countLabel(count)}` : label) : undefined}
             className={cn(
               "flex h-8 items-center gap-2.5 rounded-control px-2.5 text-ui font-medium transition-colors duration-150",
               active ? "bg-accent-soft text-accent-ink" : "text-muted hover:bg-hover hover:text-fg",
@@ -114,8 +119,8 @@ function NavList({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: (
             {!collapsed && (
               <CountBadge
                 count={count}
-                tone={active ? "accent" : "neutral"}
-                label={t.nav.waiting(count ?? 0)}
+                tone={key === "activity" ? "danger" : active ? "accent" : "neutral"}
+                label={countLabel(count ?? 0)}
               />
             )}
           </Link>
@@ -205,7 +210,7 @@ function SearchButton({ collapsed, onOpen }: { collapsed: boolean; onOpen: () =>
 function Brand({ dev }: { dev: boolean }) {
   const { t } = useI18n();
   return (
-    <Link to="/review" className="flex items-center gap-2 rounded-control px-1 text-fg">
+    <Link to="/" className="flex items-center gap-2 rounded-control px-1 text-fg">
       <span
         aria-hidden
         className="inline-flex size-7 items-center justify-center rounded-control bg-accent text-sm font-semibold text-accent-contrast"
@@ -225,6 +230,7 @@ export function Shell({ dev = false, children }: { dev?: boolean; children?: Rea
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const togglePalette = useCallback(() => setPaletteOpen((o) => !o), []);
+  useEvents();
   useCommandShortcut(togglePalette);
   useEffect(() => {
     try {

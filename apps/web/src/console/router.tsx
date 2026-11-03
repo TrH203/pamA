@@ -11,13 +11,17 @@ import {
   Outlet,
   redirect,
 } from "@tanstack/react-router";
-import { Activity as ActivityIcon, House, Library, MessageCircle } from "lucide-react";
+import { House, Library, MessageCircle } from "lucide-react";
 import { Audit } from "./Audit.tsx";
 import { Bundles } from "./Bundles.tsx";
 import { Doctor } from "./Doctor.tsx";
 import { Inbox } from "./Inbox.tsx";
 import { Links } from "./Links.tsx";
 import { Placeholder } from "./Placeholder.tsx";
+import { ActivityLayout } from "./pages/activity/ActivityLayout.tsx";
+import { ActivityList, validateActivitySearch } from "./pages/activity/ActivityList.tsx";
+import { RunDetail } from "./pages/activity/RunDetail.tsx";
+import { Home } from "./pages/home/Home.tsx";
 import { Review } from "./Review.tsx";
 import { Settings } from "./Settings.tsx";
 import { Shell, SubNav } from "./Shell.tsx";
@@ -43,24 +47,8 @@ function NotFound() {
       description=""
       icon={House}
       action={
-        <Link to="/review" className={buttonClass("secondary")}>
-          {t.nav.review}
-        </Link>
-      }
-    />
-  );
-}
-
-function HomePage() {
-  const { t } = useI18n();
-  return (
-    <Placeholder
-      title={t.pages.home.title}
-      description={t.pages.home.description}
-      icon={House}
-      action={
-        <Link to="/review" className={buttonClass("secondary")}>
-          {t.nav.review}
+        <Link to="/" className={buttonClass("secondary")}>
+          {t.nav.home}
         </Link>
       }
     />
@@ -112,41 +100,6 @@ function LibraryIndex() {
   );
 }
 
-function ActivityLayout() {
-  const { t } = useI18n();
-  return (
-    <>
-      <PageHeader title={t.pages.activity.title} description={t.pages.activity.description} />
-      <SubNav
-        label={t.pages.activity.title}
-        items={[
-          { to: "/activity", label: t.pages.activity.title, exact: true },
-          { to: "/activity/audit", label: t.nav.audit },
-          { to: "/activity/doctor", label: t.nav.doctor },
-        ]}
-      />
-      <Outlet />
-    </>
-  );
-}
-
-function ActivityIndex() {
-  const { t } = useI18n();
-  return (
-    <Placeholder
-      header={false}
-      title={t.pages.activity.title}
-      description={t.pages.activity.description}
-      icon={ActivityIcon}
-      action={
-        <Link to="/activity/doctor" className={buttonClass("secondary")}>
-          {t.nav.doctor}
-        </Link>
-      }
-    />
-  );
-}
-
 /** A search param as text: the router JSON-parses values, so `?q=123` arrives as a number. */
 export function searchText(v: unknown): string | undefined {
   if (typeof v === "string") return v || undefined;
@@ -162,12 +115,13 @@ export function makeRouter(opts: { dev?: boolean } = {}) {
   const page = (path: string, component: () => React.JSX.Element) =>
     createRoute({ getParentRoute: () => root, path, component });
 
-  const index = createRoute({
+  // Home is the landing page (spec 006); `/home` stays as an alias for old links.
+  const index = page("/", Home);
+  const homeAlias = createRoute({
     getParentRoute: () => root,
-    path: "/",
-    // Home becomes the default page once it has content (spec 006).
+    path: "/home",
     beforeLoad: () => {
-      throw redirect({ to: "/review", replace: true });
+      throw redirect({ to: "/", replace: true });
     },
   });
   const links = createRoute({
@@ -190,7 +144,13 @@ export function makeRouter(opts: { dev?: boolean } = {}) {
   const activityIndex = createRoute({
     getParentRoute: () => activity,
     path: "/",
-    component: ActivityIndex,
+    component: ActivityList,
+    validateSearch: validateActivitySearch,
+  });
+  const runDetail = createRoute({
+    getParentRoute: () => activity,
+    path: "$id",
+    component: RunDetail,
   });
   const audit = createRoute({ getParentRoute: () => activity, path: "audit", component: Audit });
   const doctor = createRoute({ getParentRoute: () => activity, path: "doctor", component: Doctor });
@@ -212,13 +172,13 @@ export function makeRouter(opts: { dev?: boolean } = {}) {
 
   const tree = root.addChildren([
     index,
-    page("/home", HomePage),
+    homeAlias,
     page("/review", Review),
     page("/conversations", Inbox),
     links,
     page("/chat", ChatPage),
     library.addChildren([libraryIndex, tasks]),
-    activity.addChildren([activityIndex, audit, doctor]),
+    activity.addChildren([activityIndex, audit, doctor, runDetail]),
     settingsIndex,
     connections,
   ]);

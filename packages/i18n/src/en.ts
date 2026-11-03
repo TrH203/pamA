@@ -1,3 +1,4 @@
+import { pipelineEn } from "./pipeline.ts";
 // English interface strings. `vi.ts` must provide every key (the type enforces it).
 // Digests and answers follow their own language; these are only the UI around them.
 
@@ -134,6 +135,7 @@ export const en = {
       open: "Open the console",
     },
   },
+  pipeline: pipelineEn,
   desktop: {
     onlyInApp: "This page runs inside the pamA desktop app.",
     question: "Question",

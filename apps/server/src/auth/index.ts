@@ -27,10 +27,17 @@ const DEVICE = new Set([
   "/v1/sync/tombstones",
   "/v1/sync/drafts",
   "/v1/sync/changes",
+  "/v1/sync/bundles",
+  "/v1/sync/affected-links",
   "/v1/auth/device/console-link",
 ]);
 /** Only the owner's own machine may receive transcripts or hand out sync work (Constitution I). */
-const LOCAL_ONLY = new Set(["/v1/transcripts/digest", "/v1/sync/pending", "/v1/sync/ack"]);
+const LOCAL_ONLY = new Set([
+  "/v1/transcripts/digest",
+  "/v1/sync/pending",
+  "/v1/sync/ack",
+  "/v1/sync/source",
+]);
 
 function bearer(h: string | undefined): string {
   return h?.startsWith("Bearer ") ? h.slice(7) : "";

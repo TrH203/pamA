@@ -1,5 +1,6 @@
 //! Capture: ended agent sessions → Layer-1-redacted events → draft digest on the local server.
 
+pub mod errors;
 pub mod scan;
 pub mod worker;
 
@@ -34,6 +35,16 @@ pub fn enabled_for(store: &Store, cwd: Option<&str>) -> bool {
             .iter()
             .any(|c| *c == p || c.starts_with(&format!("{p}/")) || c.starts_with(&format!("{p}\\")))
     })
+}
+
+/// The project directories capture is enabled for (`pama init`).
+pub fn enabled_projects(store: &Store) -> Vec<String> {
+    store
+        .setting(KEY_CAPTURE_PROJECTS)
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
 }
 
 pub fn enable_project(store: &Store, path: &str) -> crate::store::Result<bool> {

@@ -1,0 +1,233 @@
+/*
+ * pamA design tokens (spec 009). Warm neutral surfaces, one low-saturation sage accent, soft
+ * semantic tints. No gradients anywhere. Every colour is a CSS variable so dark mode is a token
+ * swap: it follows prefers-color-scheme unless <html data-theme="light|dark"> pins it.
+ *
+ * Import after `@import "tailwindcss";` — the @theme block below turns the tokens into
+ * utilities: bg-bg, bg-surface, bg-subtle, text-fg, text-muted, border-line, bg-accent,
+ * text-accent-ink, bg-success-soft, rounded-control, rounded-card, shadow-popover, text-ui…
+ */
+
+:root {
+  color-scheme: light;
+  --pama-bg: #f7f5f1;
+  --pama-surface: #ffffff;
+  --pama-subtle: #f0ede7;
+  --pama-hover: #e9e5de;
+  --pama-line: #e3ded6;
+  --pama-line-strong: #cfc8bd;
+  --pama-fg: #1f1d1a;
+  --pama-muted: #59544c;
+  --pama-faint: #736d64;
+  --pama-accent: #4f6b56;
+  --pama-accent-hover: #435c4a;
+  --pama-accent-contrast: #ffffff;
+  --pama-accent-soft: #e5ebe3;
+  --pama-accent-ink: #3a5141;
+  --pama-success: #3d7a4d;
+  --pama-success-soft: #e2eee3;
+  --pama-success-ink: #2f5e3b;
+  --pama-warning: #a37a1f;
+  --pama-warning-soft: #f6eedb;
+  --pama-warning-ink: #6e5212;
+  --pama-danger: #a8433a;
+  --pama-danger-soft: #f7e4e1;
+  --pama-danger-ink: #85342c;
+  --pama-ring: #6f8f77;
+  --pama-overlay: rgb(31 29 26 / 0.32);
+  --pama-shadow: 0 8px 24px rgb(31 29 26 / 0.08), 0 1px 3px rgb(31 29 26 / 0.06);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --pama-bg: #161514;
+    --pama-surface: #1e1d1b;
+    --pama-subtle: #252321;
+    --pama-hover: #2d2a27;
+    --pama-line: #33302c;
+    --pama-line-strong: #48443e;
+    --pama-fg: #ece9e4;
+    --pama-muted: #b0aaa1;
+    --pama-faint: #918b82;
+    --pama-accent: #93b39a;
+    --pama-accent-hover: #a7c4ad;
+    --pama-accent-contrast: #132019;
+    --pama-accent-soft: #243029;
+    --pama-accent-ink: #aecbb4;
+    --pama-success: #85bd92;
+    --pama-success-soft: #1f2e23;
+    --pama-success-ink: #a2d2ad;
+    --pama-warning: #d9b66b;
+    --pama-warning-soft: #33291a;
+    --pama-warning-ink: #e6c98d;
+    --pama-danger: #e38f85;
+    --pama-danger-soft: #3a2320;
+    --pama-danger-ink: #efaaa1;
+    --pama-ring: #93b39a;
+    --pama-overlay: rgb(0 0 0 / 0.5);
+    --pama-shadow: 0 8px 24px rgb(0 0 0 / 0.35), 0 1px 3px rgb(0 0 0 / 0.3);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --pama-bg: #161514;
+  --pama-surface: #1e1d1b;
+  --pama-subtle: #252321;
+  --pama-hover: #2d2a27;
+  --pama-line: #33302c;
+  --pama-line-strong: #48443e;
+  --pama-fg: #ece9e4;
+  --pama-muted: #b0aaa1;
+  --pama-faint: #918b82;
+  --pama-accent: #93b39a;
+  --pama-accent-hover: #a7c4ad;
+  --pama-accent-contrast: #132019;
+  --pama-accent-soft: #243029;
+  --pama-accent-ink: #aecbb4;
+  --pama-success: #85bd92;
+  --pama-success-soft: #1f2e23;
+  --pama-success-ink: #a2d2ad;
+  --pama-warning: #d9b66b;
+  --pama-warning-soft: #33291a;
+  --pama-warning-ink: #e6c98d;
+  --pama-danger: #e38f85;
+  --pama-danger-soft: #3a2320;
+  --pama-danger-ink: #efaaa1;
+  --pama-ring: #93b39a;
+  --pama-overlay: rgb(0 0 0 / 0.5);
+  --pama-shadow: 0 8px 24px rgb(0 0 0 / 0.35), 0 1px 3px rgb(0 0 0 / 0.3);
+}
+
+@theme inline {
+  --color-bg: var(--pama-bg);
+  --color-surface: var(--pama-surface);
+  --color-subtle: var(--pama-subtle);
+  --color-hover: var(--pama-hover);
+  --color-line: var(--pama-line);
+  --color-line-strong: var(--pama-line-strong);
+  --color-fg: var(--pama-fg);
+  --color-muted: var(--pama-muted);
+  --color-faint: var(--pama-faint);
+  --color-accent: var(--pama-accent);
+  --color-accent-hover: var(--pama-accent-hover);
+  --color-accent-contrast: var(--pama-accent-contrast);
+  --color-accent-soft: var(--pama-accent-soft);
+  --color-accent-ink: var(--pama-accent-ink);
+  --color-success: var(--pama-success);
+  --color-success-soft: var(--pama-success-soft);
+  --color-success-ink: var(--pama-success-ink);
+  --color-warning: var(--pama-warning);
+  --color-warning-soft: var(--pama-warning-soft);
+  --color-warning-ink: var(--pama-warning-ink);
+  --color-danger: var(--pama-danger);
+  --color-danger-soft: var(--pama-danger-soft);
+  --color-danger-ink: var(--pama-danger-ink);
+  --color-ring: var(--pama-ring);
+  --color-overlay: var(--pama-overlay);
+  --shadow-popover: var(--pama-shadow);
+}
+
+@theme {
+  --font-sans:
+    "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  /* Fixed type scale: 12 / 13 / 14 / 16 / 20 / 24. */
+  --text-xs: 12px;
+  --text-xs--line-height: 16px;
+  --text-ui: 13px;
+  --text-ui--line-height: 20px;
+  --text-sm: 14px;
+  --text-sm--line-height: 20px;
+  --text-base: 16px;
+  --text-base--line-height: 24px;
+  --text-xl: 20px;
+  --text-xl--line-height: 28px;
+  --text-2xl: 24px;
+  --text-2xl--line-height: 32px;
+
+  --radius-control: 8px;
+  --radius-card: 12px;
+
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --duration-fast: 120ms;
+  --duration-base: 160ms;
+  --duration-slow: 200ms;
+
+  --animate-fade-in: pama-fade-in 160ms var(--ease-out);
+  --animate-pop-in: pama-pop-in 180ms var(--ease-out);
+  --animate-slide-in: pama-slide-in 200ms var(--ease-out);
+
+  @keyframes pama-fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes pama-pop-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+  @keyframes pama-slide-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    font-feature-settings: "cv11", "ss01";
+  }
+  body {
+    background-color: var(--pama-bg);
+    color: var(--pama-fg);
+    font-size: 14px;
+    line-height: 20px;
+    -webkit-font-smoothing: antialiased;
+  }
+  code,
+  kbd,
+  pre,
+  samp {
+    font-family: var(--font-mono);
+  }
+  :focus-visible {
+    outline: 2px solid var(--pama-ring);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background-color: var(--pama-accent-soft);
+    color: var(--pama-fg);
+  }
+}
+
+/* Motion stays under 200 ms and disappears for people who ask for less. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    /* biome-ignore lint/complexity/noImportantStyles: must win over every component transition */
+    animation-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: must win over every component transition */
+    transition-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: must win over every component transition */
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,7 +1,21 @@
 // Create an Ask Link in under a minute (SC-004): type the question or keywords, keep the
 // suggested sources (sensitive ones start unchecked), adjust settings, share.
+import {
+  Badge,
+  Button,
+  buttonClass,
+  Checkbox,
+  ErrorBanner,
+  Field,
+  Input,
+  Notice,
+  Select,
+  Textarea,
+  useToast,
+} from "@pama/ui";
+import { CircleCheck, Copy, ExternalLink, Plus, Sparkles, TriangleAlert } from "lucide-react";
 import { type FormEvent, useState } from "react";
-import { api } from "../lib/api.ts";
+import { api, errorMessage } from "../lib/api.ts";
 
 interface Suggestion {
   ref: { type: "bundle"; id: string };
@@ -45,16 +59,21 @@ export function LinkCreate({
   const [created, setCreated] = useState<Created | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
+  const toast = useToast();
 
   async function suggest(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setSuggesting(true);
     try {
       const r = await api<{ sources: Suggestion[] }>("/v1/suggest", { json: { query } });
       setSources(r.sources);
       setPicked(new Set(r.sources.filter((s) => s.preselected).map((s) => s.ref.id)));
     } catch (err) {
-      setError((err as Error).message);
+      setError(errorMessage(err));
+    } finally {
+      setSuggesting(false);
     }
   }
 
@@ -80,7 +99,7 @@ export function LinkCreate({
       setCreated(await api<Created>("/v1/links", { json: body }));
       onCreated?.();
     } catch (err) {
-      setError((err as Error).message);
+      setError(errorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -89,28 +108,42 @@ export function LinkCreate({
   if (created) {
     const share = created.pin ? `${created.url}\nPIN: ${created.pin}` : created.url;
     return (
-      <section className="space-y-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
-        <h2 className="font-semibold">Link ready</h2>
-        <pre className="whitespace-pre-wrap rounded bg-white p-3 text-sm">{share}</pre>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={() => navigator.clipboard.writeText(share)}
+      <section className="space-y-4">
+        <Notice tone="success" icon={CircleCheck}>
+          <span className="font-medium">Link ready.</span> Share it with the people who should ask.
+        </Notice>
+        <pre className="whitespace-pre-wrap break-all rounded-control border border-line bg-subtle p-3 font-mono text-ui">
+          {share}
+        </pre>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="primary"
+            onClick={async () => {
+              await navigator.clipboard.writeText(share);
+              toast.success("Copied");
+            }}
           >
+            <Copy aria-hidden />
             Copy
-          </button>
-          <a className="btn" href={created.url} target="_blank" rel="noreferrer">
+          </Button>
+          <a
+            className={buttonClass("secondary")}
+            href={created.url}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <ExternalLink aria-hidden />
             Open
           </a>
-          <button type="button" className="btn" onClick={() => setCreated(null)}>
+          <Button onClick={() => setCreated(null)}>
+            <Plus aria-hidden />
             New link
-          </button>
+          </Button>
         </div>
         {created.suggested_questions.length > 0 && (
-          <div className="text-sm">
+          <div className="space-y-1 text-ui">
             <p className="font-medium">Suggested questions shown to askers</p>
-            <ul className="list-disc pl-5">
+            <ul className="list-disc space-y-0.5 pl-5 text-muted">
               {created.suggested_questions.map((q) => (
                 <li key={q}>{q}</li>
               ))}
@@ -121,55 +154,62 @@ export function LinkCreate({
     );
   }
 
+  const toggle = (set: Set<string>, id: string) => {
+    const n = new Set(set);
+    if (n.has(id)) n.delete(id);
+    else n.add(id);
+    return n;
+  };
+
   return (
-    <section className="space-y-4">
-      <form onSubmit={suggest} className="flex gap-2">
-        <input
-          className="flex-1 rounded border border-stone-300 px-3 py-2"
+    <section className="space-y-5">
+      <form onSubmit={suggest} className="flex flex-col gap-2 sm:flex-row">
+        <Input
+          className="h-10 flex-1 text-sm"
           placeholder="What will people ask about? e.g. refund shipping fee"
           aria-label="Question or keywords"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
-        <button type="submit" className="btn-primary" disabled={!query.trim()}>
+        <Button
+          type="submit"
+          size="lg"
+          variant={sources ? "secondary" : "primary"}
+          loading={suggesting}
+          disabled={!query.trim()}
+        >
+          <Sparkles aria-hidden />
           Suggest sources
-        </button>
+        </Button>
       </form>
 
       {sources && (
-        <fieldset className="rounded-lg border border-stone-200 bg-white p-4">
-          <legend className="px-1 text-sm font-medium">Sources ({picked.size} selected)</legend>
-          {sources.length === 0 && (
-            <p className="text-sm text-stone-500">No approved digests yet.</p>
-          )}
-          <ul className="space-y-1">
+        <fieldset className="space-y-2">
+          <legend className="mb-2 text-ui font-medium">Sources ({picked.size} selected)</legend>
+          {sources.length === 0 && <p className="text-ui text-muted">No approved digests yet.</p>}
+          <ul className="divide-y divide-line rounded-control border border-line">
             {sources.map((s) => (
-              <li key={s.ref.id} className="flex items-center gap-2 text-sm">
-                <input
+              <li key={s.ref.id} className="flex items-center gap-3 px-3 py-2.5 text-ui">
+                <Checkbox
                   id={`src-${s.ref.id}`}
-                  type="checkbox"
                   checked={picked.has(s.ref.id)}
-                  onChange={() =>
-                    setPicked((p) => {
-                      const n = new Set(p);
-                      if (n.has(s.ref.id)) n.delete(s.ref.id);
-                      else n.add(s.ref.id);
-                      return n;
-                    })
-                  }
+                  onCheckedChange={() => setPicked((p) => toggle(p, s.ref.id))}
                 />
-                <label htmlFor={`src-${s.ref.id}`} className="flex-1">
+                <label htmlFor={`src-${s.ref.id}`} className="min-w-0 flex-1">
                   <span className="font-medium">{s.title}</span>{" "}
-                  <span className="text-stone-500">
+                  <span className="text-muted">
                     {s.project} · {s.sessions} session(s)
                   </span>
                   {s.flagged_labels.length > 0 && (
-                    <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-900">
-                      ⚠ {s.flagged_labels.join(", ")}
-                    </span>
+                    <Badge tone="warning" className="ml-2">
+                      <TriangleAlert aria-hidden />
+                      {s.flagged_labels.join(", ").replaceAll("_", " ")}
+                    </Badge>
                   )}
                 </label>
-                <span className="text-xs text-stone-400">{Math.round(s.score * 100)}%</span>
+                <span className="text-xs tabular-nums text-faint">
+                  {Math.round(s.score * 100)}%
+                </span>
               </li>
             ))}
           </ul>
@@ -177,129 +217,96 @@ export function LinkCreate({
       )}
 
       {sources && (
-        <div className="grid gap-4 rounded-lg border border-stone-200 bg-white p-4 text-sm sm:grid-cols-2">
-          <label className="space-y-1">
-            <span className="block font-medium">Expires</span>
-            <select
-              className="w-full rounded border border-stone-300 px-2 py-1.5"
-              value={expires}
-              onChange={(e) => setExpires(e.target.value)}
-            >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Expires">
+            <Select value={expires} onChange={(e) => setExpires(e.target.value)}>
               {["1d", "7d", "30d", "90d"].map((v) => (
                 <option key={v}>{v}</option>
               ))}
-            </select>
-          </label>
-          <label className="space-y-1">
-            <span className="block font-medium">Detail</span>
-            <select
-              className="w-full rounded border border-stone-300 px-2 py-1.5"
-              value={detail}
-              onChange={(e) => setDetail(e.target.value)}
-            >
+            </Select>
+          </Field>
+          <Field label="Detail">
+            <Select value={detail} onChange={(e) => setDetail(e.target.value)}>
               <option value="headline">Headline</option>
               <option value="summary">Summary</option>
               <option value="technical">Technical</option>
-            </select>
-          </label>
-          <label className="space-y-1">
-            <span className="block font-medium">Access</span>
-            <select
-              className="w-full rounded border border-stone-300 px-2 py-1.5"
-              value={access}
-              onChange={(e) => setAccess(e.target.value)}
-            >
+            </Select>
+          </Field>
+          <Field label="Access">
+            <Select value={access} onChange={(e) => setAccess(e.target.value)}>
               <option value="pin">PIN</option>
               <option value="open">Anyone with the link</option>
               <option value="email_otp">Email code</option>
               <option value="allowlist">Email allowlist</option>
-            </select>
-          </label>
+            </Select>
+          </Field>
           {access === "pin" && (
-            <label className="space-y-1">
-              <span className="block font-medium">PIN (empty = generate)</span>
-              <input
-                className="w-full rounded border border-stone-300 px-2 py-1.5"
+            <Field label="PIN" hint="Leave empty to generate one.">
+              <Input
                 inputMode="numeric"
                 value={pin}
                 onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
               />
-            </label>
+            </Field>
           )}
           {access === "allowlist" && (
-            <label className="space-y-1 sm:col-span-2">
-              <span className="block font-medium">Allowed emails or *@domain</span>
-              <input
-                className="w-full rounded border border-stone-300 px-2 py-1.5"
+            <Field label="Allowed emails or *@domain" className="sm:col-span-2">
+              <Input
                 value={allow}
                 onChange={(e) => setAllow(e.target.value)}
                 placeholder="pm@client.com, *@acme.vn"
               />
-            </label>
+            </Field>
           )}
-          <div className="space-y-1">
-            <span className="block font-medium">Never share items labelled</span>
-            {LABELS.map((l) => (
-              <label key={l} className="mr-3 inline-flex items-center gap-1">
-                <input
-                  type="checkbox"
-                  checked={deny.has(l)}
-                  onChange={() =>
-                    setDeny((d) => {
-                      const n = new Set(d);
-                      if (n.has(l)) n.delete(l);
-                      else n.add(l);
-                      return n;
-                    })
-                  }
-                />
-                {l.replace("_", " ")}
-              </label>
-            ))}
-          </div>
-          <label className="space-y-1">
-            <span className="block font-medium">Denied topics (comma separated)</span>
-            <input
-              className="w-full rounded border border-stone-300 px-2 py-1.5"
+          <fieldset className="space-y-2">
+            <legend className="mb-1.5 text-ui font-medium">Never share items labelled</legend>
+            <div className="flex flex-wrap gap-x-4 gap-y-2">
+              {LABELS.map((l) => (
+                <span key={l} className="inline-flex items-center gap-2 text-ui">
+                  <Checkbox
+                    id={`deny-${l}`}
+                    checked={deny.has(l)}
+                    onCheckedChange={() => setDeny((d) => toggle(d, l))}
+                  />
+                  <label htmlFor={`deny-${l}`}>{l.replace("_", " ")}</label>
+                </span>
+              ))}
+            </div>
+          </fieldset>
+          <Field label="Denied topics" hint="Comma separated.">
+            <Input
               value={topics}
               onChange={(e) => setTopics(e.target.value)}
               placeholder="pricing, roadmap"
             />
-          </label>
-          <label className="space-y-1 sm:col-span-2">
-            <span className="block font-medium">Instruction for answers (optional)</span>
-            <textarea
-              className="w-full rounded border border-stone-300 px-2 py-1.5"
+          </Field>
+          <Field label="Instruction for answers (optional)" className="sm:col-span-2">
+            <Textarea
               rows={2}
               maxLength={2000}
               value={instruction}
               onChange={(e) => setInstruction(e.target.value)}
               placeholder="Be brief; the asker is from QA."
             />
-          </label>
-          <label className="space-y-1">
-            <span className="block font-medium">Questions per hour</span>
-            <input
-              className="w-full rounded border border-stone-300 px-2 py-1.5"
+          </Field>
+          <Field label="Questions per hour">
+            <Input
               type="number"
               min={1}
               max={500}
               value={rate}
               onChange={(e) => setRate(Number(e.target.value))}
             />
-          </label>
+          </Field>
         </div>
       )}
-      {error && <p className="text-sm text-red-700">{error}</p>}
+      {error && <ErrorBanner title="Couldn't create the link" message={error} />}
       {sources && (
-        <button
-          type="button"
-          className="btn-primary"
-          disabled={busy || picked.size === 0}
-          onClick={create}
-        >
-          Create link
-        </button>
+        <div className="flex justify-end border-t border-line pt-4">
+          <Button variant="primary" loading={busy} disabled={picked.size === 0} onClick={create}>
+            Create link
+          </Button>
+        </div>
       )}
     </section>
   );

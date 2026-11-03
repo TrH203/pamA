@@ -4,6 +4,7 @@ import { embedMany, generateText } from "ai";
 import type { ProviderConfig } from "../config.ts";
 import { EMBED_DIM } from "../db/schema/digest.ts";
 import { EgressBlockedError, type EgressGuard } from "../net/egress.ts";
+import { NotPublicError } from "../net/public-host.ts";
 import type { FakeModels } from "./fake.ts";
 import { embedding, language } from "./providers.ts";
 
@@ -30,14 +31,33 @@ function statusOf(e: unknown): number | undefined {
   return x?.statusCode ?? x?.cause?.statusCode;
 }
 
-/** Turn a provider error into the check item that names the cause and a fix. */
-export function classify(e: unknown): CheckItem {
+/** The error and its causes, outermost first (bounded). */
+function causes(e: unknown): unknown[] {
+  const out: unknown[] = [];
+  for (let c = e, i = 0; c && i < 6; c = (c as { cause?: unknown }).cause, i++) out.push(c);
+  return out;
+}
+
+/**
+ * Turn a provider error into the check item that names the cause and a fix. `raw: false` (checks
+ * of a cloud workspace owner's endpoint) never returns the error text itself, so a check cannot
+ * be used to read what an address answered.
+ */
+export function classify(e: unknown, raw = true): CheckItem {
   if (e instanceof EgressBlockedError) {
     return {
       name: "offline",
       ok: false,
       detail: e.message,
       fix: "declare the host or turn strict offline off",
+    };
+  }
+  if (causes(e).some((c) => c instanceof NotPublicError)) {
+    return {
+      name: "reachable",
+      ok: false,
+      detail: "the endpoint is not a public internet address",
+      fix: "use the public https:// endpoint of your provider",
     };
   }
   const status = statusOf(e);
@@ -66,6 +86,8 @@ export function classify(e: unknown): CheckItem {
       fix: "check the endpoint URL and that the service is running",
     };
   }
+  if (!raw)
+    return { name: "reachable", ok: false, detail: "the endpoint did not answer as expected" };
   return { name: "reachable", ok: false, detail: msg.slice(0, 200) };
 }
 
@@ -110,9 +132,12 @@ export function staticItems(role: Role, p: ProviderConfig): CheckItem[] {
 export async function checkProvider(
   role: Role,
   p: ProviderConfig,
-  guard: EgressGuard,
+  egress: EgressGuard,
   fake?: FakeModels,
+  opts: { publicOnly?: boolean } = {},
 ): Promise<CheckResult> {
+  // A cloud workspace owner's endpoint: public addresses only, no redirects, no raw error text.
+  const guard = opts.publicOnly ? egress.publicOnly() : egress;
   const items = staticItems(role, p);
   if (items.length) return { role, ok: false, latencyMs: null, items };
   if (p.provider === "fake") {
@@ -183,6 +208,11 @@ export async function checkProvider(
       ],
     };
   } catch (e) {
-    return { role, ok: false, latencyMs: Date.now() - started, items: [classify(e)] };
+    return {
+      role,
+      ok: false,
+      latencyMs: Date.now() - started,
+      items: [classify(e, !opts.publicOnly)],
+    };
   }
 }

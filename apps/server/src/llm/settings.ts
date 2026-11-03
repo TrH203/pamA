@@ -9,11 +9,13 @@ import { HttpError } from "../http.ts";
 import { embedTexts, toVector } from "../pipeline/embed.ts";
 import { type CheckResult, checkProvider, type Role, staticItems } from "./check.ts";
 import { createModels, isLocal } from "./providers.ts";
+import { PROVIDER_IDS, presetFor, resolveProvider } from "./registry.ts";
 
 export const ROLES: Role[] = ["chat", "small", "embed"];
 
 export const ApplySchema = z.object({
-  provider: z.enum(["anthropic", "openai-compatible", "openrouter", "ollama"]),
+  /** Any registry id (spec 005); preset ids such as `lmstudio` map onto their protocol. */
+  provider: z.enum(PROVIDER_IDS),
   model: z.string().trim().min(1),
   baseUrl: z.url().optional(),
   apiKey: z.string().min(1).optional(),
@@ -125,12 +127,18 @@ export async function viewSettings(deps: Deps) {
 
 export function candidateOf(deps: Deps, role: Role, i: ApplyInput): ProviderConfig {
   const cur = deps.config[role];
+  const r = resolveProvider(i.provider, i.baseUrl);
+  const provider = r.provider as ProviderConfig["provider"];
   // A key is kept across a model change on the same provider; a new provider needs its own key.
-  const apiKey = i.apiKey ?? (cur.provider === i.provider ? cur.apiKey : undefined);
+  const apiKey =
+    i.apiKey ??
+    (cur.provider === provider && (cur.baseUrl ?? "") === (r.baseUrl ?? "")
+      ? cur.apiKey
+      : undefined);
   return {
-    provider: i.provider,
+    provider,
     model: i.model,
-    ...(i.baseUrl ? { baseUrl: i.baseUrl } : {}),
+    ...(r.baseUrl ? { baseUrl: r.baseUrl } : {}),
     ...(apiKey ? { apiKey } : {}),
   };
 }
@@ -303,4 +311,54 @@ export async function revertSettings(deps: Deps, role: Role) {
   swap(deps, role, prev);
   if (changedEmbed && (await indexedItems(deps)) > 0) await reindexEmbeddings(deps);
   return (await viewSettings(deps)).roles[role];
+}
+
+export interface EffectiveRole {
+  provider: string;
+  /** The registry entry the endpoint corresponds to (`lmstudio` for openai-compatible on :1234). */
+  preset: string;
+  model: string;
+  base_url: string | null;
+  key_set: boolean;
+  local: boolean;
+  verified: boolean;
+  origin: "saved" | "env" | "default";
+  scope: "server" | "workspace";
+}
+
+function effectiveRow(p: ProviderConfig, origin: EffectiveRole["origin"], verified: boolean) {
+  const preset = presetFor(p.provider, p.baseUrl);
+  return {
+    provider: p.provider,
+    preset: preset?.id ?? p.provider,
+    model: p.model,
+    base_url: p.baseUrl ?? (p.provider === "fake" ? null : (preset?.default_base_url ?? null)),
+    key_set: Boolean(p.apiKey),
+    local: isLocal(p),
+    verified,
+    origin,
+  };
+}
+
+/**
+ * The model each role actually uses and where that choice comes from (spec 005, FR-004): saved in
+ * the console, from the server's environment, or the built-in default. Keys are never returned.
+ */
+export async function effectiveModels(deps: Deps, workspace: ProviderConfig | null) {
+  const rows = await deps.db.query<Pick<Row, "role" | "verified">>(
+    "SELECT role, verified FROM model_settings",
+  );
+  const saved = new Map(rows.map((r) => [r.role, r]));
+  const roles = Object.fromEntries(
+    ROLES.map((r): [Role, EffectiveRole] => {
+      const row = saved.get(r);
+      const origin = row ? "saved" : (deps.config.modelOrigin?.[r] ?? "env");
+      return [
+        r,
+        { ...effectiveRow(deps.config[r], origin, row?.verified ?? false), scope: "server" },
+      ];
+    }),
+  ) as Record<Role, EffectiveRole>;
+  if (workspace) roles.chat = { ...effectiveRow(workspace, "saved", true), scope: "workspace" };
+  return { strict_offline: deps.config.strictOffline, roles };
 }

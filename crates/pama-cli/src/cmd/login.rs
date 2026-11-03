@@ -28,14 +28,20 @@ fn device_name() -> String {
 }
 
 pub fn login(ctx: &Ctx, no_browser: bool) -> anyhow::Result<Exit> {
+    login_to(ctx, ctx.server.clone(), no_browser)
+}
+
+/// The device login flow (browser approval) against `server` (default: $PAMA_CLOUD_URL).
+pub fn login_to(ctx: &Ctx, server: Option<String>, no_browser: bool) -> anyhow::Result<Exit> {
     pama_core::secrets::init_platform_store();
-    let Some(server) = ctx
-        .server
-        .clone()
+    let Some(server) = server
         .or_else(|| std::env::var("PAMA_CLOUD_URL").ok())
         .map(|s| remote::normalize(&s))
     else {
-        eprintln!("error: which server? `pama login --server https://pama.example.com`");
+        crate::fail!(
+            "usage",
+            "which server? `pama connect https://pama.example.com`"
+        );
         return Ok(Exit::User);
     };
     let flow = Login::new(&ctx.store, &server);
@@ -69,7 +75,7 @@ pub fn login(ctx: &Ctx, no_browser: bool) -> anyhow::Result<Exit> {
 }
 
 fn login_exit(e: &LoginError) -> Exit {
-    eprintln!("error: {e}");
+    crate::fail!("login_failed", "{e}");
     match e {
         LoginError::Net(_) => Exit::Network,
         LoginError::Unsupported => Exit::Config,
@@ -78,14 +84,21 @@ fn login_exit(e: &LoginError) -> Exit {
 }
 
 pub fn logout(ctx: &Ctx, discard_pending: bool) -> anyhow::Result<Exit> {
+    logout_from(ctx, ctx.server.clone(), discard_pending)
+}
+
+/// Revoke this device on `server` (default: the default server), delete its token and forget it.
+pub fn logout_from(
+    ctx: &Ctx,
+    server: Option<String>,
+    discard_pending: bool,
+) -> anyhow::Result<Exit> {
     pama_core::secrets::init_platform_store();
-    let Some(server) = ctx
-        .server
-        .clone()
+    let Some(server) = server
         .map(|s| remote::normalize(&s))
         .or_else(|| remote::default_server(&ctx.store))
     else {
-        eprintln!("error: not logged in to any server");
+        crate::fail!("not_logged_in", "not logged in to any server");
         return Ok(Exit::User);
     };
     // Revoke on the server first (best effort: the token is deleted locally either way).
@@ -107,12 +120,16 @@ pub fn logout(ctx: &Ctx, discard_pending: bool) -> anyhow::Result<Exit> {
     } else {
         0
     };
+    let home_before = remote::home(&ctx.store);
     let left = remote::remove_server(&ctx.store, &server)?;
     if left.is_empty() {
         remote::set_mode(&ctx.store, Mode::Local)?;
     }
+    // Forgetting the home server moves home to the next connected one: say so (spec 005).
+    let home = remote::home(&ctx.store);
+    let moved = (home != home_before && !left.is_empty()).then(|| home.label());
     ctx.print(
-        &json!({ "server": server, "revoked": revoked, "pending": pending, "discarded": discarded }),
+        &json!({ "server": server, "revoked": revoked, "pending": pending, "discarded": discarded, "home": home }),
         || {
             let mut out = format!("logged out of {server}");
             if !revoked {
@@ -127,6 +144,10 @@ pub fn logout(ctx: &Ctx, discard_pending: bool) -> anyhow::Result<Exit> {
             }
             if left.is_empty() {
                 out.push_str("\nthis machine is back in local mode");
+            } else if let Some(h) = &moved {
+                out.push_str(&format!(
+                    "\nhome is now {h}; `pama use local` keeps work on this machine"
+                ));
             }
             out
         },
@@ -153,7 +174,7 @@ pub fn set_mode(ctx: &Ctx, m: ModeArg) -> anyhow::Result<Result<(), Exit>> {
     match m {
         ModeArg::Remote => {
             if remote::default_server(&ctx.store).is_none() {
-                eprintln!("error: log in first: `pama login --server <url>`");
+                crate::fail!("not_logged_in", "connect first: `pama connect <url>`");
                 return Ok(Err(Exit::Config));
             }
             remote::set_mode(&ctx.store, Mode::Remote)?;
@@ -236,7 +257,10 @@ pub fn init_remote(
     let wanted = mode_arg.or_else(|| if fresh && !ctx.json { ask_mode() } else { None });
     if let Some(m) = wanted {
         if m == ModeArg::Remote && remote::default_server(&ctx.store).is_none() {
-            eprintln!("error: remote mode needs a server: run `pama login --server <url>` first");
+            crate::fail!(
+                "usage",
+                "remote mode needs a server: run `pama connect <url>` first"
+            );
             return Ok(Err(Exit::Config));
         }
         if let Err(code) = set_mode(ctx, m)? {

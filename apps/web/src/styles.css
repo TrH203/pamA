@@ -1,22 +1,8 @@
 @import "tailwindcss";
+@import "../../../packages/ui/src/theme.css";
+@import "@fontsource-variable/inter";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
 
-@layer base {
-  body {
-    @apply bg-stone-50 text-stone-900 antialiased;
-  }
-}
-
-@layer components {
-  .btn {
-    @apply rounded border border-stone-300 bg-white px-3 py-1.5 text-sm hover:bg-stone-100 disabled:opacity-50;
-  }
-  .btn-primary {
-    @apply rounded bg-stone-900 px-3 py-1.5 text-sm text-white hover:bg-stone-700 disabled:opacity-50;
-  }
-  .input {
-    @apply rounded border border-stone-300 bg-white px-2 py-1.5 text-sm;
-  }
-  .btn-danger {
-    @apply rounded border border-red-200 bg-white px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50;
-  }
-}
+/* The component kit lives outside this app; let Tailwind see its class names. */
+@source "../../../packages/ui/src";

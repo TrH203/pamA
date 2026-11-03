@@ -3,6 +3,27 @@
 pamA reads agent transcripts **on the owner's machine**. Raw transcripts are never uploaded; only
 Layer-1-redacted events go to the local server, and only approved digests can sync.
 
+Every agent is an adapter (`crates/pama-core/src/agents/`, trait `AgentAdapter`): transcript
+dirs, parsing into the shared session event model, hook install/uninstall/status per scope, and
+the idle delay before a capture is read. The list of agents is shared with the server in
+`packages/types/agents.json` (the server's `AgentSchema`, the `sessions_agent` check and the
+digest JSON schema all accept the same ids).
+
+## Managing agents
+
+```bash
+pama agents                                 # detected, capture on/off, hooks per scope, recent sessions
+pama agents enable cursor --global          # capture on + user-scope hook
+pama agents enable codex --project .        # hook in this project only (--shared: committed config)
+pama agents disable opencode                # capture off; hooks stay but are ignored
+pama agents uninstall claude                # remove pamA's hooks everywhere (user + captured projects)
+```
+
+Capture is on by default for every agent; `disable` turns it off per agent (the setting
+`agents.<id>.enabled`). `pama init` installs Claude Code and Codex hooks as before, plus Cursor and
+OpenCode when they are used on the machine. `pama doctor` reports hooks in every scope, including
+ones installed with `--project-scope`.
+
 ## Claude Code
 
 | Item | Value |
@@ -43,3 +64,34 @@ Findings that changed the code:
 - List-shaped outputs are joined instead of being kept as JSON.
 
 `notify` still fires per turn, so capture is debounced; the watcher fallback stays mandatory.
+
+**Notify chaining (spec 005).** Codex has one `notify` program. When another notifier is already
+configured, pamA no longer refuses: it writes `notify = ["pama", "hook", "codex", "--chain",
+<previous argv…>]` and runs the previous notifier with the same payload after recording the
+capture. `pama agents uninstall codex` restores the previous notifier.
+
+## Cursor
+
+| Item | Value |
+|---|---|
+| Transcript | `~/.cursor/projects/<workspace slug>/agent-transcripts/<id>.jsonl` or `<id>/<id>.jsonl` (`$CURSOR_HOME/projects` if set) |
+| End signal | Cursor hooks (`~/.cursor/hooks.json` user scope, `<project>/.cursor/hooks.json` project scope): `stop` (after each agent loop, debounced 2 min) and `sessionEnd` → `pama hook cursor` (JSON on stdin with `conversation_id`, `transcript_path`, `workspace_roots`) |
+| Fallback | `pama scan` |
+| Records used | rows `{"role": "user"\|"assistant", "message": {"content": [...]}}` with `text` and `tool_use` blocks |
+
+The transcript format is undocumented and lossy (no tool results, few timestamps); unknown rows
+and fields are ignored. The project directory is recovered from the slug when no hook payload
+gives it. Fixtures: `crates/pama-core/tests/fixtures/cursor/`.
+
+## OpenCode
+
+| Item | Value |
+|---|---|
+| Sessions | `$XDG_DATA_HOME/opencode` (default `~/.local/share/opencode`, or `$OPENCODE_DATA_DIR`): SQLite `opencode.db` (tables `session`, `message`, `part`) since 1.2, JSON files under `storage/session|message|part/` before. Both are read, read-only; the database wins over legacy copies |
+| End signal | a plugin pamA installs (`~/.config/opencode/plugins/pama.js` user scope, `<project>/.opencode/plugins/pama.js` project scope) that runs `pama hook opencode <json>` on `session.idle` (after every turn, debounced 2 min) |
+| Fallback | `pama scan` |
+| Records used | `text`, `tool` (input, output, status) parts of user and assistant messages; reasoning, snapshot and step parts are skipped |
+
+Fixtures: `crates/pama-core/tests/fixtures/opencode/` (legacy files; the SQLite layout is built
+from them in the test).
+

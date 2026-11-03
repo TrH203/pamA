@@ -86,6 +86,13 @@ The drafting model is the owner's choice on their machine (Ollama keeps everythi
 cloud provider receives redacted session text). Over SSH, add `--no-browser` and open the printed
 link anywhere.
 
+This server is the machine's **home** in remote mode: drafts of shared projects come here for
+review. `pama sync enable --project <name>` or `--task <name>` chooses what is shared (a task can
+be shared or kept back on its own), `pama sync now` sends what is waiting and pulls review
+decisions back, and `pama sync failed` / `pama sync retry --all` handle drafts the server refused.
+`pama doctor` and `pama sync status` warn when the machine is connected but nothing is shared yet.
+`pama tasks`, `pama sessions`, `pama digests` and `pama search` browse what is here.
+
 ## 4. Bring-your-own answering model (optional, per workspace)
 
 An owner can answer their Ask Links with their own provider instead of the operator's:
@@ -124,4 +131,5 @@ Back up `deploy/cloud/.env` too: without `PAMA_SECRET`, stored model keys cannot
 - Device tokens act as the owner of their workspace. Owners see and revoke them in the console;
   `pama logout` revokes the current one.
 - Drafts arrive already redacted by the device; Layer 2 (rules + classifier) runs again at ingest.
-- Turning sync off on a machine deletes that project's drafts and digests here.
+- Turning sync off on a machine deletes that project's drafts and digests here; `pama sync
+  disable` lists the Ask Links that would lose sources first and asks for `--yes`.

@@ -5,6 +5,7 @@ use std::process::Command;
 use serde_json::{json, Value};
 
 use super::{api_exit, Ctx};
+use crate::ui::{self, Mark};
 use crate::Exit;
 
 fn edit_in_editor(content: &Value) -> anyhow::Result<Option<Value>> {
@@ -51,24 +52,29 @@ pub fn run(
         Ok(a) => a,
         Err(e) => return Ok(api_exit(&e)),
     };
+    let approving = approve.is_some() || edit.is_some();
     let result = if let Some(id) = approve {
         api.post(&format!("/v1/digests/{id}/approve"), "review", &json!({}))
             .map(|v| {
                 (
                     v.clone(),
-                    format!("approved {}", v["digest_id"].as_str().unwrap_or(&id)),
+                    format!(
+                        "{} approved {}",
+                        Mark::Ok.sym(),
+                        v["digest_id"].as_str().unwrap_or(&id)
+                    ),
                 )
             })
     } else if let Some(id) = discard {
         api.post(&format!("/v1/digests/{id}/discard"), "review", &json!({}))
-            .map(|v| (v, format!("discarded {id}")))
+            .map(|v| (v, format!("{} discarded {id}", Mark::Info.sym())))
     } else if let Some(id) = edit {
         let d = match api.get(&format!("/v1/digests/{id}"), "review") {
             Ok(d) => d,
             Err(e) => return Ok(api_exit(&e)),
         };
         let Some(content) = edit_in_editor(&d["content"])? else {
-            eprintln!("editor exited with an error; nothing changed");
+            crate::fail!("editor", "the editor exited with an error; nothing changed");
             return Ok(Exit::User);
         };
         api.post(
@@ -77,47 +83,90 @@ pub fn run(
             &json!({ "content": content }),
         )
         .map(|v| {
-            let msg = format!("approved edited digest as version {}", v["version"]);
+            let msg = format!(
+                "{} approved edited digest as version {}",
+                Mark::Ok.sym(),
+                v["version"]
+            );
             (v, msg)
         })
     } else {
         api.get("/v1/review", "review").map(|v| {
             let items = v["items"].as_array().cloned().unwrap_or_default();
             let text = if items.is_empty() {
-                "no drafts waiting for review".to_string()
+                Mark::Ok.label("no drafts waiting for review")
             } else {
-                items
-                    .iter()
-                    .map(|d| {
-                        let decisions = d["content"]["decisions"].as_array().map_or(0, Vec::len);
-                        format!(
-                            "{}  {} / {}{}{}\n    goal: {}\n    {} decision(s), {} secret(s) and {} PII item(s) removed",
-                            d["id"].as_str().unwrap_or("?"),
-                            d["project"].as_str().unwrap_or("?"),
-                            d["bundle"].as_str().unwrap_or("?"),
-                            super::bundle_fmt::branch_hint(&d["branches"]),
-                            d["device"]
-                                .as_str()
-                                .map(|n| format!("  (from {n})"))
-                                .unwrap_or_default(),
-                            d["content"]["goal"].as_str().unwrap_or(""),
-                            decisions,
-                            d["content"]["redactions"]["secret"],
-                            d["content"]["redactions"]["pii"],
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n\n")
-                    + "\n\napprove: pama review --approve <id> · edit: pama review --edit <id>"
+                let n = items.len();
+                let mut out = vec![ui::title(&format!(
+                    "{n} draft{} waiting for review",
+                    if n == 1 { "" } else { "s" }
+                ))];
+                for d in &items {
+                    let decisions = d["content"]["decisions"].as_array().map_or(0, Vec::len);
+                    out.push(String::new());
+                    out.push(format!(
+                        "{} {}  {} / {}{}{}",
+                        Mark::Warn.sym(),
+                        ui::bold(d["id"].as_str().unwrap_or("?")),
+                        d["project"].as_str().unwrap_or("?"),
+                        d["bundle"].as_str().unwrap_or("?"),
+                        super::bundle_fmt::branch_hint(&d["branches"]),
+                        d["device"]
+                            .as_str()
+                            .map(|n| ui::dim(&format!("  (from {n})")))
+                            .unwrap_or_default(),
+                    ));
+                    out.push(format!(
+                        "    {} {}",
+                        ui::dim("goal:"),
+                        d["content"]["goal"].as_str().unwrap_or("")
+                    ));
+                    out.push(format!(
+                        "    {}",
+                        ui::dim(&format!(
+                            "{decisions} decision(s), {} secret(s) and {} PII item(s) removed",
+                            d["content"]["redactions"]["secret"], d["content"]["redactions"]["pii"],
+                        ))
+                    ));
+                }
+                out.push(String::new());
+                out.push(format!(
+                    "{} {} {} {}",
+                    ui::dim("approve:"),
+                    ui::cmd("pama review --approve <id>"),
+                    ui::dim("· edit:"),
+                    ui::cmd("pama review --edit <id>")
+                ));
+                out.join("\n")
             };
             (v, text)
         })
     };
     match result {
-        Ok((v, text)) => {
+        Ok((mut v, mut text)) => {
             // Remote mode: a decision made here updates the device copy right away (FR-025).
             if api.remote_url().is_some() {
                 let _ = pama_core::remote::pull_changes(&ctx.store, &api, true);
+            } else if approving {
+                // Local mode: an approved digest of a published project goes out now rather
+                // than at the next background sync (spec 007).
+                if let Ok(r) = pama_core::sync::sync_once(&ctx.store) {
+                    if r.sent > 0 || r.retrying > 0 {
+                        text.push_str(&format!(
+                            "
+published {} item(s){}",
+                            r.sent,
+                            if r.retrying > 0 {
+                                format!(", {} waiting for the network", r.retrying)
+                            } else {
+                                String::new()
+                            }
+                        ));
+                    }
+                    if let Some(o) = v.as_object_mut() {
+                        o.insert("publish".into(), serde_json::to_value(&r)?);
+                    }
+                }
             }
             ctx.print(&v, || text);
             Ok(Exit::Ok)

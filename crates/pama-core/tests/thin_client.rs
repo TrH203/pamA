@@ -151,7 +151,10 @@ fn sessions_of_projects_without_sync_are_skipped_and_nothing_is_queued() {
         sink,
     };
     let out = w.run_due().unwrap();
-    assert_eq!(out[0].1, CaptureOutcome::Skipped);
+    assert_eq!(
+        out[0].1,
+        CaptureOutcome::Skipped(pama_core::capture::errors::ErrorCode::SyncNotEnabled)
+    );
     assert_eq!(
         store.captures(10).unwrap()[0].status,
         CaptureStatus::Skipped
@@ -221,6 +224,12 @@ fn drafts_on_device_deliver_to_the_server_and_pull_back_decisions() {
         assert!(body["outbox_id"].is_string());
         assert!(body["sync_enabled_at"].is_string());
         assert!(body.get("events").is_none());
+        // A readable task name suggested from the goal (spec 007).
+        assert_eq!(
+            body["bundle_name"],
+            "Decide whether refunds include the shipping fee"
+        );
+        assert_eq!(body["bundle_name_source"], "suggested");
     }
     let copy = store
         .remote_digest(&url, "claude_code", SESSION)
@@ -243,6 +252,49 @@ fn drafts_on_device_deliver_to_the_server_and_pull_back_decisions() {
     let before = seen.lock().unwrap().len();
     remote::pull_changes(&store, &api, false).unwrap();
     assert_eq!(seen.lock().unwrap().len(), before);
+}
+
+#[test]
+fn a_task_can_be_kept_back_while_its_project_is_shared() {
+    let (store, rules) = setup();
+    remote::set_project_sync(&store, &project_key(), true).unwrap();
+    remote::set_bundle_sync(&store, &project_key(), "feat/refund-shipping", Some(false)).unwrap();
+    let w = Worker {
+        store: &store,
+        rules: &rules,
+        sink: RemoteSink {
+            store: &store,
+            rules: &rules,
+            model: &Canned,
+            target: "https://pama.example".into(),
+        },
+    };
+    assert_eq!(
+        w.run_due().unwrap()[0].1,
+        CaptureOutcome::Skipped(pama_core::capture::errors::ErrorCode::SyncNotEnabled)
+    );
+    assert_eq!(store.outbox_counts().unwrap().pending, 0);
+}
+
+#[test]
+fn a_task_can_be_shared_while_its_project_is_not() {
+    let (store, rules) = setup();
+    remote::set_bundle_sync(&store, &project_key(), "feat/refund-shipping", Some(true)).unwrap();
+    let w = Worker {
+        store: &store,
+        rules: &rules,
+        sink: RemoteSink {
+            store: &store,
+            rules: &rules,
+            model: &Canned,
+            target: "https://pama.example".into(),
+        },
+    };
+    assert!(matches!(
+        w.run_due().unwrap()[0].1,
+        CaptureOutcome::Submitted { .. }
+    ));
+    assert_eq!(store.outbox_counts().unwrap().pending, 1);
 }
 
 #[test]

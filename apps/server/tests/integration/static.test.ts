@@ -44,6 +44,25 @@ describe("web pages", () => {
     expect((await t.app.request("/assets/../../etc/passwd")).status).toBe(404);
   });
 
+  it("serves the console for its deep links (spec 009), not for unknown paths", async () => {
+    for (const p of [
+      "/",
+      "/review",
+      "/links",
+      "/conversations/01JC0000000000000000000001",
+      "/chat",
+      "/library",
+      "/library/tasks",
+      "/activity/audit",
+      "/settings/connections",
+    ]) {
+      const res = await t.app.request(p);
+      expect(res.status, p).toBe(200);
+      expect(await res.text()).toContain("CONSOLE");
+    }
+    expect((await t.app.request("/nope")).status).toBe(404);
+  });
+
   it("shows no content for revoked links (410) and unknown links (404)", async () => {
     await revokeLink(t.deps, slug);
     const res = await t.app.request(`/a/${slug}`);

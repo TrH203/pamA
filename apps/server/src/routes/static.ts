@@ -13,6 +13,7 @@ const TYPES: Record<string, string> = {
   ".svg": "image/svg+xml",
   ".png": "image/png",
   ".woff2": "font/woff2",
+  ".woff": "font/woff",
   ".json": "application/json",
   ".html": "text/html; charset=utf-8",
 };
@@ -82,6 +83,8 @@ export function staticRoutes(webDir: string) {
     ["/", "console.html"],
     ["/console", "console.html"],
     ["/desktop", "desktop.html"],
+    // Console deep links (spec 009): the client-side router owns everything below these.
+    ...CONSOLE_ROUTES.map((p) => [p, "console.html"] as const),
   ] as const) {
     r.get(path, (c) => {
       const doc = html(name);
@@ -92,5 +95,21 @@ export function staticRoutes(webDir: string) {
   }
   return r;
 }
+
+/** Top-level console sections (apps/web/src/console/router.tsx); each serves console.html. */
+export const CONSOLE_ROUTES = [
+  "/home",
+  "/review",
+  "/conversations",
+  "/conversations/*",
+  "/links",
+  "/chat",
+  "/library",
+  "/library/*",
+  "/activity",
+  "/activity/*",
+  "/settings",
+  "/settings/*",
+] as const;
 
 export const DEFAULT_WEB_DIR = join(import.meta.dirname, "../../../web/dist");

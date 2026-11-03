@@ -1,0 +1,1 @@
+{"id": "msg_002", "sessionID": "ses_abc123", "role": "assistant", "time": {"created": 1792000100000, "completed": 1792000200000}, "modelID": "m", "providerID": "p", "path": {"cwd": "/Users/dev/work/shop", "root": "/Users/dev/work/shop"}}

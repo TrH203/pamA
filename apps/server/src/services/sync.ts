@@ -16,8 +16,8 @@ import {
   recordBranches,
   reevaluateSession,
 } from "./bundles.ts";
-import { approveDigest, cleanAndLabel, digestHash, storeVersion } from "./digests.ts";
-import { autoApproveFor, upsertProject } from "./projects.ts";
+import { cleanAndLabel, digestHash, storeVersion } from "./digests.ts";
+import { upsertProject } from "./projects.ts";
 import type { RunTracker } from "./runs.ts";
 
 export const SyncDigestSchema = z.strictObject({

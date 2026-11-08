@@ -14,7 +14,7 @@
     "evals": "pnpm --filter @pama/evals run evals"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.6.4",
+    "@biomejs/biome": "^2.6.5",
     "typescript": "^7.0.2",
     "tsx": "^4.23.15"
   }

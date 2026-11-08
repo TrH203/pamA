@@ -20,7 +20,7 @@ ulid = "3"
 reqwest = { version = "0.13", features = ["blocking"] }
 anstream = "1"
 owo-colors = "4"
-comfy-table = { version = "7", default-features = false, features = ["custom_styling"] }
+comfy-table = { version = "8", default-features = false, features = ["custom_styling"] }
 indicatif = "0.18"
 fs4 = { version = "0.13", features = ["sync"] }
 
